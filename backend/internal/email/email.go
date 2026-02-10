@@ -157,3 +157,99 @@ type ReminderItem struct {
 	DueDate     string
 	Amount      float64
 }
+
+// MonthlySummary holds the data for a monthly financial summary email.
+type MonthlySummary struct {
+	Income     float64
+	Expenses   float64
+	Investment float64
+	Balance    float64
+	TopCategories []CategorySummary
+}
+
+// CategorySummary represents spending in a single category.
+type CategorySummary struct {
+	Name   string
+	Amount float64
+}
+
+// SendMonthlySummaryEmail sends a monthly financial summary.
+func (s *Sender) SendMonthlySummaryEmail(to, userName, monthLabel string, data MonthlySummary) error {
+	if !s.cfg.IsConfigured() {
+		slog.Warn("Resend not configured — skipping monthly summary", "email", to)
+		return nil
+	}
+
+	var catRows strings.Builder
+	for _, c := range data.TopCategories {
+		catRows.WriteString(fmt.Sprintf(`
+      <tr>
+        <td style="padding:8px 12px; border-bottom:1px solid #30363d;">%s</td>
+        <td style="padding:8px 12px; border-bottom:1px solid #30363d; text-align:right; color:#f85149;">R$ %.2f</td>
+      </tr>`, c.Name, c.Amount))
+	}
+
+	balanceColor := "#10d884"
+	balanceSign := "+"
+	if data.Balance < 0 {
+		balanceColor = "#f85149"
+		balanceSign = ""
+	}
+
+	body := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<body style="font-family: 'Segoe UI', Tahoma, sans-serif; background:#0d1117; color:#e6edf3; padding:2rem;">
+  <div style="max-width:520px; margin:0 auto; background:#161b22; border-radius:12px; padding:2rem; border:1px solid #30363d;">
+    <h2 style="color:#9e8bff; margin-top:0;">📊 GoFund — Resumo de %s</h2>
+    <p>Olá <strong>%s</strong>, aqui está seu resumo financeiro:</p>
+
+    <div style="display:flex; gap:12px; margin:1rem 0; flex-wrap:wrap;">
+      <div style="flex:1; min-width:120px; background:#21262d; border-radius:8px; padding:12px; text-align:center;">
+        <div style="color:#8b949e; font-size:0.75rem;">Receitas</div>
+        <div style="color:#10d884; font-size:1.2rem; font-weight:600;">R$ %.2f</div>
+      </div>
+      <div style="flex:1; min-width:120px; background:#21262d; border-radius:8px; padding:12px; text-align:center;">
+        <div style="color:#8b949e; font-size:0.75rem;">Despesas</div>
+        <div style="color:#f85149; font-size:1.2rem; font-weight:600;">R$ %.2f</div>
+      </div>
+      <div style="flex:1; min-width:120px; background:#21262d; border-radius:8px; padding:12px; text-align:center;">
+        <div style="color:#8b949e; font-size:0.75rem;">Saldo</div>
+        <div style="color:%s; font-size:1.2rem; font-weight:600;">%sR$ %.2f</div>
+      </div>
+    </div>
+
+    <h3 style="color:#e6edf3; font-size:0.95rem; margin-top:1.5rem;">Top Categorias de Gastos</h3>
+    <table style="width:100%%; border-collapse:collapse; margin:0.5rem 0;">
+      <thead>
+        <tr style="background:#21262d;">
+          <th style="padding:8px 12px; text-align:left; color:#8b949e;">Categoria</th>
+          <th style="padding:8px 12px; text-align:right; color:#8b949e;">Valor</th>
+        </tr>
+      </thead>
+      <tbody>%s</tbody>
+    </table>
+
+    <a href="%s" style="display:inline-block; background:linear-gradient(135deg,#7b59ff,#5e7fff); color:#fff; padding:12px 28px; border-radius:8px; text-decoration:none; font-weight:600; margin:1rem 0;">
+      Ver Dashboard Completo
+    </a>
+    <hr style="border-color:#30363d; margin:1.5rem 0;">
+    <p style="color:#8b949e; font-size:0.75rem;">GoFund — Gestão Financeira Profissional</p>
+  </div>
+</body>
+</html>`,
+		monthLabel, userName,
+		data.Income, data.Expenses,
+		balanceColor, balanceSign, absFloat(data.Balance),
+		catRows.String(),
+		s.cfg.AppURL)
+
+	return s.Send(to, fmt.Sprintf("📊 Resumo Financeiro — %s — GoFund", monthLabel), body)
+}
+
+func absFloat(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}

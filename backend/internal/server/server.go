@@ -67,6 +67,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 	healthH := handler.NewHealthHandler(pool, timeout)
 	meH := handler.NewMeHandler(userRepo, timeout)
 	logH := handler.NewLogHandler(logger)
+	summaryH := handler.NewSummaryHandler(txnRepo, emailSender, timeout)
 
 	// ── Router ───────────────────────────────────────────────
 	r := chi.NewRouter()
@@ -105,6 +106,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 			priv.Get("/me", meH.Handle)
 			priv.Get("/bootstrap", bootstrapH.Handle)
 			priv.Put("/auth/password", authH.ChangePassword)
+			priv.Post("/summary/send", summaryH.SendMonthlySummary)
 
 			priv.Route("/transactions", func(rt chi.Router) {
 				rt.Get("/", txnH.List)

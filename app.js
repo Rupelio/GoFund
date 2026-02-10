@@ -121,6 +121,7 @@
 
     exportCsvBtn: document.getElementById("exportCsvBtn"),
     importCsvBtn: document.getElementById("importCsvBtn"),
+    sendSummaryBtn: document.getElementById("sendSummaryBtn"),
     csvInput: document.getElementById("csvInput"),
 
     kpiNetWorth: document.getElementById("kpiNetWorth"),
@@ -326,6 +327,7 @@
     // CSV
     el.exportCsvBtn.addEventListener("click", exportCsv);
     el.importCsvBtn.addEventListener("click", () => el.csvInput.click());
+    el.sendSummaryBtn.addEventListener("click", sendMonthlySummary);
     el.csvInput.addEventListener("change", (e) => void importCsv(e));
 
     // Categories CRUD
@@ -2120,6 +2122,20 @@
   }
 
   /* ── CSV ──────────────────────────────────────────────────── */
+  async function sendMonthlySummary() {
+    try {
+      el.sendSummaryBtn.disabled = true;
+      el.sendSummaryBtn.textContent = "Enviando…";
+      const res = await apiRequest(`/api/summary/send?month=${state.selectedMonth}`, { method: "POST" });
+      showMessage("app", res.message || "Resumo enviado!", "success");
+    } catch (error) {
+      showMessage("app", getErrorMessage(error, "Falha ao enviar resumo."), "error");
+    } finally {
+      el.sendSummaryBtn.disabled = false;
+      el.sendSummaryBtn.textContent = "📊 Resumo";
+    }
+  }
+
   function exportCsv() {
     if (!state.transactions.length) { showMessage("app", "Sem movimentações para exportar.", "error"); return; }
     const headers = ["id", "date", "type", "category", "method", "description", "amount", "recurrence", "recurrenceEnd", "installments", "createdAt"];
@@ -2164,7 +2180,7 @@
       type: findHeaderIdx(headers, ["type", "tipo"]),
       category: findHeaderIdx(headers, ["category", "categoria"]),
       method: findHeaderIdx(headers, ["method", "metodo", "metododepagamento", "pagamento"]),
-      description: findHeaderIdx(headers, ["description", "descricao"]),
+      description: findHeaderIdx(headers, ["description", "descricao", "title", "titulo"]),
       amount: findHeaderIdx(headers, ["amount", "valor"]),
       recurrence: findHeaderIdx(headers, ["recurrence", "recorrencia"]),
       recurrenceEnd: findHeaderIdx(headers, ["recurrenceend", "recurrence_end", "fimrecorrencia"]),
@@ -2174,6 +2190,8 @@
     // Minimum: date, description, amount
     if ([idx.date, idx.description, idx.amount].some((i) => i < 0)) throw new Error("Cabeçalho CSV inválido. Mínimo: Data, Descrição, Valor.");
     const isBankCsv = idx.type < 0 || idx.category < 0 || idx.method < 0;
+    // Detect credit card CSV: header uses "title" (Nubank credit card format)
+    const isCreditCardCsv = isBankCsv && headers.includes("title");
     const items = []; let skipped = 0;
     lines.slice(1).forEach((line) => {
       const cols = parseCsvLine(line);
@@ -2191,7 +2209,17 @@
       let inferredCategory = idx.category >= 0 ? String(cols[idx.category] || "") : "";
       let inferredMethod = idx.method >= 0 ? String(cols[idx.method] || "") : "";
 
-      if (isBankCsv) {
+      if (isCreditCardCsv) {
+        const desc = rawDesc.toLowerCase();
+        // Skip credit card internal operations
+        if (desc.includes("pagamento recebido") || desc.includes("parcelamento de fatura")) { skipped++; return; }
+        // Credit card: positive = despesa (compras), negative = estorno/reembolso
+        if (!inferredType) {
+          inferredType = rawAmount >= 0 ? "despesa" : "receita";
+        }
+        if (!inferredMethod) inferredMethod = "credito";
+        if (!inferredCategory) inferredCategory = inferCategoryFromDescription(desc);
+      } else if (isBankCsv) {
         const desc = rawDesc.toLowerCase();
         // Type: positive = receita, negative = despesa, fatura = transferencia
         if (!inferredType) {
