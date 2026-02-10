@@ -503,6 +503,40 @@ tr:hover td { background: rgba(123, 89, 255, 0.03); }
 
 .empty-state { padding: 2rem 1rem; text-align: center; color: var(--text-muted); font-size: 0.9rem; }
 
+/* -- Info Banner ------------------------------------------- */
+.info-banner {
+  background: linear-gradient(135deg, rgba(108, 95, 252, 0.08) 0%, rgba(108, 95, 252, 0.04) 100%);
+  border: 1px solid rgba(108, 95, 252, 0.2);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.info-banner p { margin: 0.35rem 0; font-size: 0.88rem; line-height: 1.6; color: var(--text-secondary); }
+.info-banner p:first-child { margin-top: 0; }
+.info-banner p:last-child { margin-bottom: 0; }
+.info-banner strong { color: var(--text-primary); font-weight: 600; }
+.info-banner kbd {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.3rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="light"] .info-banner {
+  background: linear-gradient(135deg, rgba(108, 95, 252, 0.06) 0%, rgba(108, 95, 252, 0.02) 100%);
+  border-color: rgba(108, 95, 252, 0.15);
+}
+
+[data-theme="light"] .info-banner kbd {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
 /* -- Filter Summary & Pagination --------------------------- */
 .table-filter-summary {
   padding: 0.65rem 1rem; font-size: 0.84rem; color: var(--text-secondary);

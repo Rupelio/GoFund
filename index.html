@@ -10,11 +10,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=7" />
+    <link rel="stylesheet" href="styles.css?v=8" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
-    <script src="app.js?v=7" defer></script>
+    <script src="app.js?v=8" defer></script>
   </head>
   <body data-theme="dark">
     <div class="app-bg"></div>
@@ -105,6 +105,10 @@
             <article class="kpi-card"><p>Investimentos</p><strong id="kpiInvestment" class="warning">R$ 0,00</strong></article>
             <article class="kpi-card"><p>Patrimônio Líquido</p><strong id="kpiNetWorth">R$ 0,00</strong></article>
           </section>
+          <div class="info-banner" style="margin: 1rem 0;">
+            <p><strong>👋 Bem-vindo ao GoFund!</strong></p>
+            <p>Use os atalhos de teclado para navegar: <kbd>1-9</kbd> para páginas, <kbd>N</kbd> para nova movimentação, <kbd>←→</kbd> para mudar de mês.</p>
+          </div>
           <section id="alertsBar" class="alerts-bar"></section>
           <section class="panel-grid">
             <article class="panel"><header class="panel-head"><h2>Fluxo de Caixa</h2></header><div class="chart-wrap"><canvas id="cashFlowChart"></canvas></div></article>
@@ -132,7 +136,15 @@
               <div id="transactionsCardsContainer" class="transactions-cards-container"></div>
               <div id="tableFilterSummary" class="table-filter-summary"></div>
               <div id="tablePagination" class="table-pagination"></div>
-              <p id="transactionsEmptyState" class="empty-state">Nenhuma movimentação.</p>
+              <div id="transactionsEmptyState" style="display:none">
+                <div class="info-banner">
+                  <p><strong>💰 Bem-vindo às Movimentações!</strong></p>
+                  <p>Aqui você registra todas as suas receitas, despesas e investimentos para acompanhar suas finanças.</p>
+                  <p><strong>Para começar:</strong> Preencha o formulário acima com sua primeira movimentação.</p>
+                  <p><strong>Dica:</strong> Use o atalho <kbd>N</kbd> para focar no formulário rapidamente.</p>
+                </div>
+                <p class="empty-state">Nenhuma movimentação registrada. Use o formulário acima ou importe um CSV.</p>
+              </div>
             </article>
           </section>
         </section>
@@ -186,6 +198,12 @@
         <section class="page" data-page="projection">
           <section class="panel-grid"><article class="panel panel-large">
             <header class="panel-head"><h2>Projeção Financeira</h2></header>
+            <div class="info-banner" style="margin-bottom: 1rem;">
+              <p><strong>📈 Projeção de Patrimônio</strong></p>
+              <p>Simule seu patrimônio futuro com base nas suas médias de receitas, despesas e investimentos.</p>
+              <p><strong>Valores "auto":</strong> O sistema calcula automaticamente as médias dos últimos 3 meses.</p>
+              <p><strong>Valores personalizados:</strong> Informe valores manualmente para cenários específicos.</p>
+            </div>
             <form id="projectionForm" class="projection-form"><label>Meses<input id="projectionMonths" type="number" min="1" max="24" required/></label><label>Receita<input id="projectionIncome" type="number" min="0" step="0.01" placeholder="auto"/></label><label>Despesa<input id="projectionExpense" type="number" min="0" step="0.01" placeholder="auto"/></label><label>Investimento<input id="projectionInvestment" type="number" min="0" step="0.01" placeholder="auto"/></label><button class="btn ghost tiny" type="submit">Recalcular</button></form>
             <div id="projectionSummary" class="projection-summary"></div>
             <div class="chart-wrap" style="margin-top:1rem"><canvas id="projectionChart"></canvas></div>

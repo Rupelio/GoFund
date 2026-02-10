@@ -723,12 +723,12 @@
     el.transactionsTableBody.innerHTML = "";
     el.transactionsCardsContainer.innerHTML = "";
     if (!total) {
-      el.transactionsEmptyState.classList.remove("hidden");
+      el.transactionsEmptyState.style.display = "block";
       el.tableFilterSummary.innerHTML = "";
       el.tablePagination.innerHTML = "";
       return;
     }
-    el.transactionsEmptyState.classList.add("hidden");
+    el.transactionsEmptyState.style.display = "none";
 
     // Filter summary with totals
     const totalIncome = items.filter((t) => t.type === "receita").reduce((s, t) => s + t.amount, 0);
@@ -919,7 +919,7 @@
   /* ── Budgets ─────────────────────────────────────────────── */
   function renderBudgets() {
     if (!state.budgets.length) {
-      el.budgetsList.innerHTML = '<p class="empty-state">Nenhum orçamento definido.</p>';
+      el.budgetsList.innerHTML = '<div class="info-banner"><p><strong>💰 Orçamentos</strong></p><p>Defina limites de gastos por categoria para controlar suas despesas. O sistema alertará quando você ultrapassar os limites.</p></div><p class="empty-state">Nenhum orçamento definido. Use o formulário acima para criar seu primeiro orçamento.</p>';
       return;
     }
     const expenses = {};
@@ -1152,7 +1152,15 @@
     `;
 
     if (!Object.keys(groups).length) {
-      el.investmentsList.innerHTML = '<p class="empty-state">Nenhum investimento neste mês.</p>';
+      el.investmentsList.innerHTML = `
+        <div class="info-banner" style="margin-bottom: 1.5rem;">
+          <p><strong>📊 Como usar a Carteira de Investimentos</strong></p>
+          <p>Esta seção acompanha automaticamente seus investimentos registrados como movimentações do tipo "Investimento".</p>
+          <p><strong>Para começar:</strong> Crie uma movimentação do tipo "Investimento" na aba Movimentações.</p>
+          <p><strong>Defina taxas de rendimento:</strong> Para ver projeções futuras, informe a taxa mensal esperada de cada categoria.</p>
+        </div>
+        <p class="empty-state">Nenhum investimento neste mês. Registre investimentos na aba Movimentações para começar a acompanhar.</p>
+      `;
       return;
     }
 
@@ -1161,6 +1169,9 @@
     const POUPANCA_MENSAL = 0.60;
 
     el.investmentsList.innerHTML = `
+      <div class="info-banner" style="margin-bottom: 1.5rem;">
+        <p><strong>📊 Dica:</strong> Informe a taxa de rendimento mensal esperada de cada categoria para ver projeções futuras do seu patrimônio.</p>
+      </div>
       <article class="item-card" style="border-color: var(--border-accent);">
         <h4>Referências de Mercado</h4>
         <p>CDI: ~${CDI_MENSAL}% a.m. · Poupança: ~${POUPANCA_MENSAL}% a.m.</p>
@@ -1222,7 +1233,7 @@
 
   function renderGoals() {
     if (!state.goals.length) {
-      el.goalsList.innerHTML = '<p class="empty-state">Nenhuma meta cadastrada.</p>';
+      el.goalsList.innerHTML = '<div class="info-banner"><p><strong>🎯 Metas Financeiras</strong></p><p>Crie metas de economia com valor alvo e prazo. Faça aportes regulares e acompanhe o progresso visual.</p></div><p class="empty-state">Nenhuma meta cadastrada. Defina objetivos financeiros acima para começar a poupar.</p>';
       return;
     }
     const today = new Date(`${getTodayDate()}T00:00:00`);
@@ -1346,7 +1357,7 @@
 
   function renderCategories() {
     if (!state.categories.length) {
-      el.categoriesList.innerHTML = '<p class="empty-state">Nenhuma categoria personalizada.</p>';
+      el.categoriesList.innerHTML = '<div class="info-banner"><p><strong>🏷️ Categorias Personalizadas</strong></p><p>Crie categorias personalizadas para organizar suas movimentações. O sistema já possui categorias padrão, mas você pode adicionar as suas.</p></div><p class="empty-state">Nenhuma categoria personalizada. Use o formulário acima para criar novas categorias.</p>';
       return;
     }
     const typeLabels = { receita: "Receita", despesa: "Despesa", investimento: "Investimento", todas: "Todas" };
@@ -1449,7 +1460,7 @@
 
   function renderAccounts() {
     if (!state.accounts.length) {
-      el.accountsList.innerHTML = '<p class="empty-state">Nenhuma conta cadastrada.</p>';
+      el.accountsList.innerHTML = '<div class="info-banner"><p><strong>🏦 Contas e Cartões</strong></p><p>Cadastre suas contas bancárias e cartões para separar transações entre diferentes origens. Você pode acompanhar o saldo de cada conta individualmente.</p></div><p class="empty-state">Nenhuma conta cadastrada. Adicione suas contas acima para organizar melhor suas finanças.</p>';
       return;
     }
     const typeLabels = { corrente: "Conta Corrente", poupanca: "Poupança", carteira: "Carteira", investimento: "Investimento" };
@@ -2301,6 +2312,15 @@
     target.textContent = normalizeString(message);
     target.classList.remove("success", "error");
     if (type) target.classList.add(type);
+
+    // Auto-hide messages after delay
+    const delay = type === "success" ? 3000 : type === "error" ? 5000 : 4000;
+    setTimeout(() => {
+      if (target.textContent === normalizeString(message)) {
+        target.textContent = "";
+        target.classList.remove("success", "error");
+      }
+    }, delay);
   }
 
   function getErrorMessage(error, fallback) {

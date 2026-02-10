@@ -14,11 +14,12 @@ import (
 // AccountHandler handles account CRUD.
 type AccountHandler struct {
 	accounts     *postgres.AccountRepo
+	transactions *postgres.TransactionRepo
 	queryTimeout time.Duration
 }
 
-func NewAccountHandler(repo *postgres.AccountRepo, timeout time.Duration) *AccountHandler {
-	return &AccountHandler{accounts: repo, queryTimeout: timeout}
+func NewAccountHandler(accRepo *postgres.AccountRepo, txnRepo *postgres.TransactionRepo, timeout time.Duration) *AccountHandler {
+	return &AccountHandler{accounts: accRepo, transactions: txnRepo, queryTimeout: timeout}
 }
 
 func (h *AccountHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -70,6 +71,24 @@ func (h *AccountHandler) Create(w http.ResponseWriter, r *http.Request) {
 		slog.Error("createAccount failed", "error", err)
 		WriteError(w, http.StatusInternalServerError, "could not create account")
 		return
+	}
+
+	// Create automatic transaction if initialBalance > 0
+	if normalized.InitialBalance > 0 {
+		txnPayload := domain.TransactionPayload{
+			Type:        "receita",
+			Category:    "Outros",
+			Method:      "outros",
+			Description: "Saldo inicial",
+			Amount:      normalized.InitialBalance,
+			AccountID:   dto.ID,
+		}
+		dateValue := time.Now()
+		_, err := h.transactions.Create(ctx, user.ID, dateValue, nil, txnPayload)
+		if err != nil {
+			slog.Warn("createAccount: initial balance transaction failed", "error", err, "accountID", dto.ID)
+			// Don't fail the account creation, just log the warning
+		}
 	}
 
 	WriteJSON(w, http.StatusCreated, dto)

@@ -62,7 +62,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 	goalH := handler.NewGoalHandler(goalRepo, timeout)
 	projH := handler.NewProjectionHandler(projRepo, timeout)
 	catH := handler.NewCategoryHandler(catRepo, timeout)
-	accH := handler.NewAccountHandler(accRepo, timeout)
+	accH := handler.NewAccountHandler(accRepo, txnRepo, timeout)
 	bootstrapH := handler.NewBootstrapHandler(userRepo, txnRepo, budgetRepo, goalRepo, projRepo, catRepo, accRepo, timeout)
 	healthH := handler.NewHealthHandler(pool, timeout)
 	meH := handler.NewMeHandler(userRepo, timeout)
