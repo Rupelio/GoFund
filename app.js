@@ -1,0 +1,2332 @@
+"use strict";
+
+(function () {
+  /* ── Constants ───────────────────────────────────────────── */
+  const AUTH_STORAGE_KEY = "gestao_auth_v2";
+  const API_TIMEOUT_MS = 12000;
+  const API_BASE_URL = resolveApiBaseUrl();
+  const CURRENCY = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+
+  const METHOD_LABELS = {
+    pix: "PIX",
+    debito: "Débito",
+    credito: "Crédito",
+    dinheiro: "Dinheiro",
+    transferencia: "Transferência",
+  };
+
+  /* ── DOM Cache ───────────────────────────────────────────── */
+  const el = {
+    authShell: document.getElementById("authShell"),
+    dashboardShell: document.getElementById("dashboardShell"),
+    authMessage: document.getElementById("authMessage"),
+    appMessage: document.getElementById("appMessage"),
+
+    showLoginBtn: document.getElementById("showLoginBtn"),
+    showRegisterBtn: document.getElementById("showRegisterBtn"),
+    loginForm: document.getElementById("loginForm"),
+    registerForm: document.getElementById("registerForm"),
+    loginEmail: document.getElementById("loginEmail"),
+    loginPassword: document.getElementById("loginPassword"),
+    registerName: document.getElementById("registerName"),
+    registerEmail: document.getElementById("registerEmail"),
+    registerPassword: document.getElementById("registerPassword"),
+
+    userInitial: document.getElementById("userInitial"),
+    userNameText: document.getElementById("userNameText"),
+    logoutBtn: document.getElementById("logoutBtn"),
+
+    sidebar: document.getElementById("sidebar"),
+    sidebarToggle: document.getElementById("sidebarToggle"),
+    sidebarOverlay: document.getElementById("sidebarOverlay"),
+
+    monthPicker: document.getElementById("monthPicker"),
+    prevMonthBtn: document.getElementById("prevMonthBtn"),
+    nextMonthBtn: document.getElementById("nextMonthBtn"),
+    focusTransactionBtn: document.getElementById("focusTransactionBtn"),
+
+    kpiBalance: document.getElementById("kpiBalance"),
+    kpiIncome: document.getElementById("kpiIncome"),
+    kpiExpense: document.getElementById("kpiExpense"),
+    kpiInvestment: document.getElementById("kpiInvestment"),
+
+    transactionForm: document.getElementById("transactionForm"),
+    transactionDescription: document.getElementById("transactionDescription"),
+    transactionAmount: document.getElementById("transactionAmount"),
+    transactionDate: document.getElementById("transactionDate"),
+    transactionCategory: document.getElementById("transactionCategory"),
+    transactionType: document.getElementById("transactionType"),
+    transactionMethod: document.getElementById("transactionMethod"),
+    transactionSubmitBtn: document.getElementById("transactionSubmitBtn"),
+    cancelTransactionEditBtn: document.getElementById("cancelTransactionEditBtn"),
+
+    searchInput: document.getElementById("searchInput"),
+    filterType: document.getElementById("filterType"),
+    filterCategory: document.getElementById("filterCategory"),
+    transactionsTableBody: document.getElementById("transactionsTableBody"),
+    transactionsEmptyState: document.getElementById("transactionsEmptyState"),
+    tableFilterSummary: document.getElementById("tableFilterSummary"),
+    tablePagination: document.getElementById("tablePagination"),
+
+    transactionRecurrence: document.getElementById("transactionRecurrence"),
+    transactionInstallments: document.getElementById("transactionInstallments"),
+    transactionRecurrenceEnd: document.getElementById("transactionRecurrenceEnd"),
+    installmentsLabel: document.getElementById("installmentsLabel"),
+    recurrenceEndLabel: document.getElementById("recurrenceEndLabel"),
+
+    themeToggle: document.getElementById("themeToggle"),
+
+    investmentsKpis: document.getElementById("investmentsKpis"),
+    investmentsList: document.getElementById("investmentsList"),
+
+    changePasswordForm: document.getElementById("changePasswordForm"),
+    currentPassword: document.getElementById("currentPassword"),
+    newPassword: document.getElementById("newPassword"),
+    confirmNewPassword: document.getElementById("confirmNewPassword"),
+
+    budgetForm: document.getElementById("budgetForm"),
+    budgetCategory: document.getElementById("budgetCategory"),
+    budgetLimit: document.getElementById("budgetLimit"),
+    budgetsList: document.getElementById("budgetsList"),
+
+    goalForm: document.getElementById("goalForm"),
+    goalName: document.getElementById("goalName"),
+    goalTarget: document.getElementById("goalTarget"),
+    goalCurrent: document.getElementById("goalCurrent"),
+    goalDueDate: document.getElementById("goalDueDate"),
+    goalSubmitBtn: document.getElementById("goalSubmitBtn"),
+    cancelGoalEditBtn: document.getElementById("cancelGoalEditBtn"),
+    goalsList: document.getElementById("goalsList"),
+
+    projectionForm: document.getElementById("projectionForm"),
+    projectionMonths: document.getElementById("projectionMonths"),
+    projectionIncome: document.getElementById("projectionIncome"),
+    projectionExpense: document.getElementById("projectionExpense"),
+    projectionInvestment: document.getElementById("projectionInvestment"),
+    projectionSummary: document.getElementById("projectionSummary"),
+
+    cashFlowChart: document.getElementById("cashFlowChart"),
+    projectionChart: document.getElementById("projectionChart"),
+    expenseByCategoryChart: document.getElementById("expenseByCategoryChart"),
+
+    exportCsvBtn: document.getElementById("exportCsvBtn"),
+    importCsvBtn: document.getElementById("importCsvBtn"),
+    csvInput: document.getElementById("csvInput"),
+
+    kpiNetWorth: document.getElementById("kpiNetWorth"),
+    alertsBar: document.getElementById("alertsBar"),
+
+    transactionAccount: document.getElementById("transactionAccount"),
+
+    accountForm: document.getElementById("accountForm"),
+    accountName: document.getElementById("accountName"),
+    accountType: document.getElementById("accountType"),
+    accountInitialBalance: document.getElementById("accountInitialBalance"),
+    accountColor: document.getElementById("accountColor"),
+    accountSubmitBtn: document.getElementById("accountSubmitBtn"),
+    cancelAccountEditBtn: document.getElementById("cancelAccountEditBtn"),
+    accountsList: document.getElementById("accountsList"),
+
+    categoryForm: document.getElementById("categoryForm"),
+    categoryName: document.getElementById("categoryName"),
+    categoryType: document.getElementById("categoryType"),
+    categoryIcon: document.getElementById("categoryIcon"),
+    categorySubmitBtn: document.getElementById("categorySubmitBtn"),
+    cancelCategoryEditBtn: document.getElementById("cancelCategoryEditBtn"),
+    categoriesList: document.getElementById("categoriesList"),
+
+    reportContent: document.getElementById("reportContent"),
+    installmentsContent: document.getElementById("installmentsContent"),
+
+    csvDropZone: document.getElementById("csvDropZone"),
+    patrimonioEvolutionChart: document.getElementById("patrimonioEvolutionChart"),
+    compareMonth: document.getElementById("compareMonth"),
+    compareContent: document.getElementById("compareContent"),
+    exportPdfBtn: document.getElementById("exportPdfBtn"),
+    reportPanel: document.getElementById("reportPanel"),
+  };
+
+  /* ── State ───────────────────────────────────────────────── */
+  const PAGE_KEYS = ["dashboard","transactions","accounts","budgets","goals","investments","projection","reports","installments","settings"];
+  let currentPage = "dashboard";
+
+  const state = {
+    token: "",
+    user: null,
+    selectedMonth: getCurrentMonth(),
+    transactions: [],
+    budgets: [],
+    goals: [],
+    categories: [],
+    accounts: [],
+    projection: { months: 6, income: null, expense: null, investment: null, updatedAt: "" },
+    tablePage: 1,
+    tablePageSize: 10,
+  };
+
+  let editingTransactionId = null;
+  let editingBudgetId = null;
+  let editingGoalId = null;
+  let editingCategoryId = null;
+  let editingAccountId = null;
+  let cashFlowChartInstance = null;
+  let projectionChartInstance = null;
+  let expenseChartInstance = null;
+  let patrimonioChartInstance = null;
+
+  /* ── Init ────────────────────────────────────────────────── */
+  init();
+
+  function init() {
+    applyTheme(localStorage.getItem("nexus_theme") || "dark");
+    bindEvents();
+    el.monthPicker.value = state.selectedMonth;
+    el.transactionDate.value = getTodayDate();
+    restoreSession();
+    // Register service worker
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+  }
+
+  /* ── Event Bindings ──────────────────────────────────────── */
+  function bindEvents() {
+    // Auth
+    el.showLoginBtn.addEventListener("click", () => setAuthMode("login"));
+    el.showRegisterBtn.addEventListener("click", () => setAuthMode("register"));
+    el.loginForm.addEventListener("submit", (e) => void handleLogin(e));
+    el.registerForm.addEventListener("submit", (e) => void handleRegister(e));
+    el.logoutBtn.addEventListener("click", handleLogout);
+
+    // Sidebar mobile
+    el.sidebarToggle.addEventListener("click", toggleSidebar);
+    el.sidebarOverlay.addEventListener("click", closeSidebar);
+
+    // Page navigation via sidebar
+    el.sidebar.querySelectorAll(".sidebar-nav a[data-page]").forEach((link) => {
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        navigateTo(link.dataset.page);
+        closeSidebar();
+      });
+    });
+
+    // Month navigation
+    el.monthPicker.addEventListener("change", () => {
+      if (!/^\d{4}-\d{2}$/.test(el.monthPicker.value)) {
+        el.monthPicker.value = state.selectedMonth;
+        return;
+      }
+      state.selectedMonth = el.monthPicker.value;
+      renderAll();
+    });
+    el.prevMonthBtn.addEventListener("click", () => shiftMonth(-1));
+    el.nextMonthBtn.addEventListener("click", () => shiftMonth(1));
+    el.focusTransactionBtn.addEventListener("click", () => {
+      navigateTo("transactions");
+      setTimeout(() => {
+        el.transactionForm.scrollIntoView({ behavior: "smooth", block: "start" });
+        el.transactionDescription.focus();
+      }, 120);
+    });
+
+    // Transactions
+    el.transactionForm.addEventListener("submit", (e) => void handleTransactionSubmit(e));
+    el.cancelTransactionEditBtn.addEventListener("click", resetTransactionForm);
+    el.transactionsTableBody.addEventListener("click", (e) => void handleTransactionTableActions(e));
+    el.searchInput.addEventListener("input", () => { state.tablePage = 1; renderTransactionsTable(); });
+    el.filterType.addEventListener("change", () => { state.tablePage = 1; renderTransactionsTable(); });
+    el.filterCategory.addEventListener("change", () => { state.tablePage = 1; renderTransactionsTable(); });
+
+    // Recurrence toggle
+    el.transactionRecurrence.addEventListener("change", toggleRecurrenceFields);
+
+    // Auto-recurring for subscriptions
+    el.transactionCategory.addEventListener("input", () => {
+      const cat = normalizeString(el.transactionCategory.value).toLowerCase();
+      if (cat === "assinaturas" && el.transactionRecurrence.value === "none") {
+        el.transactionRecurrence.value = "monthly";
+        toggleRecurrenceFields();
+      }
+    });
+
+    // Theme
+    el.themeToggle.addEventListener("click", () => {
+      applyTheme(document.body.dataset.theme === "dark" ? "light" : "dark");
+    });
+
+    // Budgets
+    el.budgetForm.addEventListener("submit", (e) => void handleBudgetSubmit(e));
+    el.budgetsList.addEventListener("click", (e) => void handleBudgetActions(e));
+
+    // Goals
+    el.goalForm.addEventListener("submit", (e) => void handleGoalSubmit(e));
+    el.cancelGoalEditBtn.addEventListener("click", resetGoalForm);
+    el.goalsList.addEventListener("click", (e) => void handleGoalActions(e));
+    el.goalsList.addEventListener("submit", (e) => void handleGoalContribution(e));
+
+    // Projection
+    el.projectionForm.addEventListener("submit", (e) => void handleProjectionSubmit(e));
+
+    // Investments
+    el.investmentsList.addEventListener("submit", (e) => void handleInvestmentYield(e));
+
+    // Password change
+    el.changePasswordForm.addEventListener("submit", (e) => void handleChangePassword(e));
+
+    // CSV
+    el.exportCsvBtn.addEventListener("click", exportCsv);
+    el.importCsvBtn.addEventListener("click", () => el.csvInput.click());
+    el.csvInput.addEventListener("change", (e) => void importCsv(e));
+
+    // Categories CRUD
+    el.categoryForm.addEventListener("submit", (e) => void handleCategorySubmit(e));
+    el.cancelCategoryEditBtn.addEventListener("click", resetCategoryForm);
+    el.categoriesList.addEventListener("click", (e) => void handleCategoryActions(e));
+
+    // Accounts CRUD
+    el.accountForm.addEventListener("submit", (e) => void handleAccountSubmit(e));
+    el.cancelAccountEditBtn.addEventListener("click", resetAccountForm);
+    el.accountsList.addEventListener("click", (e) => void handleAccountActions(e));
+
+    // PDF Export
+    el.exportPdfBtn.addEventListener("click", () => void exportPdf());
+
+    // Comparative mode
+    el.compareMonth.addEventListener("change", renderCompareContent);
+
+    // Keyboard shortcuts
+    document.addEventListener("keydown", handleGlobalKeydown);
+
+    // Drag & drop CSV
+    const content = document.querySelector(".content");
+    if (content) {
+      content.addEventListener("dragenter", (e) => { e.preventDefault(); el.csvDropZone.classList.remove("hidden"); });
+      el.csvDropZone.addEventListener("dragover", (e) => { e.preventDefault(); });
+      el.csvDropZone.addEventListener("dragleave", (e) => { if (e.target === el.csvDropZone) el.csvDropZone.classList.add("hidden"); });
+      el.csvDropZone.addEventListener("drop", (e) => {
+        e.preventDefault(); el.csvDropZone.classList.add("hidden");
+        const file = e.dataTransfer?.files?.[0];
+        if (file && file.name.endsWith(".csv")) void importCsvFile(file);
+        else showMessage("app", "Solte um arquivo .csv válido.", "danger");
+      });
+    }
+  }
+
+  /* ── Sidebar Mobile ──────────────────────────────────────── */
+  function toggleSidebar() {
+    el.sidebar.classList.toggle("is-open");
+    el.sidebarOverlay.classList.toggle("is-open");
+  }
+
+  function closeSidebar() {
+    el.sidebar.classList.remove("is-open");
+    el.sidebarOverlay.classList.remove("is-open");
+  }
+
+  /* ── Page Navigation ─────────────────────────────────────── */
+  function navigateTo(page) {
+    if (!PAGE_KEYS.includes(page)) return;
+    currentPage = page;
+    // Sidebar active link
+    el.sidebar.querySelectorAll(".sidebar-nav a[data-page]").forEach((a) => {
+      a.classList.toggle("is-active", a.dataset.page === page);
+    });
+    // Show / hide pages
+    document.querySelectorAll(".page[data-page]").forEach((sec) => {
+      sec.classList.toggle("active", sec.dataset.page === page);
+    });
+    // Lazy-render heavy pages
+    if (page === "reports") { renderMonthlyReport(); renderPatrimonioEvolutionChart(); renderCompareContent(); }
+    if (page === "installments") renderInstallmentPlan();
+    if (page === "investments") renderInvestments();
+    if (page === "projection") { renderProjectionSummary(); renderProjectionChart(buildProjectionModel()); }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  /* ── Keyboard Shortcuts ──────────────────────────────────── */
+  function handleGlobalKeydown(e) {
+    // Ignore when typing in inputs
+    const tag = e.target.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+      if (e.key === "Escape") e.target.blur();
+      return;
+    }
+    if (el.authShell && !el.authShell.classList.contains("hidden")) return;
+
+    switch (e.key) {
+      case "n": case "N":
+        e.preventDefault();
+        navigateTo("transactions");
+        setTimeout(() => el.transactionDescription.focus(), 100);
+        break;
+      case "ArrowLeft":
+        e.preventDefault(); shiftMonth(-1);
+        break;
+      case "ArrowRight":
+        e.preventDefault(); shiftMonth(1);
+        break;
+      case "/":
+        e.preventDefault();
+        navigateTo("transactions");
+        setTimeout(() => el.searchInput.focus(), 100);
+        break;
+      case "Escape":
+        el.csvDropZone.classList.add("hidden");
+        break;
+      default: {
+        const num = parseInt(e.key, 10);
+        if (num >= 1 && num <= PAGE_KEYS.length) {
+          e.preventDefault();
+          navigateTo(PAGE_KEYS[num - 1]);
+        } else if (e.key === "0") {
+          e.preventDefault();
+          navigateTo(PAGE_KEYS[9]); // settings
+        }
+      }
+    }
+  }
+
+  /* ── Theme ──────────────────────────────────────────────── */
+  function applyTheme(theme) {
+    document.body.dataset.theme = theme;
+    localStorage.setItem("nexus_theme", theme);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = theme === "dark" ? "#060a14" : "#f0f2f5";
+    if (!el.dashboardShell.classList.contains("hidden")) {
+      requestAnimationFrame(() => renderCharts());
+    }
+  }
+
+  /* ── Recurrence Field Toggle ───────────────────────────────── */
+  function toggleRecurrenceFields() {
+    const mode = el.transactionRecurrence.value;
+    el.installmentsLabel.classList.toggle("hidden", mode !== "installments");
+    el.recurrenceEndLabel.classList.toggle("hidden", mode !== "monthly");
+    if (mode !== "installments") el.transactionInstallments.value = "";
+    if (mode !== "monthly") el.transactionRecurrenceEnd.value = "";
+  }
+
+  /* ── Auth ─────────────────────────────────────────────────── */
+  function restoreSession() {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) { showAuth(); return; }
+    try {
+      const session = JSON.parse(raw);
+      if (!session?.token) { showAuth(); return; }
+      state.token = session.token;
+      void loadBootstrap();
+    } catch { showAuth(); }
+  }
+
+  function setAuthMode(mode) {
+    const isLogin = mode !== "register";
+    el.showLoginBtn.classList.toggle("is-active", isLogin);
+    el.showRegisterBtn.classList.toggle("is-active", !isLogin);
+    el.loginForm.classList.toggle("hidden", !isLogin);
+    el.registerForm.classList.toggle("hidden", isLogin);
+  }
+
+  async function handleLogin(event) {
+    event.preventDefault();
+    const payload = { email: normalizeString(el.loginEmail.value), password: el.loginPassword.value };
+    if (!payload.email || !payload.password) {
+      showMessage("auth", "Informe email e senha.", "error");
+      return;
+    }
+    try {
+      const result = await apiRequest("/api/auth/login", { method: "POST", auth: false, body: payload });
+      applyAuthResult(result);
+      showMessage("app", "Login realizado com sucesso.", "success");
+    } catch (error) {
+      showMessage("auth", getErrorMessage(error, "Falha no login."), "error");
+    }
+  }
+
+  async function handleRegister(event) {
+    event.preventDefault();
+    const payload = {
+      name: normalizeString(el.registerName.value),
+      email: normalizeString(el.registerEmail.value),
+      password: el.registerPassword.value,
+    };
+    if (!payload.name || !payload.email || payload.password.length < 6) {
+      showMessage("auth", "Preencha nome, email e senha com no mínimo 6 caracteres.", "error");
+      return;
+    }
+    try {
+      const result = await apiRequest("/api/auth/register", { method: "POST", auth: false, body: payload });
+      applyAuthResult(result);
+      showMessage("app", "Conta criada com sucesso.", "success");
+    } catch (error) {
+      showMessage("auth", getErrorMessage(error, "Falha no cadastro."), "error");
+    }
+  }
+
+  function handleLogout() {
+    Object.assign(state, { token: "", user: null, transactions: [], budgets: [], goals: [], categories: [], accounts: [] });
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    showAuth();
+  }
+
+  function applyAuthResult(result) {
+    if (!result?.token || !result?.user) throw new Error("Resposta de autenticação inválida.");
+    state.token = String(result.token);
+    state.user = normalizeUser(result.user);
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ token: state.token }));
+    void loadBootstrap();
+  }
+
+  async function loadBootstrap() {
+    try {
+      const data = await apiRequest("/api/bootstrap");
+      state.user = normalizeUser(data.user || {});
+      state.transactions = Array.isArray(data.transactions) ? data.transactions.map(normalizeTransaction).filter(isValidTransaction) : [];
+      state.budgets = Array.isArray(data.budgets) ? data.budgets.map(normalizeBudget).filter(isValidBudget) : [];
+      state.goals = Array.isArray(data.goals) ? data.goals.map(normalizeGoal).filter(isValidGoal) : [];
+      state.categories = Array.isArray(data.categories) ? data.categories : [];
+      state.accounts = Array.isArray(data.accounts) ? data.accounts : [];
+      state.projection = normalizeProjection(data.projection);
+      el.monthPicker.value = state.selectedMonth;
+      hydrateProjectionForm();
+      resetTransactionForm();
+      resetGoalForm();
+      showDashboard();
+      renderAll();
+    } catch (error) {
+      state.token = "";
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      showAuth();
+      showMessage("auth", getErrorMessage(error, "Sessão inválida. Faça login novamente."), "error");
+    }
+  }
+
+  function showAuth() {
+    el.dashboardShell.classList.add("hidden");
+    el.authShell.classList.remove("hidden");
+    setAuthMode("login");
+  }
+
+  function showDashboard() {
+    el.authShell.classList.add("hidden");
+    el.dashboardShell.classList.remove("hidden");
+    const name = state.user?.name || "Usuário";
+    el.userNameText.textContent = name;
+    el.userInitial.textContent = name.charAt(0).toUpperCase();
+    navigateTo("dashboard");
+  }
+
+  /* ── Render All ──────────────────────────────────────────── */
+  function renderAll() {
+    populateCategoryFilter();
+    populateCategoryDatalist();
+    populateAccountSelector();
+    renderKpis();
+    renderNetWorthKpi();
+    renderAlerts();
+    renderTransactionsTable();
+    renderBudgets();
+    renderGoals();
+    renderCharts();
+    renderCategories();
+    renderAccounts();
+    // Lazy pages re-render if currently visible
+    if (currentPage === "investments") renderInvestments();
+    if (currentPage === "projection") { renderProjectionSummary(); renderProjectionChart(buildProjectionModel()); }
+    if (currentPage === "reports") { renderMonthlyReport(); renderPatrimonioEvolutionChart(); renderCompareContent(); }
+    if (currentPage === "installments") renderInstallmentPlan();
+  }
+
+  function populateCategoryFilter() {
+    const cats = new Set();
+    state.transactions.forEach((t) => cats.add(t.category));
+    const prev = el.filterCategory.value;
+    el.filterCategory.innerHTML = '<option value="todas">Todas Categorias</option>' +
+      [...cats].sort((a, b) => a.localeCompare(b, "pt-BR")).map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+    if ([...cats].some((c) => c === prev || c.toLowerCase() === prev.toLowerCase())) el.filterCategory.value = prev;
+  }
+
+  /* ── KPIs ────────────────────────────────────────────────── */
+
+  function renderKpis() {
+    const monthly = getMonthlyTransactions(state.selectedMonth);
+    const income = sumByType(monthly, "receita");
+    const expense = sumByType(monthly, "despesa");
+    const investment = sumByType(monthly, "investimento");
+    el.kpiBalance.textContent = formatCurrency(income - expense - investment);
+    el.kpiIncome.textContent = formatCurrency(income);
+    el.kpiExpense.textContent = formatCurrency(expense);
+    el.kpiInvestment.textContent = formatCurrency(investment);
+  }
+
+  function sumByType(items, type) {
+    return items.filter((t) => t.type === type).reduce((s, t) => s + t.amount, 0);
+  }
+
+  /* ── Transactions Table ──────────────────────────────────── */
+  function getMonthlyTransactions(month) {
+    const effective = [];
+    for (const t of state.transactions) {
+      const tMonth = t.date.slice(0, 7);
+
+      if (t.recurrence === "monthly") {
+        if (tMonth > month) continue;
+        if (t.recurrenceEnd && t.recurrenceEnd.slice(0, 7) < month) continue;
+        if (tMonth === month) {
+          effective.push(t);
+        } else {
+          const day = Number(t.date.slice(8, 10));
+          const [y, m] = month.split("-").map(Number);
+          const lastDay = new Date(y, m, 0).getDate();
+          const eDay = String(Math.min(day, lastDay)).padStart(2, "0");
+          effective.push({ ...t, date: `${month}-${eDay}`, isVirtual: true, originalId: t.id });
+        }
+        continue;
+      }
+
+      if (t.installments > 1) {
+        const [sy, sm] = t.date.slice(0, 7).split("-").map(Number);
+        const [vy, vm] = month.split("-").map(Number);
+        const diff = (vy - sy) * 12 + (vm - sm);
+        if (diff >= 0 && diff < t.installments) {
+          const day = Number(t.date.slice(8, 10));
+          const lastDay = new Date(vy, vm, 0).getDate();
+          const eDay = String(Math.min(day, lastDay)).padStart(2, "0");
+          const entry = { ...t, installmentNumber: diff + 1 };
+          if (diff > 0) { entry.date = `${month}-${eDay}`; entry.isVirtual = true; entry.originalId = t.id; }
+          effective.push(entry);
+        }
+        continue;
+      }
+
+      if (tMonth === month) effective.push(t);
+    }
+    return effective;
+  }
+
+  function getFilteredTransactions() {
+    const search = normalizeString(el.searchInput.value).toLowerCase();
+    const typeFilter = el.filterType.value;
+    const catFilter = el.filterCategory.value;
+    return getMonthlyTransactions(state.selectedMonth)
+      .filter((t) => {
+        if (typeFilter !== "todos" && t.type !== typeFilter) return false;
+        if (catFilter !== "todas" && t.category.toLowerCase() !== catFilter.toLowerCase()) return false;
+        if (!search) return true;
+        return `${t.description} ${t.category} ${t.method}`.toLowerCase().includes(search);
+      })
+      .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+  }
+
+  function renderTransactionsTable() {
+    const items = getFilteredTransactions();
+    const total = items.length;
+    const pageSize = state.tablePageSize;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    if (state.tablePage > totalPages) state.tablePage = totalPages;
+    const start = (state.tablePage - 1) * pageSize;
+    const pageItems = items.slice(start, start + pageSize);
+
+    el.transactionsTableBody.innerHTML = "";
+    if (!total) {
+      el.transactionsEmptyState.classList.remove("hidden");
+      el.tableFilterSummary.innerHTML = "";
+      el.tablePagination.innerHTML = "";
+      return;
+    }
+    el.transactionsEmptyState.classList.add("hidden");
+
+    // Filter summary with totals
+    const totalIncome = items.filter((t) => t.type === "receita").reduce((s, t) => s + t.amount, 0);
+    const totalExpense = items.filter((t) => t.type === "despesa").reduce((s, t) => s + t.amount, 0);
+    const totalInvest = items.filter((t) => t.type === "investimento").reduce((s, t) => s + t.amount, 0);
+    const parts = [`<strong>${total}</strong> movimentações`];
+    if (totalIncome > 0) parts.push(`<span class="positive">+${formatCurrency(totalIncome)}</span>`);
+    if (totalExpense > 0) parts.push(`<span class="negative">-${formatCurrency(totalExpense)}</span>`);
+    if (totalInvest > 0) parts.push(`<span class="warning">${formatCurrency(totalInvest)}</span>`);
+    el.tableFilterSummary.innerHTML = `<span>${parts.join(" &middot; ")}</span><span>Pág ${state.tablePage}/${totalPages}</span>`;
+
+    // Render page rows
+    el.transactionsTableBody.innerHTML = pageItems.map((t) => {
+      const cls = t.type === "receita" ? "value-income" : t.type === "despesa" ? "value-expense" : "value-investment";
+      const sign = t.type === "receita" ? "+" : "-";
+      let badges = `<span class="tag ${t.type}">${t.type}</span>`;
+      if (t.recurrence === "monthly") badges += ` <span class="tag recurrence">mensal</span>`;
+      if (t.installments > 1) badges += ` <span class="tag recurrence">${t.installmentNumber || 1}/${t.installments}</span>`;
+      const actions = t.isVirtual
+        ? `<button class="mini-btn" data-action="edit-transaction" data-id="${t.originalId || t.id}" type="button">Ver original</button>`
+        : `<button class="mini-btn" data-action="edit-transaction" data-id="${t.id}" type="button">Editar</button>
+           <button class="mini-btn" data-action="delete-transaction" data-id="${t.id}" type="button">Excluir</button>`;
+      return `<tr>
+        <td>${escapeHtml(t.description)}</td>
+        <td>${escapeHtml(t.category)}</td>
+        <td>${escapeHtml(getMethodLabel(t.method))}</td>
+        <td>${formatDate(t.date)}</td>
+        <td class="${cls}">${sign} ${formatCurrency(t.amount)}</td>
+        <td>${badges}<div class="mini-actions">${actions}</div></td>
+      </tr>`;
+    }).join("");
+
+    // Pagination controls
+    if (totalPages <= 1) { el.tablePagination.innerHTML = ""; return; }
+    let pag = `<button ${state.tablePage <= 1 ? "disabled" : ""} data-page="${state.tablePage - 1}">&lt;</button>`;
+    const maxBtns = 7;
+    let s = Math.max(1, state.tablePage - Math.floor(maxBtns / 2));
+    let e = Math.min(totalPages, s + maxBtns - 1);
+    if (e - s + 1 < maxBtns) s = Math.max(1, e - maxBtns + 1);
+    if (s > 1) pag += `<button data-page="1">1</button><span class="page-info">…</span>`;
+    for (let i = s; i <= e; i++) pag += `<button data-page="${i}" class="${i === state.tablePage ? "is-active" : ""}">${i}</button>`;
+    if (e < totalPages) pag += `<span class="page-info">…</span><button data-page="${totalPages}">${totalPages}</button>`;
+    pag += `<button ${state.tablePage >= totalPages ? "disabled" : ""} data-page="${state.tablePage + 1}">&gt;</button>`;
+    el.tablePagination.innerHTML = pag;
+    el.tablePagination.querySelectorAll("button[data-page]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.tablePage = Number(btn.dataset.page);
+        renderTransactionsTable();
+      });
+    });
+  }
+
+  /* ── Transaction CRUD ────────────────────────────────────── */
+  async function handleTransactionSubmit(event) {
+    event.preventDefault();
+    const recMode = el.transactionRecurrence.value;
+    const payload = {
+      id: editingTransactionId || undefined,
+      description: normalizeString(el.transactionDescription.value),
+      amount: Number(el.transactionAmount.value),
+      date: el.transactionDate.value,
+      category: normalizeCategory(el.transactionCategory.value),
+      type: el.transactionType.value,
+      method: el.transactionMethod.value,
+      recurrence: recMode === "monthly" ? "monthly" : "none",
+      recurrenceEnd: recMode === "monthly" ? el.transactionRecurrenceEnd.value || "" : "",
+      installments: recMode === "installments" ? Number(el.transactionInstallments.value) || 0 : 0,
+      accountId: el.transactionAccount.value || "",
+    };
+    if (!isValidTransaction(payload)) { showMessage("app", "Dados inválidos.", "error"); return; }
+    try {
+      if (editingTransactionId) {
+        const updated = normalizeTransaction(await apiRequest(`/api/transactions/${encodeURIComponent(editingTransactionId)}`, { method: "PUT", body: payload }));
+        const idx = state.transactions.findIndex((t) => t.id === editingTransactionId);
+        if (idx >= 0) state.transactions[idx] = updated;
+        showMessage("app", "Movimentação atualizada.", "success");
+      } else {
+        const created = normalizeTransaction(await apiRequest("/api/transactions", { method: "POST", body: payload }));
+        state.transactions.push(created);
+        showMessage("app", "Movimentação criada.", "success");
+      }
+      resetTransactionForm();
+      renderAll();
+    } catch (error) {
+      showMessage("app", getErrorMessage(error, "Falha ao salvar."), "error");
+    }
+  }
+
+  async function handleTransactionTableActions(event) {
+    const btn = event.target.closest("button[data-action]");
+    if (!btn) return;
+    const { id, action } = btn.dataset;
+    const item = state.transactions.find((t) => t.id === id);
+    if (!item) return;
+
+    if (action === "edit-transaction") {
+      editingTransactionId = item.id;
+      el.transactionDescription.value = item.description;
+      el.transactionAmount.value = item.amount;
+      el.transactionDate.value = item.date;
+      el.transactionCategory.value = item.category;
+      el.transactionType.value = item.type;
+      el.transactionMethod.value = item.method;
+      el.transactionAccount.value = item.accountId || "";
+      // Populate recurrence fields
+      if (item.recurrence === "monthly") {
+        el.transactionRecurrence.value = "monthly";
+        el.transactionRecurrenceEnd.value = item.recurrenceEnd || "";
+      } else if (item.installments > 1) {
+        el.transactionRecurrence.value = "installments";
+        el.transactionInstallments.value = item.installments;
+      } else {
+        el.transactionRecurrence.value = "none";
+      }
+      toggleRecurrenceFields();
+      el.transactionSubmitBtn.textContent = "Atualizar";
+      el.cancelTransactionEditBtn.classList.remove("hidden");
+      el.transactionForm.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    if (action === "delete-transaction") {
+      if (!window.confirm("Deseja excluir esta movimentação?")) return;
+      try {
+        await apiRequest(`/api/transactions/${encodeURIComponent(id)}`, { method: "DELETE", expectNoContent: true });
+        state.transactions = state.transactions.filter((t) => t.id !== id);
+        resetTransactionForm();
+        renderAll();
+        showMessage("app", "Movimentação removida.", "success");
+      } catch (error) {
+        showMessage("app", getErrorMessage(error, "Falha ao excluir."), "error");
+      }
+    }
+  }
+
+  function resetTransactionForm() {
+    editingTransactionId = null;
+    el.transactionForm.reset();
+    el.transactionDate.value = getTodayDate();
+    el.transactionType.value = "receita";
+    el.transactionMethod.value = "pix";
+    el.transactionRecurrence.value = "none";
+    toggleRecurrenceFields();
+    el.transactionSubmitBtn.textContent = "Salvar";
+    el.cancelTransactionEditBtn.classList.add("hidden");
+  }
+
+  /* ── Budgets ─────────────────────────────────────────────── */
+  function renderBudgets() {
+    if (!state.budgets.length) {
+      el.budgetsList.innerHTML = '<p class="empty-state">Nenhum orçamento definido.</p>';
+      return;
+    }
+    const expenses = {};
+    getMonthlyTransactions(state.selectedMonth)
+      .filter((t) => t.type === "despesa" || t.type === "investimento")
+      .forEach((t) => { expenses[t.category.toLowerCase()] = (expenses[t.category.toLowerCase()] || 0) + t.amount; });
+
+    el.budgetsList.innerHTML = state.budgets
+      .slice().sort((a, b) => a.category.localeCompare(b.category, "pt-BR"))
+      .map((b) => {
+        const used = expenses[b.category.toLowerCase()] || 0;
+        const ratio = b.limit > 0 ? used / b.limit : 0;
+        const width = Math.min(ratio * 100, 100);
+        const isOver = ratio > 1;
+        return `<article class="item-card">
+          <h4>${escapeHtml(b.category)}</h4>
+          <p>${formatCurrency(used)} / ${formatCurrency(b.limit)} (${(ratio * 100).toFixed(1)}%)</p>
+          <div class="progress${isOver ? " over-budget" : ""}"><span style="width:${width}%"></span></div>
+          <div class="mini-actions">
+            <button class="mini-btn" data-action="edit-budget" data-id="${b.id}" type="button">Editar</button>
+            <button class="mini-btn" data-action="delete-budget" data-id="${b.id}" type="button">Excluir</button>
+          </div>
+        </article>`;
+      }).join("");
+  }
+
+  async function handleBudgetSubmit(event) {
+    event.preventDefault();
+    const payload = { id: editingBudgetId || undefined, category: normalizeCategory(el.budgetCategory.value), limit: Number(el.budgetLimit.value) };
+    if (!payload.category || !Number.isFinite(payload.limit) || payload.limit <= 0) {
+      showMessage("app", "Categoria e limite são obrigatórios.", "error");
+      return;
+    }
+    try {
+      if (editingBudgetId) {
+        const updated = normalizeBudget(await apiRequest(`/api/budgets/${encodeURIComponent(editingBudgetId)}`, { method: "PUT", body: payload }));
+        const idx = state.budgets.findIndex((b) => b.id === editingBudgetId);
+        if (idx >= 0) state.budgets[idx] = updated;
+      } else {
+        state.budgets.push(normalizeBudget(await apiRequest("/api/budgets", { method: "POST", body: payload })));
+      }
+      editingBudgetId = null;
+      el.budgetForm.reset();
+      renderBudgets();
+      showMessage("app", "Orçamento salvo.", "success");
+    } catch (error) {
+      showMessage("app", getErrorMessage(error, "Falha ao salvar orçamento."), "error");
+    }
+  }
+
+  async function handleBudgetActions(event) {
+    const btn = event.target.closest("button[data-action]");
+    if (!btn) return;
+    const { id, action } = btn.dataset;
+    const item = state.budgets.find((b) => b.id === id);
+    if (!item) return;
+
+    if (action === "edit-budget") {
+      editingBudgetId = item.id;
+      el.budgetCategory.value = item.category;
+      el.budgetLimit.value = item.limit;
+      el.budgetCategory.focus();
+      showMessage("app", "Editando orçamento.", "success");
+      return;
+    }
+    if (action === "delete-budget") {
+      if (!window.confirm("Deseja excluir este orçamento?")) return;
+      try {
+        await apiRequest(`/api/budgets/${encodeURIComponent(id)}`, { method: "DELETE", expectNoContent: true });
+        state.budgets = state.budgets.filter((b) => b.id !== id);
+        if (editingBudgetId === id) resetBudgetForm();
+        renderBudgets();
+        showMessage("app", "Orçamento removido.", "success");
+      } catch (error) {
+        showMessage("app", getErrorMessage(error, "Falha ao excluir."), "error");
+      }
+    }
+  }
+
+  function resetBudgetForm() { editingBudgetId = null; el.budgetForm.reset(); }
+
+  /* ── Goals ───────────────────────────────────────────────── */
+  async function handleGoalSubmit(event) {
+    event.preventDefault();
+    const payload = {
+      id: editingGoalId || undefined,
+      name: normalizeString(el.goalName.value),
+      target: Number(el.goalTarget.value),
+      current: Number(el.goalCurrent.value),
+      dueDate: el.goalDueDate.value || "",
+    };
+    if (!isValidGoal(payload)) { showMessage("app", "Dados inválidos para meta.", "error"); return; }
+    try {
+      if (editingGoalId) {
+        const updated = normalizeGoal(await apiRequest(`/api/goals/${encodeURIComponent(editingGoalId)}`, { method: "PUT", body: payload }));
+        const idx = state.goals.findIndex((g) => g.id === editingGoalId);
+        if (idx >= 0) state.goals[idx] = updated;
+        showMessage("app", "Meta atualizada.", "success");
+      } else {
+        state.goals.push(normalizeGoal(await apiRequest("/api/goals", { method: "POST", body: payload })));
+        showMessage("app", "Meta criada.", "success");
+      }
+      resetGoalForm();
+      renderGoals();
+    } catch (error) {
+      showMessage("app", getErrorMessage(error, "Falha ao salvar meta."), "error");
+    }
+  }
+
+  async function handleGoalActions(event) {
+    const btn = event.target.closest("button[data-action]");
+    if (!btn) return;
+    const { id, action } = btn.dataset;
+    const goal = state.goals.find((g) => g.id === id);
+    if (!goal) return;
+
+    if (action === "edit-goal") {
+      editingGoalId = goal.id;
+      el.goalName.value = goal.name;
+      el.goalTarget.value = goal.target;
+      el.goalCurrent.value = goal.current;
+      el.goalDueDate.value = goal.dueDate || "";
+      el.goalSubmitBtn.textContent = "Atualizar Meta";
+      el.cancelGoalEditBtn.classList.remove("hidden");
+      el.goalForm.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (action === "delete-goal") {
+      if (!window.confirm("Deseja excluir esta meta?")) return;
+      try {
+        await apiRequest(`/api/goals/${encodeURIComponent(id)}`, { method: "DELETE", expectNoContent: true });
+        state.goals = state.goals.filter((g) => g.id !== id);
+        if (editingGoalId === id) resetGoalForm();
+        renderGoals();
+        showMessage("app", "Meta removida.", "success");
+      } catch (error) {
+        showMessage("app", getErrorMessage(error, "Falha ao excluir meta."), "error");
+      }
+    }
+  }
+
+  async function handleGoalContribution(event) {
+    const form = event.target.closest("form[data-action='add-goal-value']");
+    if (!form) return;
+    event.preventDefault();
+    const id = String(form.dataset.id || "");
+    const input = form.querySelector("input[name='goalContribution']");
+    const amount = Number(input?.value || "");
+    if (!id || !Number.isFinite(amount) || amount <= 0) {
+      showMessage("app", "Informe um aporte válido.", "error");
+      return;
+    }
+    try {
+      const updated = normalizeGoal(await apiRequest(`/api/goals/${encodeURIComponent(id)}/contributions`, { method: "POST", body: { amount } }));
+      const idx = state.goals.findIndex((g) => g.id === id);
+      if (idx >= 0) state.goals[idx] = updated;
+      if (input) input.value = "";
+      renderGoals();
+      showMessage("app", "Aporte registrado.", "success");
+    } catch (error) {
+      showMessage("app", getErrorMessage(error, "Falha ao registrar aporte."), "error");
+    }
+  }
+
+  function resetGoalForm() {
+    editingGoalId = null;
+    el.goalForm.reset();
+    el.goalSubmitBtn.textContent = "Criar Meta";
+    el.cancelGoalEditBtn.classList.add("hidden");
+  }
+
+  /* ── Investments ─────────────────────────────────────────── */
+  function getInvestmentYields() {
+    try { return JSON.parse(localStorage.getItem("nexus_investment_yields") || "{}"); } catch { return {}; }
+  }
+
+  function setInvestmentYield(category, rate) {
+    const yields = getInvestmentYields();
+    yields[category] = rate;
+    localStorage.setItem("nexus_investment_yields", JSON.stringify(yields));
+  }
+
+  function getInvestmentStats() {
+    const allInvestments = state.transactions.filter((t) => t.type === "investimento");
+    const totalInvested = allInvestments.reduce((s, t) => s + t.amount, 0);
+    if (totalInvested <= 0) return { totalInvested: 0, avgMonthlyRate: 0, estimatedMonthlyYield: 0 };
+    const yields = getInvestmentYields();
+    const groups = {};
+    allInvestments.forEach((t) => {
+      if (!groups[t.category]) groups[t.category] = 0;
+      groups[t.category] += t.amount;
+    });
+    let weightedSum = 0;
+    Object.entries(groups).forEach(([cat, total]) => { weightedSum += (yields[cat] || 0) * total; });
+    const avgMonthlyRate = weightedSum / totalInvested / 100;
+    return { totalInvested: round2(totalInvested), avgMonthlyRate, estimatedMonthlyYield: round2(totalInvested * avgMonthlyRate) };
+  }
+
+  function renderInvestments() {
+    const monthly = getMonthlyTransactions(state.selectedMonth);
+    const investments = monthly.filter((t) => t.type === "investimento");
+    const allInvestments = state.transactions.filter((t) => t.type === "investimento");
+    const totalAllTime = allInvestments.reduce((s, t) => s + t.amount, 0);
+    const totalThisMonth = investments.reduce((s, t) => s + t.amount, 0);
+
+    const groups = {};
+    investments.forEach((t) => {
+      const cat = t.category;
+      if (!groups[cat]) groups[cat] = { total: 0, count: 0 };
+      groups[cat].total += t.amount;
+      groups[cat].count++;
+    });
+
+    const yields = getInvestmentYields();
+    let projected12 = 0;
+    Object.entries(groups).forEach(([cat, data]) => {
+      const r = (yields[cat] || 0) / 100;
+      projected12 += r > 0 ? data.total * Math.pow(1 + r, 12) : data.total;
+    });
+
+    const avgYield = Object.keys(groups).length > 0
+      ? Object.entries(groups).reduce((s, [cat, d]) => s + (yields[cat] || 0) * d.total, 0) / Math.max(totalThisMonth, 1)
+      : 0;
+
+    el.investmentsKpis.innerHTML = `
+      <article class="kpi-card"><p>Investido este mês</p><strong class="warning">${formatCurrency(totalThisMonth)}</strong></article>
+      <article class="kpi-card"><p>Total investido (geral)</p><strong class="warning">${formatCurrency(totalAllTime)}</strong></article>
+      <article class="kpi-card"><p>Projeção 12 meses</p><strong class="positive">${formatCurrency(projected12)}</strong></article>
+      <article class="kpi-card"><p>Rend. médio ponderado</p><strong>${avgYield.toFixed(2)}% a.m.</strong></article>
+    `;
+
+    if (!Object.keys(groups).length) {
+      el.investmentsList.innerHTML = '<p class="empty-state">Nenhum investimento neste mês.</p>';
+      return;
+    }
+
+    // Reference rates
+    const CDI_MENSAL = 1.15;
+    const POUPANCA_MENSAL = 0.60;
+
+    el.investmentsList.innerHTML = `
+      <article class="item-card" style="border-color: var(--border-accent);">
+        <h4>Referências de Mercado</h4>
+        <p>CDI: ~${CDI_MENSAL}% a.m. · Poupança: ~${POUPANCA_MENSAL}% a.m.</p>
+      </article>
+    ` + Object.entries(groups)
+      .sort((a, b) => b[1].total - a[1].total)
+      .map(([cat, data]) => {
+        const yieldPct = yields[cat] || 0;
+        const r = yieldPct / 100;
+        const proj = r > 0 ? data.total * Math.pow(1 + r, 12) : data.total;
+        const gain = proj - data.total;
+        return `<article class="item-card">
+          <h4>${escapeHtml(cat)}</h4>
+          <p>Aplicado: ${formatCurrency(data.total)} (${data.count} operações)</p>
+          <p>Rend.: <strong>${yieldPct.toFixed(2)}%</strong> a.m. · Projeção 12m: <span class="positive">${formatCurrency(proj)}</span> (${gain >= 0 ? "+" : ""}${formatCurrency(gain)})</p>
+          <form class="mini-actions" data-action="set-yield" data-category="${escapeHtml(cat)}">
+            <input type="number" name="yield" min="0" max="100" step="0.01" placeholder="% mensal" value="${yieldPct || ""}" />
+            <button class="mini-btn" type="submit">Definir Rend.</button>
+          </form>
+        </article>`;
+      }).join("");
+  }
+
+  function handleInvestmentYield(event) {
+    const form = event.target.closest("form[data-action='set-yield']");
+    if (!form) return;
+    event.preventDefault();
+    const cat = form.dataset.category;
+    const input = form.querySelector("input[name='yield']");
+    const val = Number(input?.value || 0);
+    if (val < 0 || val > 100) { showMessage("app", "Rendimento deve ser entre 0% e 100%.", "error"); return; }
+    setInvestmentYield(cat, val);
+    renderInvestments();
+    showMessage("app", `Rendimento de ${cat} atualizado para ${val.toFixed(2)}%.`, "success");
+  }
+
+  /* ── Password Change ─────────────────────────────────────── */
+  async function handleChangePassword(event) {
+    event.preventDefault();
+    const current = el.currentPassword.value;
+    const newPwd = el.newPassword.value;
+    const confirm = el.confirmNewPassword.value;
+
+    if (!current) { showMessage("app", "Informe a senha atual.", "error"); return; }
+    if (newPwd.length < 8) { showMessage("app", "Nova senha deve ter no mínimo 8 caracteres.", "error"); return; }
+    if (newPwd !== confirm) { showMessage("app", "As senhas não conferem.", "error"); return; }
+    if (!/[a-zA-Z]/.test(newPwd) || !/\d/.test(newPwd)) {
+      showMessage("app", "Nova senha deve conter letras e números.", "error"); return;
+    }
+
+    try {
+      await apiRequest("/api/auth/password", { method: "PUT", body: { currentPassword: current, newPassword: newPwd } });
+      el.changePasswordForm.reset();
+      showMessage("app", "Senha alterada com sucesso.", "success");
+    } catch (error) {
+      showMessage("app", getErrorMessage(error, "Falha ao alterar senha."), "error");
+    }
+  }
+
+  function renderGoals() {
+    if (!state.goals.length) {
+      el.goalsList.innerHTML = '<p class="empty-state">Nenhuma meta cadastrada.</p>';
+      return;
+    }
+    const today = new Date(`${getTodayDate()}T00:00:00`);
+    el.goalsList.innerHTML = state.goals
+      .slice().sort((a, b) => {
+        if (!a.dueDate && !b.dueDate) return a.name.localeCompare(b.name, "pt-BR");
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return a.dueDate.localeCompare(b.dueDate);
+      })
+      .map((g) => {
+        const ratio = g.target > 0 ? g.current / g.target : 0;
+        const percent = Math.min(ratio * 100, 100);
+        const due = g.dueDate ? new Date(`${g.dueDate}T00:00:00`) : null;
+        const isComplete = g.current >= g.target;
+        const isOverdue = Boolean(due && !isComplete && due < today);
+        const dueText = g.dueDate ? formatGoalDueDate(g.dueDate) : "Sem prazo";
+        const status = isComplete ? "✓ Concluída" : isOverdue ? "⚠ Atrasada" : "Em andamento";
+        return `<article class="item-card">
+          <h4>${escapeHtml(g.name)}</h4>
+          <p>${formatCurrency(g.current)} / ${formatCurrency(g.target)} (${(ratio * 100).toFixed(1)}%)</p>
+          <p>${escapeHtml(dueText)} — ${status}</p>
+          <div class="progress"><span style="width:${percent}%"></span></div>
+          <form class="mini-actions" data-action="add-goal-value" data-id="${g.id}">
+            <input type="number" name="goalContribution" min="0.01" step="0.01" placeholder="Aporte (R$)" required />
+            <button class="mini-btn" type="submit">Adicionar</button>
+          </form>
+          <div class="mini-actions">
+            <button class="mini-btn" data-action="edit-goal" data-id="${g.id}" type="button">Editar</button>
+            <button class="mini-btn" data-action="delete-goal" data-id="${g.id}" type="button">Excluir</button>
+          </div>
+        </article>`;
+      }).join("");
+  }
+
+  /* ── Projection ──────────────────────────────────────────── */
+
+  /* ── Net Worth KPI ───────────────────────────────────────── */
+  function renderNetWorthKpi() {
+    const totalIncome = state.transactions.filter((t) => t.type === "receita").reduce((s, t) => s + t.amount, 0);
+    const totalExpense = state.transactions.filter((t) => t.type === "despesa").reduce((s, t) => s + t.amount, 0);
+    const totalInvestment = state.transactions.filter((t) => t.type === "investimento").reduce((s, t) => s + t.amount, 0);
+    const cash = totalIncome - totalExpense - totalInvestment;
+    const goalsSaved = state.goals.reduce((s, g) => s + g.current, 0);
+    const investStats = getInvestmentStats();
+    const netWorth = round2(cash + investStats.totalInvested + goalsSaved);
+    el.kpiNetWorth.textContent = formatCurrency(netWorth);
+    el.kpiNetWorth.className = netWorth >= 0 ? "positive" : "negative";
+  }
+
+  /* ── Alerts & Notifications ──────────────────────────────── */
+  function renderAlerts() {
+    const alerts = [];
+    const month = state.selectedMonth;
+    const monthly = getMonthlyTransactions(month);
+    const expenses = {};
+    monthly.filter((t) => t.type === "despesa" || t.type === "investimento")
+      .forEach((t) => { expenses[t.category.toLowerCase()] = (expenses[t.category.toLowerCase()] || 0) + t.amount; });
+
+    state.budgets.forEach((b) => {
+      const used = expenses[b.category.toLowerCase()] || 0;
+      if (used > b.limit) {
+        alerts.push({ type: "danger", icon: "🔴", text: `Orçamento de "${b.category}" excedido: ${formatCurrency(used)} / ${formatCurrency(b.limit)} (${((used / b.limit) * 100).toFixed(0)}%)` });
+      } else if (used > b.limit * 0.85) {
+        alerts.push({ type: "warning", icon: "⚠️", text: `"${b.category}" atingiu ${((used / b.limit) * 100).toFixed(0)}% do orçamento (${formatCurrency(used)} / ${formatCurrency(b.limit)})` });
+      }
+    });
+
+    const today = new Date(`${getTodayDate()}T00:00:00`);
+    state.goals.forEach((g) => {
+      if (g.current >= g.target) return;
+      if (!g.dueDate) return;
+      const due = new Date(`${g.dueDate}T00:00:00`);
+      const diff = Math.ceil((due - today) / 86400000);
+      if (diff < 0) {
+        alerts.push({ type: "danger", icon: "🎯", text: `Meta "${g.name}" venceu há ${Math.abs(diff)} dias — faltam ${formatCurrency(g.target - g.current)}` });
+      } else if (diff <= 15) {
+        alerts.push({ type: "warning", icon: "🎯", text: `Meta "${g.name}" vence em ${diff} dias — faltam ${formatCurrency(g.target - g.current)}` });
+      }
+    });
+
+    const recurring = state.transactions.filter((t) => t.recurrence === "monthly");
+    const upcomingRecurring = recurring.filter((t) => {
+      const tMonth = t.date.slice(0, 7);
+      if (tMonth > month) return false;
+      if (t.recurrenceEnd && t.recurrenceEnd.slice(0, 7) < month) return false;
+      return true;
+    });
+    if (upcomingRecurring.length > 0) {
+      const total = upcomingRecurring.reduce((s, t) => s + t.amount, 0);
+      alerts.push({ type: "info", icon: "🔁", text: `${upcomingRecurring.length} despesas recorrentes este mês (${formatCurrency(total)})` });
+    }
+
+    el.alertsBar.innerHTML = alerts.map((a) => `
+      <div class="alert-item alert-${a.type}">
+        <span class="alert-icon">${a.icon}</span>
+        <span class="alert-text">${escapeHtml(a.text)}</span>
+        <button class="alert-dismiss" onclick="this.parentElement.remove()" type="button">&times;</button>
+      </div>
+    `).join("");
+  }
+
+  /* ── Categories CRUD ─────────────────────────────────────── */
+  function populateCategoryDatalist() {
+    const dl = document.getElementById("categoryOptions");
+    if (!dl) return;
+    const cats = state.categories.length > 0 ? state.categories : [];
+    const usedCats = new Set(state.transactions.map((t) => t.category));
+    const all = new Set([...cats.map((c) => c.name), ...usedCats]);
+    dl.innerHTML = [...all].sort((a, b) => a.localeCompare(b, "pt-BR")).map((c) => `<option value="${escapeHtml(c)}">`).join("");
+  }
+
+  function renderCategories() {
+    if (!state.categories.length) {
+      el.categoriesList.innerHTML = '<p class="empty-state">Nenhuma categoria personalizada.</p>';
+      return;
+    }
+    const typeLabels = { receita: "Receita", despesa: "Despesa", investimento: "Investimento", todas: "Todas" };
+    el.categoriesList.innerHTML = state.categories
+      .slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+      .map((c) => `<article class="item-card">
+        <h4>${escapeHtml(c.icon || "📁")} ${escapeHtml(c.name)}</h4>
+        <p>Tipo: ${typeLabels[c.type] || c.type}</p>
+        <div class="mini-actions">
+          <button class="mini-btn" data-action="edit-category" data-id="${c.id}" type="button">Editar</button>
+          <button class="mini-btn" data-action="delete-category" data-id="${c.id}" type="button">Excluir</button>
+        </div>
+      </article>`).join("");
+  }
+
+  async function handleCategorySubmit(event) {
+    event.preventDefault();
+    const payload = {
+      id: editingCategoryId || undefined,
+      name: normalizeString(el.categoryName.value),
+      type: el.categoryType.value,
+      icon: normalizeString(el.categoryIcon.value) || "📁",
+    };
+    if (!payload.name) { showMessage("app", "Nome da categoria é obrigatório.", "error"); return; }
+    try {
+      if (editingCategoryId) {
+        const updated = await apiRequest(`/api/categories/${encodeURIComponent(editingCategoryId)}`, { method: "PUT", body: payload });
+        const idx = state.categories.findIndex((c) => c.id === editingCategoryId);
+        if (idx >= 0) state.categories[idx] = updated;
+        showMessage("app", "Categoria atualizada.", "success");
+      } else {
+        const created = await apiRequest("/api/categories", { method: "POST", body: payload });
+        state.categories.push(created);
+        showMessage("app", "Categoria criada.", "success");
+      }
+      resetCategoryForm();
+      renderCategories();
+      populateCategoryDatalist();
+    } catch (error) {
+      showMessage("app", getErrorMessage(error, "Falha ao salvar categoria."), "error");
+    }
+  }
+
+  async function handleCategoryActions(event) {
+    const btn = event.target.closest("button[data-action]");
+    if (!btn) return;
+    const { id, action } = btn.dataset;
+    const item = state.categories.find((c) => c.id === id);
+    if (!item) return;
+    if (action === "edit-category") {
+      editingCategoryId = item.id;
+      el.categoryName.value = item.name;
+      el.categoryType.value = item.type;
+      el.categoryIcon.value = item.icon || "";
+      el.categorySubmitBtn.textContent = "Atualizar";
+      el.cancelCategoryEditBtn.classList.remove("hidden");
+      el.categoryForm.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (action === "delete-category") {
+      if (!window.confirm(`Excluir a categoria "${item.name}"?`)) return;
+      try {
+        await apiRequest(`/api/categories/${encodeURIComponent(id)}`, { method: "DELETE", expectNoContent: true });
+        state.categories = state.categories.filter((c) => c.id !== id);
+        if (editingCategoryId === id) resetCategoryForm();
+        renderCategories();
+        populateCategoryDatalist();
+        showMessage("app", "Categoria removida.", "success");
+      } catch (error) {
+        showMessage("app", getErrorMessage(error, "Falha ao excluir categoria."), "error");
+      }
+    }
+  }
+
+  function resetCategoryForm() {
+    editingCategoryId = null;
+    el.categoryForm.reset();
+    el.categorySubmitBtn.textContent = "Criar Categoria";
+    el.cancelCategoryEditBtn.classList.add("hidden");
+  }
+
+  /* ── Accounts CRUD ───────────────────────────────────────── */
+  function populateAccountSelector() {
+    const sel = el.transactionAccount;
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">Sem conta</option>' +
+      state.accounts.map((a) => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join("");
+    if (state.accounts.some((a) => a.id === prev)) sel.value = prev;
+  }
+
+  function getAccountBalance(accountId) {
+    const account = state.accounts.find((a) => a.id === accountId);
+    if (!account) return 0;
+    let balance = account.initialBalance || 0;
+    state.transactions.filter((t) => t.accountId === accountId).forEach((t) => {
+      balance += t.type === "receita" ? t.amount : -t.amount;
+    });
+    return round2(balance);
+  }
+
+  function renderAccounts() {
+    if (!state.accounts.length) {
+      el.accountsList.innerHTML = '<p class="empty-state">Nenhuma conta cadastrada.</p>';
+      return;
+    }
+    const typeLabels = { corrente: "Conta Corrente", poupanca: "Poupança", carteira: "Carteira", investimento: "Investimento" };
+    el.accountsList.innerHTML = state.accounts
+      .slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+      .map((a) => {
+        const bal = getAccountBalance(a.id);
+        return `<article class="account-card" style="border-left-color:${escapeHtml(a.color || "#5e7fff")}">
+          <div class="account-info">
+            <h4>${escapeHtml(a.name)}</h4>
+            <p>${typeLabels[a.type] || a.type}</p>
+          </div>
+          <div>
+            <span class="account-balance ${bal >= 0 ? "positive" : "negative"}">${formatCurrency(bal)}</span>
+            <div class="mini-actions" style="margin-top:0.5rem">
+              <button class="mini-btn" data-action="edit-account" data-id="${a.id}" type="button">Editar</button>
+              <button class="mini-btn" data-action="delete-account" data-id="${a.id}" type="button">Excluir</button>
+            </div>
+          </div>
+        </article>`;
+      }).join("");
+  }
+
+  async function handleAccountSubmit(event) {
+    event.preventDefault();
+    const payload = {
+      id: editingAccountId || undefined,
+      name: normalizeString(el.accountName.value),
+      type: el.accountType.value,
+      initialBalance: Number(el.accountInitialBalance.value) || 0,
+      color: el.accountColor.value || "#5e7fff",
+    };
+    if (!payload.name) { showMessage("app", "Nome da conta é obrigatório.", "error"); return; }
+    try {
+      if (editingAccountId) {
+        const updated = await apiRequest(`/api/accounts/${encodeURIComponent(editingAccountId)}`, { method: "PUT", body: payload });
+        const idx = state.accounts.findIndex((a) => a.id === editingAccountId);
+        if (idx >= 0) state.accounts[idx] = updated;
+        showMessage("app", "Conta atualizada.", "success");
+      } else {
+        const created = await apiRequest("/api/accounts", { method: "POST", body: payload });
+        state.accounts.push(created);
+        showMessage("app", "Conta criada.", "success");
+      }
+      resetAccountForm();
+      renderAccounts();
+      populateAccountSelector();
+    } catch (error) {
+      showMessage("app", getErrorMessage(error, "Falha ao salvar conta."), "error");
+    }
+  }
+
+  async function handleAccountActions(event) {
+    const btn = event.target.closest("button[data-action]");
+    if (!btn) return;
+    const { id, action } = btn.dataset;
+    const item = state.accounts.find((a) => a.id === id);
+    if (!item) return;
+    if (action === "edit-account") {
+      editingAccountId = item.id;
+      el.accountName.value = item.name;
+      el.accountType.value = item.type;
+      el.accountInitialBalance.value = item.initialBalance || 0;
+      el.accountColor.value = item.color || "#5e7fff";
+      el.accountSubmitBtn.textContent = "Atualizar Conta";
+      el.cancelAccountEditBtn.classList.remove("hidden");
+      el.accountForm.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (action === "delete-account") {
+      if (!window.confirm(`Excluir a conta "${item.name}"?`)) return;
+      try {
+        await apiRequest(`/api/accounts/${encodeURIComponent(id)}`, { method: "DELETE", expectNoContent: true });
+        state.accounts = state.accounts.filter((a) => a.id !== id);
+        if (editingAccountId === id) resetAccountForm();
+        renderAccounts();
+        populateAccountSelector();
+        showMessage("app", "Conta removida.", "success");
+      } catch (error) {
+        showMessage("app", getErrorMessage(error, "Falha ao excluir conta."), "error");
+      }
+    }
+  }
+
+  function resetAccountForm() {
+    editingAccountId = null;
+    el.accountForm.reset();
+    el.accountColor.value = "#5e7fff";
+    el.accountSubmitBtn.textContent = "Criar Conta";
+    el.cancelAccountEditBtn.classList.add("hidden");
+  }
+
+  /* ── Monthly Report ──────────────────────────────────────── */
+  function renderMonthlyReport() {
+    const curMonth = state.selectedMonth;
+    const prevMonth = getMonthShift(curMonth, -1);
+    const curTx = getMonthlyTransactions(curMonth);
+    const prevTx = getMonthlyTransactions(prevMonth);
+
+    const curIncome = sumByType(curTx, "receita");
+    const prevIncome = sumByType(prevTx, "receita");
+    const curExpense = sumByType(curTx, "despesa");
+    const prevExpense = sumByType(prevTx, "despesa");
+    const curInvest = sumByType(curTx, "investimento");
+    const prevInvest = sumByType(prevTx, "investimento");
+    const curBalance = curIncome - curExpense - curInvest;
+    const prevBalance = prevIncome - prevExpense - prevInvest;
+
+    function changeInfo(cur, prev) {
+      if (prev === 0) return { pct: cur > 0 ? 100 : 0, cls: cur > 0 ? "up" : "neutral" };
+      const pct = ((cur - prev) / prev) * 100;
+      return { pct: round2(pct), cls: pct > 1 ? "up" : pct < -1 ? "down" : "neutral" };
+    }
+
+    const incChange = changeInfo(curIncome, prevIncome);
+    const expChange = changeInfo(curExpense, prevExpense);
+    const invChange = changeInfo(curInvest, prevInvest);
+    const balChange = changeInfo(curBalance, prevBalance);
+
+    const arrow = (cls) => cls === "up" ? "↑" : cls === "down" ? "↓" : "→";
+
+    // Category breakdown
+    const curCats = {};
+    curTx.filter((t) => t.type === "despesa").forEach((t) => { curCats[t.category] = (curCats[t.category] || 0) + t.amount; });
+    const prevCats = {};
+    prevTx.filter((t) => t.type === "despesa").forEach((t) => { prevCats[t.category] = (prevCats[t.category] || 0) + t.amount; });
+    const allCats = new Set([...Object.keys(curCats), ...Object.keys(prevCats)]);
+
+    let catHtml = "";
+    if (allCats.size > 0) {
+      catHtml = `<h3 class="section-title">Despesas por Categoria</h3><div class="report-category-list">` +
+        [...allCats].sort((a, b) => (curCats[b] || 0) - (curCats[a] || 0))
+          .map((c) => {
+            const cur = curCats[c] || 0;
+            const prev = prevCats[c] || 0;
+            const ch = changeInfo(cur, prev);
+            return `<div class="report-category-row">
+              <span>${escapeHtml(c)}</span>
+              <span>${formatCurrency(cur)} <span class="report-change ${ch.cls}">${arrow(ch.cls)} ${Math.abs(ch.pct).toFixed(0)}%</span> <small style="color:var(--text-muted)">vs ${formatCurrency(prev)}</small></span>
+            </div>`;
+          }).join("") + `</div>`;
+    }
+
+    el.reportContent.innerHTML = `
+      <div class="report-grid">
+        <div class="report-card">
+          <p>Receitas</p>
+          <div class="report-value">${formatCurrency(curIncome)}</div>
+          <div class="report-change ${incChange.cls}">${arrow(incChange.cls)} ${Math.abs(incChange.pct).toFixed(1)}% vs mês anterior</div>
+        </div>
+        <div class="report-card">
+          <p>Despesas</p>
+          <div class="report-value">${formatCurrency(curExpense)}</div>
+          <div class="report-change ${expChange.cls === "up" ? "down" : expChange.cls === "down" ? "up" : "neutral"}">${arrow(expChange.cls)} ${Math.abs(expChange.pct).toFixed(1)}%</div>
+        </div>
+        <div class="report-card">
+          <p>Investimentos</p>
+          <div class="report-value">${formatCurrency(curInvest)}</div>
+          <div class="report-change ${invChange.cls}">${arrow(invChange.cls)} ${Math.abs(invChange.pct).toFixed(1)}%</div>
+        </div>
+        <div class="report-card">
+          <p>Saldo Líquido</p>
+          <div class="report-value">${formatCurrency(curBalance)}</div>
+          <div class="report-change ${balChange.cls}">${arrow(balChange.cls)} ${Math.abs(balChange.pct).toFixed(1)}%</div>
+        </div>
+      </div>
+      ${catHtml}
+    `;
+  }
+
+  /* ── Installment Planner ─────────────────────────────────── */
+  function renderInstallmentPlan() {
+    const today = getTodayDate();
+    const currentMonth = state.selectedMonth;
+    const installmentTx = state.transactions.filter((t) => t.installments > 1);
+
+    if (!installmentTx.length) {
+      el.installmentsContent.innerHTML = '<p class="empty-state">Nenhuma compra parcelada encontrada.</p>';
+      return;
+    }
+
+    // Group future installments by month
+    const futureByMonth = {};
+    let totalFutureCommitment = 0;
+
+    installmentTx.forEach((t) => {
+      const [sy, sm] = t.date.slice(0, 7).split("-").map(Number);
+      for (let i = 0; i < t.installments; i++) {
+        const d = new Date(sy, sm - 1 + i, 1);
+        const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        if (m < currentMonth) continue;
+        if (!futureByMonth[m]) futureByMonth[m] = [];
+        futureByMonth[m].push({
+          description: t.description,
+          category: t.category,
+          amount: t.amount,
+          installment: i + 1,
+          total: t.installments,
+        });
+        totalFutureCommitment += t.amount;
+      }
+    });
+
+    const months = Object.keys(futureByMonth).sort();
+    if (!months.length) {
+      el.installmentsContent.innerHTML = '<p class="empty-state">Nenhuma parcela futura pendente.</p>';
+      return;
+    }
+
+    el.installmentsContent.innerHTML = `
+      <div style="margin-bottom:1rem">
+        <strong>Compromisso total futuro:</strong> <span class="negative">${formatCurrency(totalFutureCommitment)}</span>
+        <span style="color:var(--text-muted); margin-left:0.5rem">(${months.length} meses)</span>
+      </div>
+      <div class="installment-timeline">
+        ${months.map((m) => {
+          const items = futureByMonth[m];
+          const monthTotal = items.reduce((s, i) => s + i.amount, 0);
+          const isCurrentMonth = m === currentMonth;
+          return `<div class="installment-group" ${isCurrentMonth ? 'style="border-color:var(--primary)"' : ""}>
+            <h4>${formatMonthLabel(m)} ${isCurrentMonth ? "(atual)" : ""} — ${formatCurrency(monthTotal)}</h4>
+            ${items.map((i) => `<div class="installment-row">
+              <span class="inst-desc">${escapeHtml(i.description)}</span>
+              <span class="inst-info">${i.installment}/${i.total} · ${escapeHtml(i.category)}</span>
+              <span class="inst-amount negative">${formatCurrency(i.amount)}</span>
+            </div>`).join("")}
+          </div>`;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  /* ── Patrimônio Evolution Chart ────────────────────────── */
+  function renderPatrimonioEvolutionChart() {
+    if (!el.patrimonioEvolutionChart) return;
+    const theme = getChartTheme();
+    const months = getMonthSequence(state.selectedMonth, -11, 0);
+    const labels = months.map(formatMonthLabel);
+    const invStats = getInvestmentStats();
+    const data = months.map((m) => {
+      const cash = getClosingCash(m);
+      return round2(cash + invStats.totalInvested);
+    });
+
+    if (patrimonioChartInstance) patrimonioChartInstance.destroy();
+    patrimonioChartInstance = new Chart(el.patrimonioEvolutionChart, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          label: "Patrimônio Líquido",
+          data,
+          borderColor: theme.primary,
+          backgroundColor: withAlpha(theme.primary, 0.12),
+          fill: true, tension: 0.35, pointRadius: 3, pointHoverRadius: 6,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: theme.textMuted, font: { size: 11 } }, grid: { display: false } },
+          y: { ticks: { color: theme.textMuted, callback: (v) => formatAxisValue(v) }, grid: { color: theme.grid } },
+        },
+      },
+    });
+  }
+
+  /* ── Comparative Mode ──────────────────────────────────── */
+  function renderCompareContent() {
+    if (!el.compareContent || !el.compareMonth) return;
+    const compare = el.compareMonth.value;
+    if (!compare || !/^\d{4}-\d{2}$/.test(compare)) {
+      el.compareContent.innerHTML = '<p class="empty-state">Selecione um mês para comparar.</p>';
+      return;
+    }
+    const current = state.selectedMonth;
+    const txCur = getMonthlyTransactions(current);
+    const txCmp = getMonthlyTransactions(compare);
+    const sumCur = { income: sumByType(txCur, "receita"), expense: sumByType(txCur, "despesa"), investment: sumByType(txCur, "investimento") };
+    const sumCmp = { income: sumByType(txCmp, "receita"), expense: sumByType(txCmp, "despesa"), investment: sumByType(txCmp, "investimento") };
+
+    function diffBadge(a, b) {
+      if (b === 0) return "";
+      const pct = (((a - b) / Math.abs(b)) * 100).toFixed(1);
+      const cls = Number(pct) > 0 ? "up" : Number(pct) < 0 ? "down" : "neutral";
+      return `<span class="report-change ${cls}">${Number(pct) > 0 ? "+" : ""}${pct}%</span>`;
+    }
+
+    function colHtml(label, sum, tx) {
+      return `<div class="compare-col"><h4>${escapeHtml(label)}</h4>
+        <div class="report-grid">
+          <div class="report-card"><p>Receitas</p><div class="report-value positive">${formatCurrency(sum.income)}</div></div>
+          <div class="report-card"><p>Despesas</p><div class="report-value negative">${formatCurrency(sum.expense)}</div></div>
+          <div class="report-card"><p>Investimentos</p><div class="report-value warning">${formatCurrency(sum.investment)}</div></div>
+          <div class="report-card"><p>Saldo</p><div class="report-value">${formatCurrency(sum.income - sum.expense - sum.investment)}</div></div>
+        </div>
+        <p style="margin-top:.5rem;font-size:.82rem;color:var(--text-muted)">${tx.length} transações</p>
+      </div>`;
+    }
+
+    el.compareContent.innerHTML = `
+      <div class="compare-grid">
+        ${colHtml(formatMonthLabel(current), sumCur, txCur)}
+        ${colHtml(formatMonthLabel(compare), sumCmp, txCmp)}
+      </div>
+      <div class="report-grid" style="margin-top:1rem">
+        <div class="report-card"><p>Δ Receitas</p><div class="report-value">${formatCurrency(sumCur.income - sumCmp.income)}</div>${diffBadge(sumCur.income, sumCmp.income)}</div>
+        <div class="report-card"><p>Δ Despesas</p><div class="report-value">${formatCurrency(sumCur.expense - sumCmp.expense)}</div>${diffBadge(sumCur.expense, sumCmp.expense)}</div>
+        <div class="report-card"><p>Δ Investimentos</p><div class="report-value">${formatCurrency(sumCur.investment - sumCmp.investment)}</div>${diffBadge(sumCur.investment, sumCmp.investment)}</div>
+      </div>`;
+  }
+
+  /* ── PDF Export ─────────────────────────────────────────── */
+  async function exportPdf() {
+    if (typeof html2canvas === "undefined" || typeof jspdf === "undefined") {
+      showMessage("app", "Bibliotecas de PDF não carregadas. Recarregue a página.", "error");
+      return;
+    }
+    showMessage("app", "Gerando PDF… aguarde.", "info");
+    try {
+      // Captura o painel do relatório mensal
+      const target = el.reportPanel;
+      if (!target) { showMessage("app", "Painel de relatório não encontrado.", "error"); return; }
+
+      const canvas = await html2canvas(target, {
+        scale: 2,
+        backgroundColor: getCssVar("--surface") || "#0e1322",
+        useCORS: true,
+        scrollY: -window.scrollY,
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jspdf.jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const margin = 10;
+      const imgW = pageW - margin * 2;
+      const imgH = (canvas.height * imgW) / canvas.width;
+
+      // Multi-page: se a imagem for mais alta que uma página A4
+      let y = margin;
+      const usableH = pageH - margin * 2;
+      if (imgH <= usableH) {
+        pdf.addImage(imgData, "PNG", margin, y, imgW, imgH);
+      } else {
+        let remainingH = imgH;
+        while (remainingH > 0) {
+          pdf.addImage(imgData, "PNG", margin, y - (imgH - remainingH), imgW, imgH);
+          remainingH -= usableH;
+          if (remainingH > 0) {
+            pdf.addPage();
+            y = margin;
+          }
+        }
+      }
+
+      pdf.save(`relatorio-${state.selectedMonth}.pdf`);
+      showMessage("app", "PDF salvo como relatorio-" + state.selectedMonth + ".pdf", "success");
+    } catch (err) {
+      showMessage("app", "Erro ao gerar PDF: " + getErrorMessage(err), "error");
+    }
+  }
+
+  /* ── Drag & drop CSV helper ────────────────────────────── */
+  async function importCsvFile(file) {
+    try {
+      const text = await readFileAsText(file);
+      const parsed = parseTransactionsFromCsv(text);
+      if (!parsed.items.length) { showMessage("app", "Nenhuma transação encontrada no CSV.", "error"); return; }
+      let imported = 0, failed = 0;
+      for (const item of parsed.items) {
+        try {
+          state.transactions.push(normalizeTransaction(await apiRequest("/api/transactions", { method: "POST", body: toPayload(item, false) })));
+          imported++;
+        } catch { failed++; }
+      }
+      renderAll();
+      const ignored = parsed.skipped + failed;
+      showMessage("app", `${imported} importadas, ${ignored} ignoradas.`, failed > 0 ? "error" : "success");
+    } catch (err) {
+      showMessage("app", "Erro ao importar CSV: " + getErrorMessage(err), "error");
+    }
+  }
+
+  /* ── Projection (original) ─────────────────────────────── */
+  function hydrateProjectionForm() {
+    const p = normalizeProjection(state.projection);
+    state.projection = p;
+    el.projectionMonths.value = String(p.months);
+    el.projectionIncome.value = p.income ?? "";
+    el.projectionExpense.value = p.expense ?? "";
+    el.projectionInvestment.value = p.investment ?? "";
+  }
+
+  async function handleProjectionSubmit(event) {
+    event.preventDefault();
+    const months = Number(el.projectionMonths.value);
+    const income = parseOptionalNumber(el.projectionIncome.value);
+    const expense = parseOptionalNumber(el.projectionExpense.value);
+    const investment = parseOptionalNumber(el.projectionInvestment.value);
+
+    if (!Number.isInteger(months) || months < 1 || months > 24) {
+      showMessage("app", "Meses futuros: 1 a 24.", "error"); return;
+    }
+    if ([income, expense, investment].some((v) => v !== null && v < 0)) {
+      showMessage("app", "Valores não podem ser negativos.", "error"); return;
+    }
+    try {
+      const updated = normalizeProjection(await apiRequest("/api/projection", { method: "PUT", body: { months, income, expense, investment } }));
+      state.projection = updated;
+      hydrateProjectionForm();
+      renderProjectionSummary();
+      renderCharts();
+      showMessage("app", "Projeção atualizada.", "success");
+    } catch (error) {
+      showMessage("app", getErrorMessage(error, "Falha ao atualizar projeção."), "error");
+    }
+  }
+
+  function renderProjectionSummary() {
+    const m = buildProjectionModel();
+    const outflow = m.expectedExpense + m.expectedInvestment;
+    const label = m.expectedNet >= 0 ? "Crescimento mensal esperado" : "Redução mensal esperada";
+    const horizon = m.futureMonths[m.futureMonths.length - 1] || state.selectedMonth;
+
+    let yieldHtml = "";
+    if (m.investedCapital > 0 && m.avgYieldRate > 0) {
+      yieldHtml = `
+        <article class="summary-pill"><p>Patrimônio investido</p><strong class="warning">${formatCurrency(m.investedCapital)}</strong></article>
+        <article class="summary-pill"><p>Rend. mensal estimado</p><strong class="positive">${formatCurrency(m.estimatedMonthlyYield)} (${m.avgYieldRate.toFixed(2)}%)</strong></article>
+        <article class="summary-pill"><p>Rendimentos acum. (${m.futureMonths.length}m)</p><strong class="positive">${formatCurrency(m.totalProjectedYields)}</strong></article>
+        <article class="summary-pill"><p>Patrimônio projetado em ${formatMonthLabel(horizon)}</p><strong>${formatCurrency(m.projectedEndPatrimonio)}</strong></article>
+      `;
+    } else if (m.investedCapital > 0) {
+      yieldHtml = `
+        <article class="summary-pill"><p>Patrimônio investido</p><strong class="warning">${formatCurrency(m.investedCapital)}</strong></article>
+        <article class="summary-pill"><p>Rend. mensal estimado</p><strong>Defina rendimentos na carteira</strong></article>
+      `;
+    }
+
+    el.projectionSummary.innerHTML = `
+      <article class="summary-pill"><p>Saldo de caixa atual</p><strong>${formatCurrency(m.currentCash)}</strong></article>
+      <article class="summary-pill"><p>Receita mensal esperada</p><strong>${formatCurrency(m.expectedIncome)}</strong></article>
+      <article class="summary-pill"><p>Saída mensal esperada</p><strong>${formatCurrency(outflow)}</strong></article>
+      <article class="summary-pill"><p>${label}</p><strong>${formatCurrency(m.expectedNet)}</strong></article>
+      <article class="summary-pill"><p>Caixa projetado em ${formatMonthLabel(horizon)}</p><strong>${formatCurrency(m.projectedEndCash)}</strong></article>
+      ${yieldHtml}
+      <article class="summary-pill"><p>Base de cálculo</p><strong>${escapeHtml(m.basisDescription)}</strong></article>
+    `;
+  }
+
+  function buildProjectionModel() {
+    const p = normalizeProjection(state.projection);
+    const historyMonths = getMonthSequence(state.selectedMonth, -5, 0);
+    const futureMonths = getMonthSequence(state.selectedMonth, 1, p.months);
+    const monthlyMap = getMonthlySummaryMap(state.transactions);
+    const avgMonths = getMonthSequence(state.selectedMonth, -2, 0);
+    const avg = getAverageMonthlyFlow(monthlyMap, avgMonths);
+
+    const expectedIncome = p.income ?? avg.income;
+    const expectedExpense = p.expense ?? avg.expense;
+    const expectedInvestment = p.investment ?? avg.investment;
+    const expectedNet = round2(expectedIncome - expectedExpense - expectedInvestment);
+
+    // Investment yield projection
+    const investStats = getInvestmentStats();
+    const rate = investStats.avgMonthlyRate;
+
+    const labels = historyMonths.concat(futureMonths).map(formatMonthLabel);
+    const actual = historyMonths.map((m) => round2(getClosingCash(m)));
+    futureMonths.forEach(() => actual.push(null));
+
+    const projected = new Array(labels.length).fill(null);
+    const projectedPatrimonio = new Array(labels.length).fill(null);
+    const startIdx = historyMonths.length - 1;
+    let rolling = round2(getClosingCash(state.selectedMonth));
+    projected[startIdx] = rolling;
+
+    // Patrimônio = caixa + capital investido (investimento é ativo, não perda)
+    let investedCapital = investStats.totalInvested;
+    projectedPatrimonio[startIdx] = round2(rolling + investedCapital);
+    let totalYields = 0;
+
+    for (let i = startIdx + 1; i < projected.length; i++) {
+      rolling = round2(rolling + expectedNet);
+      projected[i] = rolling;
+      // Capital investido cresce com novo aporte mensal + rendimento composto
+      const monthlyYield = round2(investedCapital * rate);
+      investedCapital = round2(investedCapital + expectedInvestment + monthlyYield);
+      totalYields += monthlyYield;
+      projectedPatrimonio[i] = round2(rolling + investedCapital);
+    }
+
+    return {
+      labels, actual, projected, projectedPatrimonio,
+      expectedIncome, expectedExpense, expectedInvestment, expectedNet,
+      projectedEndCash: rolling,
+      projectedEndPatrimonio: projectedPatrimonio[projectedPatrimonio.length - 1] || round2(rolling + investedCapital),
+      currentCash: round2(getClosingCash(state.selectedMonth)),
+      currentPatrimonio: round2(rolling + investStats.totalInvested),
+      investedCapital: investStats.totalInvested,
+      avgYieldRate: round2(rate * 10000) / 100,
+      estimatedMonthlyYield: investStats.estimatedMonthlyYield,
+      totalProjectedYields: round2(totalYields),
+      futureMonths, basisDescription: getProjectionBasis(p, avg),
+    };
+  }
+
+  /* ── Charts ──────────────────────────────────────────────── */
+  function renderCharts() {
+    const monthly = getMonthlyTransactions(state.selectedMonth);
+    renderCashFlowChart(monthly);
+    renderExpenseChart(monthly);
+    if (currentPage === "projection") {
+      renderProjectionChart(buildProjectionModel());
+    }
+  }
+
+  function formatAxisValue(value) {
+    const abs = Math.abs(value);
+    const sign = value < 0 ? "-" : "";
+    if (abs >= 1_000_000) return `${sign}R$ ${(abs / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}M`;
+    if (abs >= 1_000) return `${sign}R$ ${(abs / 1_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k`;
+    return `${sign}R$ ${Math.round(abs).toLocaleString("pt-BR")}`;
+  }
+
+  function getYAxisConfig(theme, dataArrays) {
+    const allValues = dataArrays.flat().filter((v) => v != null && Number.isFinite(v));
+    const maxAbs = allValues.length > 0 ? Math.max(...allValues.map(Math.abs)) : 0;
+    const suggestedMax = maxAbs < 10 ? 100 : undefined;
+    return {
+      grid: { color: theme.gridColor },
+      ticks: {
+        color: theme.labelColor,
+        callback: (v) => formatAxisValue(Number(v)),
+        maxTicksLimit: 7,
+        precision: 0,
+        font: { size: 12 },
+        padding: 4,
+      },
+      beginAtZero: true,
+      suggestedMax,
+    };
+  }
+
+  function renderCashFlowChart(transactions) {
+    if (typeof Chart === "undefined") return;
+    const [y, m] = state.selectedMonth.split("-").map(Number);
+    const days = new Date(y, m, 0).getDate();
+    const daily = new Array(days).fill(0);
+    const dailyPatri = new Array(days).fill(0);
+    transactions.forEach((t) => {
+      const d = Number(t.date.slice(8, 10)) - 1;
+      if (d >= 0 && d < days) {
+        daily[d] += (t.type === "receita" ? 1 : -1) * t.amount;
+        // Patrimônio: investimento é transferência (não saída), despesa é saída
+        if (t.type === "receita") dailyPatri[d] += t.amount;
+        else if (t.type === "despesa") dailyPatri[d] -= t.amount;
+        // investimento: 0 no patrimônio (ativo transferido)
+      }
+    });
+    const labels = [], cumulative = [], patriCumulative = [];
+    let running = 0, patriRunning = 0;
+    const investStats = getInvestmentStats();
+    const dailyYield = days > 0 ? investStats.estimatedMonthlyYield / days : 0;
+    for (let i = 0; i < days; i++) {
+      running += daily[i];
+      patriRunning += dailyPatri[i] + dailyYield;
+      cumulative.push(round2(running));
+      patriCumulative.push(round2(patriRunning));
+      labels.push(String(i + 1).padStart(2, "0"));
+    }
+    const theme = getChartTheme();
+    const pos = cumulative[cumulative.length - 1] >= 0;
+    const datasets = [
+      { label: "Fluxo de caixa", data: cumulative, borderColor: pos ? theme.positiveColor : theme.negativeColor, backgroundColor: pos ? theme.positiveFill : theme.negativeFill, fill: true, tension: 0.3, pointRadius: 1, pointHoverRadius: 5, borderWidth: 2 },
+    ];
+    if (investStats.totalInvested > 0) {
+      datasets.push({ label: "Patrimônio (c/ rendimentos)", data: patriCumulative, borderColor: theme.patrimonioColor, backgroundColor: "transparent", borderDash: [4, 3], tension: 0.3, pointRadius: 1, pointHoverRadius: 5, borderWidth: 2, fill: false });
+    }
+    const allData = [cumulative];
+    if (investStats.totalInvested > 0) allData.push(patriCumulative);
+    if (cashFlowChartInstance) cashFlowChartInstance.destroy();
+    cashFlowChartInstance = new Chart(el.cashFlowChart.getContext("2d"), {
+      type: "line",
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: { padding: { left: 4, right: 12, top: 8, bottom: 4 } },
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: datasets.length > 1, labels: { color: theme.labelColor, usePointStyle: true, boxWidth: 8, padding: 12, font: { size: 11 } } },
+          tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${formatCurrency(c.parsed.y || 0)}` } },
+        },
+        scales: {
+          x: { grid: { color: theme.gridColor }, ticks: { color: theme.labelColor, maxTicksLimit: 10, font: { size: 11 } } },
+          y: getYAxisConfig(theme, allData),
+        },
+      },
+    });
+  }
+
+  function renderProjectionChart(model) {
+    if (typeof Chart === "undefined") return;
+    const theme = getChartTheme();
+    if (projectionChartInstance) projectionChartInstance.destroy();
+    const datasets = [
+      { label: "Saldo real", data: model.actual, borderColor: theme.actualColor, backgroundColor: "transparent", pointRadius: 4, pointHoverRadius: 6, tension: 0.2, spanGaps: false, borderWidth: 2 },
+      { label: "Caixa projetado", data: model.projected, borderColor: theme.projectedColor, backgroundColor: theme.projectedFill, borderDash: [6, 4], pointRadius: 4, pointHoverRadius: 6, fill: true, tension: 0.2, spanGaps: false, borderWidth: 2 },
+    ];
+    const yData = [model.actual, model.projected];
+    if (model.investedCapital > 0) {
+      datasets.push({ label: "Patrimônio projetado", data: model.projectedPatrimonio, borderColor: theme.patrimonioColor, backgroundColor: theme.patrimonioFill, borderDash: [3, 3], pointRadius: 3, pointHoverRadius: 5, fill: false, tension: 0.2, spanGaps: false, borderWidth: 2 });
+      yData.push(model.projectedPatrimonio);
+    }
+    projectionChartInstance = new Chart(el.projectionChart.getContext("2d"), {
+      type: "line",
+      data: { labels: model.labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: { padding: { left: 4, right: 12, top: 8, bottom: 4 } },
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { labels: { color: theme.labelColor, usePointStyle: true, boxWidth: 8, padding: 16, font: { size: 12 } } },
+          tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${formatCurrency(c.parsed.y || 0)}` } },
+        },
+        scales: {
+          x: { grid: { color: theme.gridColor }, ticks: { color: theme.labelColor, maxRotation: 45, minRotation: 0, font: { size: 11 } } },
+          y: getYAxisConfig(theme, yData),
+        },
+      },
+    });
+  }
+
+  function renderExpenseChart(transactions) {
+    if (typeof Chart === "undefined") return;
+    const totals = {};
+    transactions.filter((t) => t.type === "despesa").forEach((t) => { totals[t.category] = (totals[t.category] || 0) + t.amount; });
+    let labels = Object.keys(totals), values = labels.map((l) => totals[l]);
+    const hasData = values.length > 0;
+    if (!hasData) { labels = ["Sem despesas"]; values = [1]; }
+    const theme = getChartTheme();
+    const colors = getChartColors(labels.length);
+    if (expenseChartInstance) expenseChartInstance.destroy();
+    expenseChartInstance = new Chart(el.expenseByCategoryChart.getContext("2d"), {
+      type: "doughnut",
+      data: { labels, datasets: [{ data: values, borderWidth: 2, borderColor: theme.surfaceBorder, backgroundColor: hasData ? colors : [theme.emptyColor] }] },
+      options: { responsive: true, maintainAspectRatio: false, cutout: "62%", plugins: { legend: { position: "bottom", labels: { color: theme.labelColor, usePointStyle: true, boxWidth: 8, padding: 14 } }, tooltip: { callbacks: { label: (c) => { if (!hasData) return "Sem dados"; const total = values.reduce((s, v) => s + v, 0); return `${c.label}: ${formatCurrency(c.parsed || 0)} (${total > 0 ? ((c.parsed / total) * 100).toFixed(1) : "0.0"}%)`; } } } } },
+    });
+  }
+
+  /* ── CSV ──────────────────────────────────────────────────── */
+  function exportCsv() {
+    if (!state.transactions.length) { showMessage("app", "Sem movimentações para exportar.", "error"); return; }
+    const headers = ["id", "date", "type", "category", "method", "description", "amount", "recurrence", "recurrenceEnd", "installments", "createdAt"];
+    const rows = state.transactions.map((t) => [t.id, t.date, t.type, t.category, t.method, t.description, t.amount.toFixed(2), t.recurrence || "none", t.recurrenceEnd || "", t.installments || 0, t.createdAt]);
+    const csv = [headers.join(",")].concat(rows.map((r) => r.map(csvEscape).join(","))).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement("a"), { href: url, download: `movimentacoes-${state.selectedMonth}.csv` });
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    showMessage("app", "CSV exportado.", "success");
+  }
+
+  async function importCsv(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await readFileAsText(file);
+      const parsed = parseTransactionsFromCsv(text);
+      if (!parsed.items.length) { showMessage("app", "Nenhuma movimentação válida no CSV.", "error"); return; }
+      let imported = 0, failed = 0;
+      for (const item of parsed.items) {
+        try {
+          state.transactions.push(normalizeTransaction(await apiRequest("/api/transactions", { method: "POST", body: toPayload(item, false) })));
+          imported++;
+        } catch { failed++; }
+      }
+      renderAll();
+      const ignored = parsed.skipped + failed;
+      showMessage("app", `${imported} importadas, ${ignored} ignoradas.`, failed > 0 ? "error" : "success");
+    } catch (error) {
+      showMessage("app", getErrorMessage(error, "Falha ao importar CSV."), "error");
+    } finally { event.target.value = ""; }
+  }
+
+  function parseTransactionsFromCsv(csvText) {
+    const lines = csvText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 2) throw new Error("CSV vazio.");
+    const headers = parseCsvLine(lines[0]).map(normalizeHeader);
+    const idx = {
+      id: findHeaderIdx(headers, ["id"]),
+      date: findHeaderIdx(headers, ["date", "data"]),
+      type: findHeaderIdx(headers, ["type", "tipo"]),
+      category: findHeaderIdx(headers, ["category", "categoria"]),
+      method: findHeaderIdx(headers, ["method", "metodo", "metododepagamento", "pagamento"]),
+      description: findHeaderIdx(headers, ["description", "descricao"]),
+      amount: findHeaderIdx(headers, ["amount", "valor"]),
+      recurrence: findHeaderIdx(headers, ["recurrence", "recorrencia"]),
+      recurrenceEnd: findHeaderIdx(headers, ["recurrenceend", "recurrence_end", "fimrecorrencia"]),
+      installments: findHeaderIdx(headers, ["installments", "parcelas"]),
+      createdAt: findHeaderIdx(headers, ["createdat", "created_at"]),
+    };
+    if ([idx.date, idx.type, idx.category, idx.method, idx.description, idx.amount].some((i) => i < 0)) throw new Error("Cabeçalho CSV inválido.");
+    const items = []; let skipped = 0;
+    lines.slice(1).forEach((line) => {
+      const cols = parseCsvLine(line);
+      const item = normalizeTransaction({
+        id: idx.id >= 0 ? String(cols[idx.id] || "") : "",
+        date: String(cols[idx.date] || ""), type: String(cols[idx.type] || ""),
+        category: String(cols[idx.category] || ""), method: String(cols[idx.method] || ""),
+        description: String(cols[idx.description] || ""),
+        amount: parseFlexibleNumber(cols[idx.amount]),
+        recurrence: idx.recurrence >= 0 ? String(cols[idx.recurrence] || "none") : "none",
+        recurrenceEnd: idx.recurrenceEnd >= 0 ? String(cols[idx.recurrenceEnd] || "") : "",
+        installments: idx.installments >= 0 ? Number(cols[idx.installments]) || 0 : 0,
+        createdAt: idx.createdAt >= 0 ? String(cols[idx.createdAt] || new Date().toISOString()) : new Date().toISOString(),
+      });
+      isValidTransaction(item) ? items.push(item) : skipped++;
+    });
+    return { items, skipped };
+  }
+
+  /* ── API ─────────────────────────────────────────────────── */
+  async function apiRequest(path, options = {}) {
+    const method = options.method || "GET";
+    const expectNoContent = Boolean(options.expectNoContent);
+    const useAuth = options.auth !== false;
+    const ctrl = new AbortController();
+    const tid = window.setTimeout(() => ctrl.abort(), API_TIMEOUT_MS);
+    try {
+      const headers = {};
+      if (options.body) headers["Content-Type"] = "application/json";
+      if (useAuth && state.token) headers.Authorization = `Bearer ${state.token}`;
+      const res = await fetch(`${API_BASE_URL}${path}`, {
+        method, headers, body: options.body ? JSON.stringify(options.body) : undefined, signal: ctrl.signal,
+      });
+      if (expectNoContent && res.status === 204) return null;
+      const ct = res.headers.get("content-type") || "";
+      const data = ct.includes("application/json") ? await res.json() : null;
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      return data;
+    } catch (error) {
+      if (error?.name === "AbortError") throw new Error("Tempo de resposta excedido.");
+      throw error;
+    } finally { window.clearTimeout(tid); }
+  }
+
+  function resolveApiBaseUrl() {
+    const custom = String(window.GESTAO_API_URL || window.__GESTAO_API_URL || "").replace(/\s+/g, " ").trim();
+    if (custom) return custom.replace(/\/+$/, "");
+    const { protocol, hostname } = window.location || {};
+    // Local dev: same host, port 8080.  Production (Vercel): same-origin via rewrites proxy.
+    if (hostname === "localhost" || hostname === "127.0.0.1") {
+      return `${protocol}//${hostname}:8080`;
+    }
+    return ""; // same-origin — Vercel rewrites proxy /api/* to Fly.io
+  }
+
+  /* ── Helpers ─────────────────────────────────────────────── */
+  function shiftMonth(offset) {
+    const [y, m] = state.selectedMonth.split("-").map(Number);
+    const d = new Date(y, m - 1 + offset, 1);
+    state.selectedMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    el.monthPicker.value = state.selectedMonth;
+    renderAll();
+  }
+
+  function showMessage(scope, message, type) {
+    const target = scope === "auth" ? el.authMessage : el.appMessage;
+    target.textContent = normalizeString(message);
+    target.classList.remove("success", "error");
+    if (type) target.classList.add(type);
+  }
+
+  function getErrorMessage(error, fallback) {
+    const text = normalizeString(String(error?.message || ""));
+    return text ? `${fallback} (${text})` : fallback;
+  }
+
+  function toPayload(t, preserveId) {
+    const p = { date: t.date, type: t.type, category: t.category, method: t.method, description: t.description, amount: Number(t.amount), recurrence: t.recurrence || "none", recurrenceEnd: t.recurrenceEnd || "", installments: Number(t.installments) || 0 };
+    if (preserveId && t.id) p.id = t.id;
+    return p;
+  }
+
+  /* ── Normalizers ─────────────────────────────────────────── */
+  function normalizeUser(u) {
+    return { id: normalizeString(String(u?.id || "")), name: normalizeString(u?.name || "") || "Usuário", email: normalizeString(String(u?.email || "")) };
+  }
+
+  function normalizeTransaction(t) {
+    return {
+      id: normalizeString(String(t?.id || createId())), date: normalizeString(String(t?.date || "")),
+      type: normalizeString(String(t?.type || "")).toLowerCase(), category: normalizeCategory(String(t?.category || "")),
+      method: normalizeString(String(t?.method || "")).toLowerCase(), description: normalizeString(String(t?.description || "")),
+      amount: Number(t?.amount), createdAt: normalizeString(String(t?.createdAt || t?.created_at || new Date().toISOString())),
+      updatedAt: normalizeString(String(t?.updatedAt || t?.updated_at || new Date().toISOString())),
+      recurrence: normalizeString(String(t?.recurrence || "none")),
+      recurrenceEnd: normalizeString(String(t?.recurrenceEnd || t?.recurrence_end || "")),
+      installments: Number(t?.installments) || 0,
+      accountId: normalizeString(String(t?.accountId || t?.account_id || "")),
+    };
+  }
+
+  function normalizeBudget(b) {
+    return { id: normalizeString(String(b?.id || createId())), category: normalizeCategory(String(b?.category || "")), limit: Number(b?.limit), createdAt: normalizeString(String(b?.createdAt || b?.created_at || "")), updatedAt: normalizeString(String(b?.updatedAt || b?.updated_at || "")) };
+  }
+
+  function normalizeGoal(g) {
+    return { id: normalizeString(String(g?.id || createId())), name: normalizeString(String(g?.name || "")), target: Number(g?.target), current: Number(g?.current), dueDate: normalizeString(String(g?.dueDate || g?.due_date || "")), createdAt: normalizeString(String(g?.createdAt || g?.created_at || "")), updatedAt: normalizeString(String(g?.updatedAt || g?.updated_at || "")) };
+  }
+
+  function normalizeProjection(p) {
+    const months = clamp(Number.isInteger(Number(p?.months)) ? Number(p.months) : 6, 1, 24);
+    const income = parseOptionalNumber(p?.income);
+    const expense = parseOptionalNumber(p?.expense);
+    const investment = parseOptionalNumber(p?.investment);
+    return { months, income: income !== null && income >= 0 ? round2(income) : null, expense: expense !== null && expense >= 0 ? round2(expense) : null, investment: investment !== null && investment >= 0 ? round2(investment) : null, updatedAt: normalizeString(String(p?.updatedAt || p?.updated_at || "")) };
+  }
+
+  /* ── Validators ──────────────────────────────────────────── */
+  function isValidTransaction(t) {
+    if (!t || typeof t !== "object") return false;
+    if (t.id != null && !normalizeString(t.id)) return false;
+    if (!isValidDate(t.date)) return false;
+    if (!["receita", "despesa", "investimento"].includes(t.type)) return false;
+    if (!normalizeString(t.category) || !METHOD_LABELS[t.method]) return false;
+    if (!normalizeString(t.description)) return false;
+    return Number.isFinite(t.amount) && t.amount > 0;
+  }
+
+  function isValidBudget(b) {
+    if (!b || typeof b !== "object") return false;
+    if (b.id != null && !normalizeString(b.id)) return false;
+    return Boolean(normalizeString(b.category)) && Number.isFinite(b.limit) && b.limit > 0;
+  }
+
+  function isValidGoal(g) {
+    if (!g || typeof g !== "object") return false;
+    if (g.id != null && !normalizeString(g.id)) return false;
+    if (!normalizeString(g.name)) return false;
+    if (!Number.isFinite(g.target) || g.target <= 0) return false;
+    if (!Number.isFinite(g.current) || g.current < 0) return false;
+    if (g.dueDate && !isValidDate(g.dueDate)) return false;
+    return true;
+  }
+
+  /* ── Date / Format Utilities ─────────────────────────────── */
+  function getCurrentMonth() { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`; }
+  function getTodayDate() { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`; }
+
+  function isValidDate(v) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v))) return false;
+    const [y, m, d] = String(v).split("-").map(Number);
+    const date = new Date(y, m - 1, d);
+    return date.getFullYear() === y && date.getMonth() + 1 === m && date.getDate() === d;
+  }
+
+  function formatDate(v) { const [y, m, d] = String(v).split("-"); return d && m && y ? `${d}/${m}/${y}` : v; }
+  function formatCurrency(v) { return CURRENCY.format(Number(v) || 0); }
+  function formatMonthLabel(mv) { const [y, m] = mv.split("-"); const d = new Date(Number(y), Number(m) - 1, 1); return `${d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "")}/${String(d.getFullYear()).slice(-2)}`; }
+
+  function formatGoalDueDate(dueDate) {
+    const today = new Date(`${getTodayDate()}T00:00:00`);
+    const due = new Date(`${dueDate}T00:00:00`);
+    const diff = Math.ceil((due - today) / 86400000);
+    if (diff === 0) return `Vence hoje (${formatDate(dueDate)})`;
+    if (diff > 0) return `Vence em ${diff} dias (${formatDate(dueDate)})`;
+    return `Venceu há ${Math.abs(diff)} dias (${formatDate(dueDate)})`;
+  }
+
+  /* ── Month Sequence Helpers ──────────────────────────────── */
+  function getMonthSequence(base, start, end) { const seq = []; for (let o = start; o <= end; o++) seq.push(getMonthShift(base, o)); return seq; }
+  function getMonthShift(base, offset) { const [y, m] = base.split("-").map(Number); const d = new Date(y, m - 1 + offset, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }
+
+  function getMonthlySummaryMap(transactions) {
+    // Build a set of months from -5 to 0 relative to selected month to expand recurrences
+    const map = new Map();
+    const historyMonths = getMonthSequence(state.selectedMonth, -5, 0);
+    historyMonths.forEach((m) => {
+      const expanded = getMonthlyTransactions(m);
+      expanded.forEach((t) => {
+        const c = map.get(m) || { income: 0, expense: 0, investment: 0 };
+        if (t.type === "receita") c.income += t.amount;
+        else if (t.type === "despesa") c.expense += t.amount;
+        else if (t.type === "investimento") c.investment += t.amount;
+        map.set(m, c);
+      });
+    });
+    return map;
+  }
+
+  function getAverageMonthlyFlow(map, months) {
+    let inc = 0, exp = 0, inv = 0, pts = 0;
+    months.forEach((m) => { const s = map.get(m); if (!s) return; inc += s.income; exp += s.expense; inv += s.investment; pts++; });
+    return pts ? { income: round2(inc / pts), expense: round2(exp / pts), investment: round2(inv / pts) } : { income: 0, expense: 0, investment: 0 };
+  }
+
+  function getClosingCash(month) {
+    // Expand all months up to target and accumulate
+    let cash = 0;
+    // Collect all unique months from earliest transaction to target month
+    const months = new Set();
+    state.transactions.forEach((t) => {
+      const m = t.date.slice(0, 7);
+      if (m <= month) months.add(m);
+    });
+    // Also add months between earliest recurring start and target
+    state.transactions.forEach((t) => {
+      if (t.recurrence === "monthly" || t.installments > 1) {
+        const start = t.date.slice(0, 7);
+        let cur = start;
+        while (cur <= month) {
+          months.add(cur);
+          cur = getMonthShift(cur, 1);
+        }
+      }
+    });
+    const sortedMonths = [...months].sort();
+    sortedMonths.forEach((m) => {
+      const expanded = getMonthlyTransactions(m);
+      expanded.forEach((t) => {
+        cash += t.type === "receita" ? t.amount : -t.amount;
+      });
+    });
+    return round2(cash);
+  }
+
+  function getProjectionBasis(proj, avg) {
+    const i = proj.income !== null ? `Receita: ${formatCurrency(proj.income)}` : `Receita média: ${formatCurrency(avg.income)}`;
+    const e = proj.expense !== null ? `Despesa: ${formatCurrency(proj.expense)}` : `Despesa média: ${formatCurrency(avg.expense)}`;
+    const v = proj.investment !== null ? `Invest.: ${formatCurrency(proj.investment)}` : `Invest. médio: ${formatCurrency(avg.investment)}`;
+    return `${i} / ${e} / ${v}`;
+  }
+
+  /* ── Chart Theme ─────────────────────────────────────────── */
+  function getChartTheme() {
+    return {
+      labelColor: getCssVar("--text-secondary"), gridColor: withAlpha(getCssVar("--text-muted"), 0.15),
+      positiveColor: getCssVar("--success"), negativeColor: getCssVar("--danger"),
+      positiveFill: withAlpha(getCssVar("--success"), 0.12), negativeFill: withAlpha(getCssVar("--danger"), 0.12),
+      projectedColor: getCssVar("--primary-soft"), projectedFill: withAlpha(getCssVar("--primary"), 0.1),
+      actualColor: getCssVar("--primary"), surfaceBorder: getCssVar("--border"), emptyColor: withAlpha(getCssVar("--text-muted"), 0.25),
+      patrimonioColor: getCssVar("--warning"), patrimonioFill: withAlpha(getCssVar("--warning"), 0.08),
+    };
+  }
+
+  function getCssVar(name) { return getComputedStyle(document.body).getPropertyValue(name).trim(); }
+
+  function withAlpha(color, alpha) {
+    const v = String(color || "").trim();
+    if (!v) return `rgba(99,110,124,${alpha})`;
+    if (v.startsWith("#")) {
+      const hex = v.slice(1); const n = hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex;
+      const [r, g, b] = [n.slice(0, 2), n.slice(2, 4), n.slice(4, 6)].map((h) => parseInt(h, 16));
+      return [r, g, b].some(isNaN) ? `rgba(99,110,124,${alpha})` : `rgba(${r},${g},${b},${alpha})`;
+    }
+    if (v.startsWith("rgb(")) { const p = v.replace("rgb(", "").replace(")", "").split(",").map((s) => parseInt(s.trim(), 10)); return p.length === 3 && !p.some(isNaN) ? `rgba(${p[0]},${p[1]},${p[2]},${alpha})` : `rgba(99,110,124,${alpha})`; }
+    return v.startsWith("rgba(") ? v : `rgba(99,110,124,${alpha})`;
+  }
+
+  function getChartColors(q) {
+    const palette = ["#5e7fff", "#7b59ff", "#10d884", "#ff5a65", "#f5b74e", "#48b8ff", "#22c55e", "#ef4444", "#14b8a6", "#f97316"];
+    return Array.from({ length: q }, (_, i) => palette[i % palette.length]);
+  }
+
+  /* ── String Utilities ────────────────────────────────────── */
+  function normalizeString(v) { return String(v || "").replace(/\s+/g, " ").trim(); }
+  function normalizeCategory(v) { const n = normalizeString(v); return n ? n.split(" ").map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ") : ""; }
+  function getMethodLabel(m) { return METHOD_LABELS[m] || m; }
+  function parseOptionalNumber(v) { if (v == null) return null; const n = typeof v === "number" ? v : Number(String(v).trim()); return Number.isFinite(n) ? n : null; }
+  function round2(n) { return Number(n.toFixed(2)); }
+  function clamp(v, min, max) { return Math.min(Math.max(v, min), max); }
+  function createId() { return window.crypto?.randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
+  function escapeHtml(v) { return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
+
+  function normalizeHeader(v) { return normalizeString(String(v || "")).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s_-]+/g, ""); }
+  function findHeaderIdx(headers, aliases) { for (const a of aliases) { const i = headers.indexOf(a); if (i >= 0) return i; } return -1; }
+
+  function parseFlexibleNumber(v) {
+    const t = String(v ?? "").replace(/[^\d,.\-]/g, "").trim();
+    if (!t) return NaN;
+    let n = t;
+    if (t.includes(",") && t.includes(".")) n = t.replace(/\./g, "").replace(",", ".");
+    else if (t.includes(",") && !t.includes(".")) n = t.replace(",", ".");
+    return Number(n);
+  }
+
+  function parseCsvLine(line) {
+    const vals = []; let cur = "", inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { if (inQ && line[i + 1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+      else if (c === "," && !inQ) { vals.push(cur); cur = ""; }
+      else cur += c;
+    }
+    vals.push(cur); return vals;
+  }
+
+  function csvEscape(v) { const t = String(v ?? ""); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; }
+  function readFileAsText(f) { return new Promise((res, rej) => { const r = new FileReader(); r.onerror = () => rej(new Error("Falha ao ler arquivo.")); r.onload = () => res(String(r.result || "")); r.readAsText(f); }); }
+
+  /* ── Frontend Error Logging ────────────────────────────── */
+  function logToBackend(level, message, extra) {
+    try {
+      const body = JSON.stringify({ level, message, url: location.href, ua: navigator.userAgent, ...extra });
+      navigator.sendBeacon?.(API_BASE_URL + "/api/log", new Blob([body], { type: "application/json" }))
+        || fetch(API_BASE_URL + "/api/log", { method: "POST", body, headers: { "Content-Type": "application/json" }, keepalive: true }).catch(() => {});
+    } catch (_) { /* silent */ }
+  }
+
+  window.addEventListener("error", (e) => {
+    logToBackend("error", e.message || "uncaught error", { stack: e.error?.stack });
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    logToBackend("error", String(e.reason || "unhandled promise rejection"), { stack: e.reason?.stack });
+  });
+
+})();
