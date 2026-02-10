@@ -1327,14 +1327,21 @@
 
   /* ── Categories CRUD ─────────────────────────────────────── */
   function populateCategorySelect() {
-    const sel = el.transactionCategory;
-    const prevVal = sel.value;
     const cats = state.categories.length > 0 ? state.categories : [];
     const usedCats = new Set(state.transactions.map((t) => t.category));
     const all = new Set([...cats.map((c) => c.name), ...usedCats]);
     const sorted = [...all].sort((a, b) => a.localeCompare(b, "pt-BR"));
-    sel.innerHTML = `<option value="" disabled selected>Selecione...</option>` + sorted.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
-    if (prevVal && sorted.includes(prevVal)) sel.value = prevVal;
+    const options = `<option value="" disabled selected>Selecione...</option>` + sorted.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+
+    // Transaction category
+    const prevTx = el.transactionCategory.value;
+    el.transactionCategory.innerHTML = options;
+    if (prevTx && sorted.includes(prevTx)) el.transactionCategory.value = prevTx;
+
+    // Budget category
+    const prevBudget = el.budgetCategory.value;
+    el.budgetCategory.innerHTML = options;
+    if (prevBudget && sorted.includes(prevBudget)) el.budgetCategory.value = prevBudget;
   }
 
   function renderCategories() {
