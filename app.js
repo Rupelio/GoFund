@@ -646,6 +646,7 @@
     const income = sumByType(monthly, "receita");
     const expense = sumByType(monthly, "despesa");
     const investment = sumByType(monthly, "investimento");
+    const transfer = sumByType(monthly, "transferencia");
     el.kpiBalance.textContent = formatCurrency(income - expense - investment);
     el.kpiIncome.textContent = formatCurrency(income);
     el.kpiExpense.textContent = formatCurrency(expense);
@@ -742,9 +743,9 @@
 
     // Render table rows (desktop)
     el.transactionsTableBody.innerHTML = pageItems.map((t) => {
-      const cls = t.type === "receita" ? "value-income" : t.type === "despesa" ? "value-expense" : "value-investment";
+      const cls = t.type === "receita" ? "value-income" : t.type === "despesa" ? "value-expense" : t.type === "transferencia" ? "value-transfer" : "value-investment";
       const sign = t.type === "receita" ? "+" : "-";
-      let badges = `<span class="tag ${t.type}">${t.type}</span>`;
+      let badges = `<span class="tag ${t.type}">${t.type === "transferencia" ? "transferência" : t.type}</span>`;
       if (t.recurrence === "monthly") badges += ` <span class="tag recurrence">mensal</span>`;
       if (t.installments > 1) badges += ` <span class="tag recurrence">${t.installmentNumber || 1}/${t.installments}</span>`;
       const actions = t.isVirtual
@@ -763,14 +764,14 @@
 
     // Render cards (mobile)
     el.transactionsCardsContainer.innerHTML = pageItems.map((t) => {
-      const cls = t.type === "receita" ? "value-income" : t.type === "despesa" ? "value-expense" : "value-investment";
+      const cls = t.type === "receita" ? "value-income" : t.type === "despesa" ? "value-expense" : t.type === "transferencia" ? "value-transfer" : "value-investment";
       const sign = t.type === "receita" ? "+" : "-";
       const actions = t.isVirtual
         ? `<button class="btn ghost" data-action="edit-transaction" data-id="${t.originalId || t.id}" type="button">Ver original</button>`
         : `<button class="btn ghost" data-action="edit-transaction" data-id="${t.id}" type="button">Editar</button>
            <button class="btn ghost" data-action="delete-transaction" data-id="${t.id}" type="button">Excluir</button>`;
 
-      let badges = `<span class="tag ${t.type}">${t.type}</span>`;
+      let badges = `<span class="tag ${t.type}">${t.type === "transferencia" ? "transferência" : t.type}</span>`;
       if (t.recurrence === "monthly") badges += ` <span class="tag recurrence">mensal</span>`;
       if (t.installments > 1) badges += ` <span class="tag recurrence">${t.installmentNumber || 1}/${t.installments}</span>`;
 
@@ -1276,6 +1277,7 @@
     const totalIncome = state.transactions.filter((t) => t.type === "receita").reduce((s, t) => s + t.amount, 0);
     const totalExpense = state.transactions.filter((t) => t.type === "despesa").reduce((s, t) => s + t.amount, 0);
     const totalInvestment = state.transactions.filter((t) => t.type === "investimento").reduce((s, t) => s + t.amount, 0);
+    // Transferências não afetam patrimônio líquido (movimentação entre contas)
     const cash = totalIncome - totalExpense - totalInvestment;
     const goalsSaved = state.goals.reduce((s, g) => s + g.current, 0);
     const investStats = getInvestmentStats();
@@ -1453,6 +1455,7 @@
     if (!account) return 0;
     let balance = account.initialBalance || 0;
     state.transactions.filter((t) => t.accountId === accountId).forEach((t) => {
+      if (t.type === "transferencia") return; // Transferências entre contas: ignorar no saldo individual
       balance += t.type === "receita" ? t.amount : -t.amount;
     });
     return round2(balance);
@@ -1463,7 +1466,7 @@
       el.accountsList.innerHTML = '<div class="info-banner"><p><strong>🏦 Contas e Cartões</strong></p><p>Cadastre suas contas bancárias e cartões para separar transações entre diferentes origens. Você pode acompanhar o saldo de cada conta individualmente.</p></div><p class="empty-state">Nenhuma conta cadastrada. Adicione suas contas acima para organizar melhor suas finanças.</p>';
       return;
     }
-    const typeLabels = { corrente: "Conta Corrente", poupanca: "Poupança", carteira: "Carteira", investimento: "Investimento" };
+    const typeLabels = { corrente: "Conta Corrente", poupanca: "Poupança", carteira: "Carteira", investimento: "Investimento", credito: "Cartão de Crédito" };
     el.accountsList.innerHTML = state.accounts
       .slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
       .map((a) => {
@@ -2016,6 +2019,7 @@
     transactions.forEach((t) => {
       const d = Number(t.date.slice(8, 10)) - 1;
       if (d >= 0 && d < days) {
+        if (t.type === "transferencia") return; // Transferências não afetam fluxo de caixa
         daily[d] += (t.type === "receita" ? 1 : -1) * t.amount;
         // Patrimônio: investimento é transferência (não saída), despesa é saída
         if (t.type === "receita") dailyPatri[d] += t.amount;
@@ -2189,9 +2193,10 @@
 
       if (isBankCsv) {
         const desc = rawDesc.toLowerCase();
-        // Type: positive = receita, negative = despesa
+        // Type: positive = receita, negative = despesa, fatura = transferencia
         if (!inferredType) {
-          if (rawAmount > 0) inferredType = "receita";
+          if (desc.includes("fatura") || desc.includes("pagamento de fatura") || desc.includes("pgto cartao") || desc.includes("pgto cartão")) inferredType = "transferencia";
+          else if (rawAmount > 0) inferredType = "receita";
           else if (desc.includes("aplicação") || desc.includes("aplicacao") || desc.includes("rdb") || desc.includes("investimento")) inferredType = "investimento";
           else inferredType = "despesa";
         }
@@ -2431,6 +2436,7 @@
     historyMonths.forEach((m) => {
       const expanded = getMonthlyTransactions(m);
       expanded.forEach((t) => {
+        if (t.type === "transferencia") return; // Transferências não contam no resumo mensal
         const c = map.get(m) || { income: 0, expense: 0, investment: 0 };
         if (t.type === "receita") c.income += t.amount;
         else if (t.type === "despesa") c.expense += t.amount;
@@ -2471,6 +2477,7 @@
     sortedMonths.forEach((m) => {
       const expanded = getMonthlyTransactions(m);
       expanded.forEach((t) => {
+        if (t.type === "transferencia") return; // Transferências não afetam caixa
         cash += t.type === "receita" ? t.amount : -t.amount;
       });
     });

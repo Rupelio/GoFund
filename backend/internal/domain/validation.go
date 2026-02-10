@@ -11,9 +11,10 @@ import (
 // ── Allowed values ───────────────────────────────────────────
 
 var allowedTransactionTypes = map[string]struct{}{
-	"receita":      {},
-	"despesa":      {},
-	"investimento": {},
+	"receita":       {},
+	"despesa":       {},
+	"investimento":  {},
+	"transferencia": {},
 }
 
 var allowedRecurrenceTypes = map[string]struct{}{
@@ -33,6 +34,7 @@ var allowedAccountTypes = map[string]struct{}{
 	"poupanca":     {},
 	"carteira":     {},
 	"investimento": {},
+	"credito":      {},
 }
 
 // ── String helpers ───────────────────────────────────────────
@@ -102,7 +104,7 @@ func ValidateTransactionPayload(p TransactionPayload) (time.Time, *time.Time, Tr
 	}
 
 	if _, ok := allowedTransactionTypes[n.Type]; !ok {
-		return time.Time{}, nil, TransactionPayload{}, NewValidationError("type must be receita, despesa or investimento")
+		return time.Time{}, nil, TransactionPayload{}, NewValidationError("type must be receita, despesa, investimento or transferencia")
 	}
 	if n.Category == "" {
 		return time.Time{}, nil, TransactionPayload{}, NewValidationError("category is required")
@@ -249,7 +251,7 @@ func ValidateAccountPayload(p AccountPayload) (AccountPayload, error) {
 		return AccountPayload{}, NewValidationError("name is required")
 	}
 	if _, ok := allowedAccountTypes[n.Type]; !ok {
-		return AccountPayload{}, NewValidationError("type must be corrente, poupanca, carteira or investimento")
+		return AccountPayload{}, NewValidationError("type must be corrente, poupanca, carteira, investimento or credito")
 	}
 	if n.InitialBalance < 0 {
 		return AccountPayload{}, NewValidationError("initialBalance cannot be negative")

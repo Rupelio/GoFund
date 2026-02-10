@@ -169,6 +169,16 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_reset_tokens_token ON password_reset_tokens (token) WHERE used = FALSE`,
+		// Migrate transaction type CHECK to include 'transferencia'
+		`DO $$ BEGIN
+			ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_type_check;
+			ALTER TABLE transactions ADD CONSTRAINT transactions_type_check CHECK (type IN ('receita', 'despesa', 'investimento', 'transferencia'));
+		END $$`,
+		// Migrate account type CHECK to include 'credito'
+		`DO $$ BEGIN
+			ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_type_check;
+			ALTER TABLE accounts ADD CONSTRAINT accounts_type_check CHECK (type IN ('corrente', 'poupanca', 'carteira', 'investimento', 'credito'));
+		END $$`,
 	)
 }
 

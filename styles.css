@@ -425,6 +425,7 @@ tr:hover td { background: rgba(123, 89, 255, 0.03); }
 .value-income { color: var(--success); font-weight: 600; }
 .value-expense { color: var(--danger); font-weight: 600; }
 .value-investment { color: var(--warning); font-weight: 600; }
+.value-transfer { color: #48b8ff; font-weight: 600; }
 
 /* -- Mobile Transaction Cards ------------------------------ */
 .transactions-cards-container {
@@ -500,6 +501,7 @@ tr:hover td { background: rgba(123, 89, 255, 0.03); }
 .tag.receita { color: var(--success); background: var(--success-bg); border: 1px solid rgba(16, 216, 132, 0.2); }
 .tag.despesa { color: var(--danger); background: var(--danger-bg); border: 1px solid rgba(255, 90, 101, 0.2); }
 .tag.investimento { color: var(--warning); background: var(--warning-bg); border: 1px solid rgba(245, 183, 78, 0.2); }
+.tag.transferencia { color: #48b8ff; background: rgba(72, 184, 255, 0.1); border: 1px solid rgba(72, 184, 255, 0.2); }
 
 .empty-state { padding: 2rem 1rem; text-align: center; color: var(--text-muted); font-size: 0.9rem; }
 
