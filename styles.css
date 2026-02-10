@@ -1,5 +1,5 @@
 /* ============================================================
-   NEXUS FINANCE — Design System
+   GOFUND — Design System
    Dark + Light mode fintech UI
    ============================================================ */
 
@@ -174,10 +174,27 @@ body {
 /* Auth Form */
 .auth-form { display: grid; gap: 1.25rem; }
 .auth-form .btn.primary { margin-top: 0.5rem; }
+.auth-link {
+  background: none; border: none; color: var(--primary-soft); cursor: pointer;
+  font-size: 0.82rem; text-align: center; padding: 0.25rem;
+  transition: color var(--duration) var(--ease);
+}
+.auth-link:hover { color: var(--primary-hover); text-decoration: underline; }
+.auth-success { color: var(--success); font-size: 0.85rem; text-align: center; padding: 0.5rem; background: rgba(34,197,94,0.1); border-radius: var(--radius); margin-top: 0.5rem; }
 
 /* -- Form Elements ----------------------------------------- */
 label { display: grid; gap: 0.45rem; font-size: 0.84rem; font-weight: 500; color: var(--text-secondary); }
 input, select, button { font: inherit; }
+
+.input-with-action { display: flex; gap: 0.4rem; align-items: center; }
+.input-with-action select { flex: 1; }
+.btn-icon-add {
+  width: 36px; height: 36px; border-radius: var(--radius-md); border: 1px solid var(--border);
+  background: var(--primary-bg); color: var(--primary-soft); font-size: 1.25rem; font-weight: 700;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  transition: all var(--duration) var(--ease);
+}
+.btn-icon-add:hover { background: var(--primary-bg-hover); border-color: var(--border-accent); }
 
 input, select {
   width: 100%; height: 44px; border: 1px solid var(--border); border-radius: var(--radius-md);
@@ -391,9 +408,11 @@ input[type="search"]::-webkit-search-cancel-button { display: none; }
 .chart-wrap { position: relative; width: 100%; min-height: 320px; }
 
 /* -- Table ------------------------------------------------- */
-.table-tools { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+.table-tools { display: flex; gap: 0.6rem; align-items: center; }
 .table-tools input { min-width: 180px; }
 .table-tools select { min-width: 130px; }
+
+.transactions-header { display: flex; align-items: center; gap: 2rem; justify-content: space-between; }
 .table-wrap { overflow-x: auto; border-radius: var(--radius-md); border: 1px solid var(--border); }
 table { width: 100%; min-width: 700px; border-collapse: collapse; }
 th, td { padding: 0.85rem 1rem; text-align: left; font-size: 0.88rem; border-bottom: 1px solid var(--border); }
@@ -529,6 +548,15 @@ tr:hover td { background: rgba(123, 89, 255, 0.03); }
 }
 [data-theme="light"] .sidebar {
   background: rgba(255, 255, 255, 0.95);
+}
+[data-theme="light"] .sidebar-nav a.is-active {
+  color: var(--primary);
+  background: linear-gradient(135deg, rgba(107, 69, 224, 0.1), rgba(107, 69, 224, 0.06));
+  border-color: rgba(107, 69, 224, 0.25);
+  box-shadow: 0 0 16px rgba(107, 69, 224, 0.08);
+}
+[data-theme="light"] .sidebar-nav a.is-active svg {
+  stroke: var(--primary);
 }
 [data-theme="light"] .panel {
   background: linear-gradient(175deg, var(--surface), var(--surface-2));
@@ -725,6 +753,7 @@ canvas:not(.chart-wrap canvas) { width: 100% !important; max-height: 300px; }
   .budget-form-row { grid-template-columns: 1fr; }
   .chart-row { grid-template-columns: 1fr; }
   .chart-wrap { min-height: 260px; }
+  .transactions-header { flex-wrap: wrap; }
   .table-tools { flex-direction: column; align-items: stretch; gap: 0.5rem; }
   .table-tools input, .table-tools select { min-width: unset; width: 100%; }
   .auth-card { padding: 1.75rem 1.5rem; }

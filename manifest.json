@@ -1,6 +1,6 @@
 {
-  "name": "Nexus Finance",
-  "short_name": "Nexus",
+  "name": "GoFund",
+  "short_name": "GoFund",
   "description": "Gestão financeira pessoal",
   "start_url": "/",
   "display": "standalone",

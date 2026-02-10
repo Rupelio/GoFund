@@ -31,6 +31,15 @@
     registerName: document.getElementById("registerName"),
     registerEmail: document.getElementById("registerEmail"),
     registerPassword: document.getElementById("registerPassword"),
+    forgotPasswordForm: document.getElementById("forgotPasswordForm"),
+    forgotEmail: document.getElementById("forgotEmail"),
+    forgotSuccessMsg: document.getElementById("forgotSuccessMsg"),
+    resetPasswordForm: document.getElementById("resetPasswordForm"),
+    resetNewPassword: document.getElementById("resetNewPassword"),
+    resetConfirmPassword: document.getElementById("resetConfirmPassword"),
+    showForgotBtn: document.getElementById("showForgotBtn"),
+    backToLoginBtn: document.getElementById("backToLoginBtn"),
+    addCategoryQuickBtn: document.getElementById("addCategoryQuickBtn"),
 
     userInitial: document.getElementById("userInitial"),
     userNameText: document.getElementById("userNameText"),
@@ -173,13 +182,30 @@
   let cashFlowChartInstance = null;
   let projectionChartInstance = null;
   let expenseChartInstance = null;
+
+  // Default category type mapping
+  const defaultCategoryTypes = {
+    // Receitas
+    "salário": "receita", "salario": "receita", "freelance": "receita", "bônus": "receita", 
+    "bonus": "receita", "comissão": "receita", "comissao": "receita", "rendimento": "receita",
+    // Despesas
+    "aluguel": "despesa", "alimentação": "despesa", "alimentacao": "despesa", "transporte": "despesa",
+    "saúde": "despesa", "saude": "despesa", "educação": "despesa", "educacao": "despesa",
+    "lazer": "despesa", "vestuário": "despesa", "vestuario": "despesa", "moradia": "despesa",
+    "contas": "despesa", "água": "despesa", "agua": "despesa", "luz": "despesa", "internet": "despesa",
+    "telefone": "despesa", "gás": "despesa", "gas": "despesa", "assinaturas": "despesa",
+    "supermercado": "despesa", "restaurante": "despesa", "farmácia": "despesa", "farmacia": "despesa",
+    // Investimentos
+    "ações": "investimento", "acoes": "investimento", "fundos": "investimento", "cdb": "investimento",
+    "tesouro": "investimento", "poupança": "investimento", "poupanca": "investimento", "criptomoedas": "investimento"
+  };
   let patrimonioChartInstance = null;
 
   /* ── Init ────────────────────────────────────────────────── */
   init();
 
   function init() {
-    applyTheme(localStorage.getItem("nexus_theme") || "dark");
+    applyTheme(localStorage.getItem("gofund_theme") || "dark");
     bindEvents();
     el.monthPicker.value = state.selectedMonth;
     el.transactionDate.value = getTodayDate();
@@ -242,14 +268,36 @@
     // Recurrence toggle
     el.transactionRecurrence.addEventListener("change", toggleRecurrenceFields);
 
-    // Auto-recurring for subscriptions
-    el.transactionCategory.addEventListener("input", () => {
-      const cat = normalizeString(el.transactionCategory.value).toLowerCase();
+    // Auto-recurring for subscriptions and auto-fill type from category
+    el.transactionCategory.addEventListener("change", () => {
+      const cat = normalizeString(el.transactionCategory.options[el.transactionCategory.selectedIndex]?.text || "").toLowerCase();
       if (cat === "assinaturas" && el.transactionRecurrence.value === "none") {
         el.transactionRecurrence.value = "monthly";
         toggleRecurrenceFields();
+      } else if (cat !== "assinaturas" && el.transactionRecurrence.value === "monthly") {
+        el.transactionRecurrence.value = "none";
+        toggleRecurrenceFields();
+      }
+      // Auto-fill type based on category
+      const matchingCategory = state.categories.find(c => normalizeString(c.name).toLowerCase() === cat);
+      if (matchingCategory && matchingCategory.type && matchingCategory.type !== "todas") {
+        el.transactionType.value = matchingCategory.type;
+      } else if (defaultCategoryTypes[cat]) {
+        el.transactionType.value = defaultCategoryTypes[cat];
       }
     });
+
+    // Quick add category button -> navigate to settings
+    el.addCategoryQuickBtn.addEventListener("click", () => {
+      navigateTo("settings");
+      setTimeout(() => el.categoryName?.focus(), 200);
+    });
+
+    // Forgot password
+    el.showForgotBtn.addEventListener("click", () => setAuthMode("forgot"));
+    el.backToLoginBtn.addEventListener("click", () => setAuthMode("login"));
+    el.forgotPasswordForm.addEventListener("submit", (e) => void handleForgotPassword(e));
+    el.resetPasswordForm.addEventListener("submit", (e) => void handleResetPassword(e));
 
     // Theme
     el.themeToggle.addEventListener("click", () => {
@@ -391,7 +439,7 @@
   /* ── Theme ──────────────────────────────────────────────── */
   function applyTheme(theme) {
     document.body.dataset.theme = theme;
-    localStorage.setItem("nexus_theme", theme);
+    localStorage.setItem("gofund_theme", theme);
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.content = theme === "dark" ? "#060a14" : "#f0f2f5";
     if (!el.dashboardShell.classList.contains("hidden")) {
@@ -421,11 +469,17 @@
   }
 
   function setAuthMode(mode) {
-    const isLogin = mode !== "register";
-    el.showLoginBtn.classList.toggle("is-active", isLogin);
-    el.showRegisterBtn.classList.toggle("is-active", !isLogin);
+    const isLogin = mode === "login";
+    const isRegister = mode === "register";
+    const isForgot = mode === "forgot";
+    const isReset = mode === "reset";
+    el.showLoginBtn.classList.toggle("is-active", isLogin || isForgot);
+    el.showRegisterBtn.classList.toggle("is-active", isRegister);
     el.loginForm.classList.toggle("hidden", !isLogin);
-    el.registerForm.classList.toggle("hidden", isLogin);
+    el.registerForm.classList.toggle("hidden", !isRegister);
+    el.forgotPasswordForm.classList.toggle("hidden", !isForgot);
+    el.resetPasswordForm.classList.toggle("hidden", !isReset);
+    if (isForgot) el.forgotSuccessMsg.classList.add("hidden");
   }
 
   async function handleLogin(event) {
@@ -461,6 +515,38 @@
       showMessage("app", "Conta criada com sucesso.", "success");
     } catch (error) {
       showMessage("auth", getErrorMessage(error, "Falha no cadastro."), "error");
+    }
+  }
+
+  async function handleForgotPassword(event) {
+    event.preventDefault();
+    const email = normalizeString(el.forgotEmail.value);
+    if (!email) { showMessage("auth", "Informe seu email.", "error"); return; }
+    try {
+      await apiRequest("/api/auth/request-reset", { method: "POST", auth: false, body: { email } });
+      el.forgotSuccessMsg.classList.remove("hidden");
+    } catch (error) {
+      showMessage("auth", getErrorMessage(error, "Falha ao enviar link."), "error");
+    }
+  }
+
+  async function handleResetPassword(event) {
+    event.preventDefault();
+    const newPass = el.resetNewPassword.value;
+    const confirmPass = el.resetConfirmPassword.value;
+    if (newPass.length < 8) { showMessage("auth", "A nova senha deve ter no mínimo 8 caracteres.", "error"); return; }
+    if (newPass !== confirmPass) { showMessage("auth", "As senhas não conferem.", "error"); return; }
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("reset-token");
+    if (!token) { showMessage("auth", "Token de redefinição ausente.", "error"); return; }
+    try {
+      await apiRequest("/api/auth/confirm-reset", { method: "POST", auth: false, body: { token, newPassword: newPass } });
+      showMessage("auth", "Senha redefinida com sucesso! Faça login.", "success");
+      // Clean URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+      setAuthMode("login");
+    } catch (error) {
+      showMessage("auth", getErrorMessage(error, "Falha ao redefinir senha. Link expirado?"), "error");
     }
   }
 
@@ -505,7 +591,13 @@
   function showAuth() {
     el.dashboardShell.classList.add("hidden");
     el.authShell.classList.remove("hidden");
-    setAuthMode("login");
+    // Check for reset token in URL
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("reset-token")) {
+      setAuthMode("reset");
+    } else {
+      setAuthMode("login");
+    }
   }
 
   function showDashboard() {
@@ -520,7 +612,7 @@
   /* ── Render All ──────────────────────────────────────────── */
   function renderAll() {
     populateCategoryFilter();
-    populateCategoryDatalist();
+    populateCategorySelect();
     populateAccountSelector();
     renderKpis();
     renderNetWorthKpi();
@@ -717,7 +809,7 @@
     let e = Math.min(totalPages, s + maxBtns - 1);
     if (e - s + 1 < maxBtns) s = Math.max(1, e - maxBtns + 1);
     if (s > 1) pag += `<button data-page="1">1</button><span class="page-info">…</span>`;
-    for (let i = s; i <= e; i++) pag += `<button data-page="${i}" class="${i === state.tablePage ? "is-active" : "}">${i}</button>`;
+    for (let i = s; i <= e; i++) pag += `<button data-page="${i}" class="${i === state.tablePage ? "is-active" : ""}">${i}</button>`;
     if (e < totalPages) pag += `<span class="page-info">…</span><button data-page="${totalPages}">${totalPages}</button>`;
     pag += `<button ${state.tablePage >= totalPages ? "disabled" : ""} data-page="${state.tablePage + 1}">&gt;</button>`;
     el.tablePagination.innerHTML = pag;
@@ -1001,13 +1093,13 @@
 
   /* ── Investments ─────────────────────────────────────────── */
   function getInvestmentYields() {
-    try { return JSON.parse(localStorage.getItem("nexus_investment_yields") || "{}"); } catch { return {}; }
+    try { return JSON.parse(localStorage.getItem("gofund_investment_yields") || "{}"); } catch { return {}; }
   }
 
   function setInvestmentYield(category, rate) {
     const yields = getInvestmentYields();
     yields[category] = rate;
-    localStorage.setItem("nexus_investment_yields", JSON.stringify(yields));
+    localStorage.setItem("gofund_investment_yields", JSON.stringify(yields));
   }
 
   function getInvestmentStats() {
@@ -1234,13 +1326,15 @@
   }
 
   /* ── Categories CRUD ─────────────────────────────────────── */
-  function populateCategoryDatalist() {
-    const dl = document.getElementById("categoryOptions");
-    if (!dl) return;
+  function populateCategorySelect() {
+    const sel = el.transactionCategory;
+    const prevVal = sel.value;
     const cats = state.categories.length > 0 ? state.categories : [];
     const usedCats = new Set(state.transactions.map((t) => t.category));
     const all = new Set([...cats.map((c) => c.name), ...usedCats]);
-    dl.innerHTML = [...all].sort((a, b) => a.localeCompare(b, "pt-BR")).map((c) => `<option value="${escapeHtml(c)}">`).join("");
+    const sorted = [...all].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    sel.innerHTML = `<option value="" disabled selected>Selecione...</option>` + sorted.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+    if (prevVal && sorted.includes(prevVal)) sel.value = prevVal;
   }
 
   function renderCategories() {
@@ -1283,7 +1377,7 @@
       }
       resetCategoryForm();
       renderCategories();
-      populateCategoryDatalist();
+      populateCategorySelect();
     } catch (error) {
       showMessage("app", getErrorMessage(error, "Falha ao salvar categoria."), "error");
     }
@@ -1312,7 +1406,7 @@
         state.categories = state.categories.filter((c) => c.id !== id);
         if (editingCategoryId === id) resetCategoryForm();
         renderCategories();
-        populateCategoryDatalist();
+        populateCategorySelect();
         showMessage("app", "Categoria removida.", "success");
       } catch (error) {
         showMessage("app", getErrorMessage(error, "Falha ao excluir categoria."), "error");

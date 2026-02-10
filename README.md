@@ -1,4 +1,4 @@
-# Nexus Finance
+# GoFund
 
 Sistema de gestão financeira pessoal com Go backend, PostgreSQL e frontend vanilla JS.
 

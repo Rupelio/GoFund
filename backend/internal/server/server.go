@@ -8,9 +8,11 @@ import (
 	"time"
 
 	"gestao/backend/internal/config"
+	"gestao/backend/internal/email"
 	"gestao/backend/internal/handler"
 	mw "gestao/backend/internal/middleware"
 	"gestao/backend/internal/postgres"
+	"gestao/backend/internal/reminder"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
@@ -19,10 +21,11 @@ import (
 
 // Server encapsulates the HTTP server and all dependencies.
 type Server struct {
-	cfg    config.Config
-	pool   *pgxpool.Pool
-	logger *slog.Logger
-	http   *http.Server
+	cfg      config.Config
+	pool     *pgxpool.Pool
+	logger   *slog.Logger
+	http     *http.Server
+	reminder *reminder.Service
 }
 
 // New creates a Server with all handlers and middleware wired up.
@@ -35,6 +38,14 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 	projRepo := postgres.NewProjectionRepo(pool)
 	catRepo := postgres.NewCategoryRepo(pool)
 	accRepo := postgres.NewAccountRepo(pool)
+	tokenRepo := postgres.NewTokenRepo(pool)
+
+	// ── Email sender ────────────────────────────────────────
+	emailSender := email.NewSender(email.Config{
+		ResendAPIKey: cfg.ResendAPIKey,
+		FromAddress:  cfg.ResendFrom,
+		AppURL:       cfg.AppURL,
+	})
 
 	// ── Auth + rate limiting ─────────────────────────────────
 	auth := mw.NewAuth(cfg.JWTSecret, cfg.TokenTTL)
@@ -45,7 +56,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 	// ── Handlers ─────────────────────────────────────────────
 	timeout := cfg.DBQueryTimeout
 
-	authH := handler.NewAuthHandler(userRepo, auth, timeout)
+	authH := handler.NewAuthHandler(userRepo, tokenRepo, auth, emailSender, timeout)
 	txnH := handler.NewTransactionHandler(txnRepo, timeout)
 	budgetH := handler.NewBudgetHandler(budgetRepo, timeout)
 	goalH := handler.NewGoalHandler(goalRepo, timeout)
@@ -76,6 +87,8 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 			pub.Use(authLimiter.Limit)
 			pub.Post("/auth/register", authH.Register)
 			pub.Post("/auth/login", authH.Login)
+			pub.Post("/auth/request-reset", authH.RequestPasswordReset)
+			pub.Post("/auth/confirm-reset", authH.ConfirmPasswordReset)
 		})
 
 		// Frontend error logging (public, rate limited)
@@ -145,11 +158,17 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 		IdleTimeout:  cfg.IdleTimeout,
 	}
 
-	return &Server{cfg: cfg, pool: pool, logger: logger, http: srv}
+	// ── Reminder service ────────────────────────────────────
+	reminderSvc := reminder.New(pool, emailSender)
+
+	return &Server{cfg: cfg, pool: pool, logger: logger, http: srv, reminder: reminderSvc}
 }
 
 // Run starts the HTTP server and blocks until the context is canceled (signal).
 func (s *Server) Run(ctx context.Context) {
+	// Start reminder service (background goroutine)
+	s.reminder.Start(ctx)
+
 	go func() {
 		s.logger.Info("api listening", "port", s.cfg.Port)
 		if err := s.http.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

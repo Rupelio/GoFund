@@ -160,6 +160,15 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		`CREATE INDEX IF NOT EXISTS idx_categories_user ON categories (user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts (user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions (account_id)`,
+		`CREATE TABLE IF NOT EXISTS password_reset_tokens (
+			id UUID PRIMARY KEY,
+			user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			token TEXT NOT NULL UNIQUE,
+			expires_at TIMESTAMPTZ NOT NULL,
+			used BOOLEAN NOT NULL DEFAULT FALSE,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_reset_tokens_token ON password_reset_tokens (token) WHERE used = FALSE`,
 	)
 }
 
@@ -228,7 +237,7 @@ func ensureMigrationUser(ctx context.Context, pool *pgxpool.Pool) (string, error
 	}
 
 	id := domain.MustUUID()
-	email := fmt.Sprintf("legacy-%s@nexus.local", strings.ReplaceAll(id, "-", ""))
+	email := fmt.Sprintf("legacy-%s@gofund.local", strings.ReplaceAll(id, "-", ""))
 	hash, err := bcrypt.GenerateFromPassword([]byte(domain.MustUUID()), bcrypt.MinCost)
 	if err != nil {
 		return "", err

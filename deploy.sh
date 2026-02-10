@@ -5,7 +5,7 @@ set -e
 
 show_help() {
   cat << EOF
-Nexus Finance — Script de Deploy
+GoFund — Script de Deploy
 
 Uso:
   ./deploy.sh [frontend|backend|all]

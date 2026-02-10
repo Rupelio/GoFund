@@ -25,6 +25,11 @@ type Config struct {
 	DBMaxConns          int32
 	DBMinConns          int32
 	AllowedOrigins      []string
+
+	// Email (Resend)
+	ResendAPIKey string
+	ResendFrom   string
+	AppURL       string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -45,6 +50,10 @@ func Load() Config {
 		DBMaxConns:          int32(intEnvOrDefault("DB_MAX_CONNS", 16)),
 		DBMinConns:          int32(intEnvOrDefault("DB_MIN_CONNS", 2)),
 		AllowedOrigins:      csvEnvOrDefault("CORS_ALLOWED_ORIGINS", "*"),
+
+		ResendAPIKey: envOrDefault("RESEND_API_KEY", ""),
+		ResendFrom:   envOrDefault("RESEND_FROM", "GoFund <noreply@gofund.com.br>"),
+		AppURL:       envOrDefault("APP_URL", "http://localhost:5500"),
 	}
 }
 
