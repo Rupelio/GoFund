@@ -72,6 +72,8 @@
     searchInput: document.getElementById("searchInput"),
     filterType: document.getElementById("filterType"),
     filterCategory: document.getElementById("filterCategory"),
+    filterMethod: document.getElementById("filterMethod"),
+    filterRecurrence: document.getElementById("filterRecurrence"),
     transactionsTableBody: document.getElementById("transactionsTableBody"),
     transactionsCardsContainer: document.getElementById("transactionsCardsContainer"),
     transactionsEmptyState: document.getElementById("transactionsEmptyState"),
@@ -265,6 +267,8 @@
     el.searchInput.addEventListener("input", () => { state.tablePage = 1; renderTransactionsTable(); });
     el.filterType.addEventListener("change", () => { state.tablePage = 1; renderTransactionsTable(); });
     el.filterCategory.addEventListener("change", () => { state.tablePage = 1; renderTransactionsTable(); });
+    el.filterMethod.addEventListener("change", () => { state.tablePage = 1; renderTransactionsTable(); });
+    el.filterRecurrence.addEventListener("change", () => { state.tablePage = 1; renderTransactionsTable(); });
 
     // Recurrence toggle
     el.transactionRecurrence.addEventListener("change", toggleRecurrenceFields);
@@ -704,10 +708,14 @@
     const search = normalizeString(el.searchInput.value).toLowerCase();
     const typeFilter = el.filterType.value;
     const catFilter = el.filterCategory.value;
+    const methodFilter = el.filterMethod.value;
+    const recFilter = el.filterRecurrence.value;
     return getMonthlyTransactions(state.selectedMonth)
       .filter((t) => {
         if (typeFilter !== "todos" && t.type !== typeFilter) return false;
         if (catFilter !== "todas" && t.category.toLowerCase() !== catFilter.toLowerCase()) return false;
+        if (methodFilter !== "todos" && t.method !== methodFilter) return false;
+        if (recFilter !== "todos" && (t.recurrence || "none") !== recFilter) return false;
         if (!search) return true;
         return `${t.description} ${t.category} ${t.method}`.toLowerCase().includes(search);
       })
@@ -2241,6 +2249,12 @@
         if (!inferredCategory) {
           inferredCategory = inferCategoryFromDescription(desc);
         }
+      }
+
+      // Auto-correct: descriptions referring to credit card payments should always be transferencia
+      const descLower = rawDesc.toLowerCase();
+      if (inferredType === "despesa" && /cart(ão|ao|ões|oes)\s*de\s*cr[eé]dito|pagamento\s*(de\s*)?fatura|pgto\s*cart[aã]o/.test(descLower)) {
+        inferredType = "transferencia";
       }
 
       const item = normalizeTransaction({

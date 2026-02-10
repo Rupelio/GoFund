@@ -10,11 +10,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=10" />
+    <link rel="stylesheet" href="styles.css?v=11" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
-    <script src="app.js?v=10" defer></script>
+    <script src="app.js?v=11" defer></script>
   </head>
   <body data-theme="dark">
     <div class="app-bg"></div>
@@ -132,7 +132,7 @@
               </form>
             </article>
             <article class="panel panel-table">
-              <header class="panel-head transactions-header"><h2>Movimentações</h2><div class="table-tools"><input id="searchInput" type="search" placeholder="Buscar... (/)"/><select id="filterType"><option value="todos">Todos</option><option value="receita">Receita</option><option value="despesa">Despesa</option><option value="investimento">Investimento</option><option value="transferencia">Transferência</option></select><select id="filterCategory"><option value="todas">Todas</option></select></div></header>
+              <header class="panel-head transactions-header"><h2>Movimentações</h2><div class="table-tools"><input id="searchInput" type="search" placeholder="Buscar... (/)"/><select id="filterType"><option value="todos">Todos</option><option value="receita">Receita</option><option value="despesa">Despesa</option><option value="investimento">Investimento</option><option value="transferencia">Transferência</option></select><select id="filterCategory"><option value="todas">Todas</option></select><select id="filterMethod"><option value="todos">Todos Métodos</option><option value="pix">PIX</option><option value="debito">Débito</option><option value="credito">Crédito</option><option value="dinheiro">Dinheiro</option><option value="boleto">Boleto</option><option value="transferencia">Transferência</option><option value="outros">Outros</option></select><select id="filterRecurrence"><option value="todos">Todas Freq.</option><option value="none">Única</option><option value="monthly">Mensal</option><option value="installments">Parcelado</option></select></div></header>
               <div class="table-wrap"><table><thead><tr><th>Descrição</th><th>Categoria</th><th>Método</th><th>Data</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="transactionsTableBody"></tbody></table></div>
               <div id="transactionsCardsContainer" class="transactions-cards-container"></div>
               <div id="tableFilterSummary" class="table-filter-summary"></div>
