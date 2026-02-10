@@ -2144,7 +2144,7 @@
     if (lines.length < 2) throw new Error("CSV vazio.");
     const headers = parseCsvLine(lines[0]).map(normalizeHeader);
     const idx = {
-      id: findHeaderIdx(headers, ["id"]),
+      id: findHeaderIdx(headers, ["id", "identificador"]),
       date: findHeaderIdx(headers, ["date", "data"]),
       type: findHeaderIdx(headers, ["type", "tipo"]),
       category: findHeaderIdx(headers, ["category", "categoria"]),
@@ -2156,16 +2156,55 @@
       installments: findHeaderIdx(headers, ["installments", "parcelas"]),
       createdAt: findHeaderIdx(headers, ["createdat", "created_at"]),
     };
-    if ([idx.date, idx.type, idx.category, idx.method, idx.description, idx.amount].some((i) => i < 0)) throw new Error("Cabeçalho CSV inválido.");
+    // Minimum: date, description, amount
+    if ([idx.date, idx.description, idx.amount].some((i) => i < 0)) throw new Error("Cabeçalho CSV inválido. Mínimo: Data, Descrição, Valor.");
+    const isBankCsv = idx.type < 0 || idx.category < 0 || idx.method < 0;
     const items = []; let skipped = 0;
     lines.slice(1).forEach((line) => {
       const cols = parseCsvLine(line);
+      const rawAmount = parseFlexibleNumber(cols[idx.amount]);
+      const rawDesc = String(cols[idx.description] || "");
+      const rawDate = String(cols[idx.date] || "");
+
+      // Parse date: support DD/MM/YYYY → YYYY-MM-DD
+      let parsedDate = rawDate;
+      const brDate = rawDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (brDate) parsedDate = `${brDate[3]}-${brDate[2]}-${brDate[1]}`;
+
+      // For bank CSVs, infer type/category/method from description and amount sign
+      let inferredType = idx.type >= 0 ? String(cols[idx.type] || "") : "";
+      let inferredCategory = idx.category >= 0 ? String(cols[idx.category] || "") : "";
+      let inferredMethod = idx.method >= 0 ? String(cols[idx.method] || "") : "";
+
+      if (isBankCsv) {
+        const desc = rawDesc.toLowerCase();
+        // Type: positive = receita, negative = despesa
+        if (!inferredType) {
+          if (rawAmount > 0) inferredType = "receita";
+          else if (desc.includes("aplicação") || desc.includes("aplicacao") || desc.includes("rdb") || desc.includes("investimento")) inferredType = "investimento";
+          else inferredType = "despesa";
+        }
+        // Method
+        if (!inferredMethod) {
+          if (desc.includes("pix")) inferredMethod = "pix";
+          else if (desc.includes("débito") || desc.includes("debito")) inferredMethod = "debito";
+          else if (desc.includes("crédito") || desc.includes("credito")) inferredMethod = "credito";
+          else if (desc.includes("boleto")) inferredMethod = "transferencia";
+          else if (desc.includes("transferência") || desc.includes("transferencia")) inferredMethod = "transferencia";
+          else inferredMethod = "pix";
+        }
+        // Category
+        if (!inferredCategory) {
+          inferredCategory = inferCategoryFromDescription(desc);
+        }
+      }
+
       const item = normalizeTransaction({
         id: idx.id >= 0 ? String(cols[idx.id] || "") : "",
-        date: String(cols[idx.date] || ""), type: String(cols[idx.type] || ""),
-        category: String(cols[idx.category] || ""), method: String(cols[idx.method] || ""),
-        description: String(cols[idx.description] || ""),
-        amount: parseFlexibleNumber(cols[idx.amount]),
+        date: parsedDate, type: inferredType,
+        category: inferredCategory, method: inferredMethod,
+        description: rawDesc,
+        amount: Math.abs(rawAmount),
         recurrence: idx.recurrence >= 0 ? String(cols[idx.recurrence] || "none") : "none",
         recurrenceEnd: idx.recurrenceEnd >= 0 ? String(cols[idx.recurrenceEnd] || "") : "",
         installments: idx.installments >= 0 ? Number(cols[idx.installments]) || 0 : 0,
@@ -2174,6 +2213,42 @@
       isValidTransaction(item) ? items.push(item) : skipped++;
     });
     return { items, skipped };
+  }
+
+  function inferCategoryFromDescription(desc) {
+    const rules = [
+      // Alimentação / Supermercado
+      [/supermercado|condor|angeloni|festval|carrefour|atacadão|atacadao|big\b|assai/, "Supermercado"],
+      [/restaurante|lanchonete|burger|mcdonald|subway|pizza|sushi|shawarma|shawarm|ifood|rappi/, "Alimentação"],
+      [/padaria|confeitaria|cafe\b|café/, "Alimentação"],
+      // Transporte / Combustível
+      [/posto|combustivel|combustível|shell|ipiranga|petrobras|auto posto/, "Transporte"],
+      [/uber|99\b|cabify|estacionamento/, "Transporte"],
+      // Saúde / Farmácia
+      [/farmacia|farmácia|panvel|drogaria|droga raia|drogasil|pague menos/, "Saúde"],
+      // Moradia / Contas
+      [/copel|sanepar|compagas|energia|eletri|agua\b|água/, "Contas"],
+      [/aluguel|condominio|condomínio/, "Moradia"],
+      [/internet|telefone|claro\b|vivo\b|tim\b|oi\b/, "Internet"],
+      // Educação
+      [/universidade|faculdade|escola|curso|cultura|livraria|associacao.*cultura|apc/, "Educação"],
+      // Lazer
+      [/cinema|teatro|spotify|netflix|disney|amazon prime|steam|playstation|xbox|game/, "Lazer"],
+      // Vestuário
+      [/roupa|vestuario|vestuário|renner|cea\b|c&a|riachuelo|zara|seminario|semina/, "Vestuário"],
+      // Investimento
+      [/aplicação|aplicacao|rdb|cdb|tesouro|investimento|poupança|poupanca/, "Investimento"],
+      // Salário / Receita
+      [/salario|salário/, "Salário"],
+      // Transferências (receita para transferência recebida)
+      [/fatura/, "Fatura"],
+      // Impostos
+      [/receita federal|imposto|darf|gps|inss|irpf/, "Impostos"],
+    ];
+    for (const [regex, cat] of rules) {
+      if (regex.test(desc)) return cat;
+    }
+    return "Outros";
   }
 
   /* ── API ─────────────────────────────────────────────────── */

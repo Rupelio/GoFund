@@ -1,5 +1,5 @@
-const CACHE_NAME = "gofund-v5";
-const ASSETS = ["/", "/index.html", "/styles.css?v=5", "/app.js?v=5", "/manifest.json"];
+const CACHE_NAME = "gofund-v6";
+const ASSETS = ["/", "/index.html", "/styles.css?v=6", "/app.js?v=6", "/manifest.json"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(ASSETS)));
