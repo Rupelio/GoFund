@@ -90,9 +90,9 @@ func (s *Service) checkAndSend(ctx context.Context) {
 	for rows.Next() {
 		var (
 			userID, userName, userEmail string
-			desc, category             string
-			amount                     float64
-			date                       time.Time
+			desc, category              string
+			amount                      float64
+			date                        time.Time
 		)
 		if err := rows.Scan(&userID, &userName, &userEmail, &desc, &amount, &date, &category); err != nil {
 			slog.Error("reminder: scan failed", "error", err)

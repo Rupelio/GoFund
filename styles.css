@@ -760,15 +760,15 @@ canvas:not(.chart-wrap canvas) { width: 100% !important; max-height: 300px; }
   .projection-form { grid-template-columns: 1fr 1fr; }
   .summary-pill { padding: 0.7rem 0.85rem; }
   th, td { padding: 0.65rem 0.75rem; font-size: 0.82rem; }
-  
+
   /* Hide table, show cards on mobile */
   .panel-table .table-wrap { display: none; }
   .transactions-cards-container { display: flex; }
-  
+
   /* Adjust panel padding on mobile */
   .panel { padding: 1rem; }
   .panel-head h2 { font-size: 1.15rem; }
-  
+
   /* Stack form inputs vertically */
   .form-stack label { font-size: 0.85rem; }
   .form-stack input, .form-stack select { font-size: 0.9rem; }

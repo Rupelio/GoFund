@@ -186,7 +186,7 @@
   // Default category type mapping
   const defaultCategoryTypes = {
     // Receitas
-    "salário": "receita", "salario": "receita", "freelance": "receita", "bônus": "receita", 
+    "salário": "receita", "salario": "receita", "freelance": "receita", "bônus": "receita",
     "bonus": "receita", "comissão": "receita", "comissao": "receita", "rendimento": "receita",
     // Despesas
     "aluguel": "despesa", "alimentação": "despesa", "alimentacao": "despesa", "transporte": "despesa",
@@ -769,7 +769,7 @@
         ? `<button class="btn ghost" data-action="edit-transaction" data-id="${t.originalId || t.id}" type="button">Ver original</button>`
         : `<button class="btn ghost" data-action="edit-transaction" data-id="${t.id}" type="button">Editar</button>
            <button class="btn ghost" data-action="delete-transaction" data-id="${t.id}" type="button">Excluir</button>`;
-      
+
       let badges = `<span class="tag ${t.type}">${t.type}</span>`;
       if (t.recurrence === "monthly") badges += ` <span class="tag recurrence">mensal</span>`;
       if (t.installments > 1) badges += ` <span class="tag recurrence">${t.installmentNumber || 1}/${t.installments}</span>`;
