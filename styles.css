@@ -408,8 +408,12 @@ tr:hover td { background: rgba(123, 89, 255, 0.03); }
 .value-investment { color: var(--warning); font-weight: 600; }
 
 /* -- Mobile Transaction Cards ------------------------------ */
-.transaction-card {
+.transactions-cards-container {
   display: none; /* Hidden by default, shown only on mobile */
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.transaction-card {
   padding: 1rem;
   border-radius: var(--radius);
   background: var(--surface-2);
@@ -730,8 +734,7 @@ canvas:not(.chart-wrap canvas) { width: 100% !important; max-height: 300px; }
   
   /* Hide table, show cards on mobile */
   .panel-table .table-wrap { display: none; }
-  .transaction-card { display: block; }
-  #transactionsTableBody { display: flex; flex-direction: column; gap: 0.75rem; }
+  .transactions-cards-container { display: flex; }
   
   /* Adjust panel padding on mobile */
   .panel { padding: 1rem; }

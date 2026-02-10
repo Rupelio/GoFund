@@ -64,6 +64,7 @@
     filterType: document.getElementById("filterType"),
     filterCategory: document.getElementById("filterCategory"),
     transactionsTableBody: document.getElementById("transactionsTableBody"),
+    transactionsCardsContainer: document.getElementById("transactionsCardsContainer"),
     transactionsEmptyState: document.getElementById("transactionsEmptyState"),
     tableFilterSummary: document.getElementById("tableFilterSummary"),
     tablePagination: document.getElementById("tablePagination"),
@@ -628,6 +629,7 @@
     const pageItems = items.slice(start, start + pageSize);
 
     el.transactionsTableBody.innerHTML = "";
+    el.transactionsCardsContainer.innerHTML = "";
     if (!total) {
       el.transactionsEmptyState.classList.remove("hidden");
       el.tableFilterSummary.innerHTML = "";
@@ -646,70 +648,66 @@
     if (totalInvest > 0) parts.push(`<span class="warning">${formatCurrency(totalInvest)}</span>`);
     el.tableFilterSummary.innerHTML = `<span>${parts.join(" &middot; ")}</span><span>Pág ${state.tablePage}/${totalPages}</span>`;
 
-    // Check if mobile (window width <= 640px)
-    const isMobile = window.innerWidth <= 640;
+    // Render table rows (desktop)
+    el.transactionsTableBody.innerHTML = pageItems.map((t) => {
+      const cls = t.type === "receita" ? "value-income" : t.type === "despesa" ? "value-expense" : "value-investment";
+      const sign = t.type === "receita" ? "+" : "-";
+      let badges = `<span class="tag ${t.type}">${t.type}</span>`;
+      if (t.recurrence === "monthly") badges += ` <span class="tag recurrence">mensal</span>`;
+      if (t.installments > 1) badges += ` <span class="tag recurrence">${t.installmentNumber || 1}/${t.installments}</span>`;
+      const actions = t.isVirtual
+        ? `<button class="mini-btn" data-action="edit-transaction" data-id="${t.originalId || t.id}" type="button">Ver original</button>`
+        : `<button class="mini-btn" data-action="edit-transaction" data-id="${t.id}" type="button">Editar</button>
+           <button class="mini-btn" data-action="delete-transaction" data-id="${t.id}" type="button">Excluir</button>`;
+      return `<tr>
+        <td>${escapeHtml(t.description)}</td>
+        <td>${escapeHtml(t.category)}</td>
+        <td>${escapeHtml(getMethodLabel(t.method))}</td>
+        <td>${formatDate(t.date)}</td>
+        <td class="${cls}">${sign} ${formatCurrency(t.amount)}</td>
+        <td>${badges}<div class="mini-actions">${actions}</div></td>
+      </tr>`;
+    }).join("");
 
-    // Render page rows (table) or cards (mobile)
-    if (isMobile) {
-      el.transactionsTableBody.innerHTML = pageItems.map((t) => {
-        const cls = t.type === "receita" ? "value-income" : t.type === "despesa" ? "value-expense" : "value-investment";
-        const sign = t.type === "receita" ? "+" : "-";
-        const actions = t.isVirtual
-          ? `<button class="btn ghost" data-action="edit-transaction" data-id="${t.originalId || t.id}" type="button">Ver original</button>`
-          : `<button class="btn ghost" data-action="edit-transaction" data-id="${t.id}" type="button">Editar</button>
-             <button class="btn ghost" data-action="delete-transaction" data-id="${t.id}" type="button">Excluir</button>`;
-        
-        let badges = `<span class="tag ${t.type}">${t.type}</span>`;
-        if (t.recurrence === "monthly") badges += ` <span class="tag recurrence">mensal</span>`;
-        if (t.installments > 1) badges += ` <span class="tag recurrence">${t.installmentNumber || 1}/${t.installments}</span>`;
+    // Render cards (mobile)
+    el.transactionsCardsContainer.innerHTML = pageItems.map((t) => {
+      const cls = t.type === "receita" ? "value-income" : t.type === "despesa" ? "value-expense" : "value-investment";
+      const sign = t.type === "receita" ? "+" : "-";
+      const actions = t.isVirtual
+        ? `<button class="btn ghost" data-action="edit-transaction" data-id="${t.originalId || t.id}" type="button">Ver original</button>`
+        : `<button class="btn ghost" data-action="edit-transaction" data-id="${t.id}" type="button">Editar</button>
+           <button class="btn ghost" data-action="delete-transaction" data-id="${t.id}" type="button">Excluir</button>`;
+      
+      let badges = `<span class="tag ${t.type}">${t.type}</span>`;
+      if (t.recurrence === "monthly") badges += ` <span class="tag recurrence">mensal</span>`;
+      if (t.installments > 1) badges += ` <span class="tag recurrence">${t.installmentNumber || 1}/${t.installments}</span>`;
 
-        return `<div class="transaction-card">
-          <div class="transaction-card-header">
-            <div class="transaction-card-title">${escapeHtml(t.description)}</div>
-            <div class="transaction-card-amount ${cls}">${sign}${formatCurrency(t.amount)}</div>
+      return `<div class="transaction-card">
+        <div class="transaction-card-header">
+          <div class="transaction-card-title">${escapeHtml(t.description)}</div>
+          <div class="transaction-card-amount ${cls}">${sign}${formatCurrency(t.amount)}</div>
+        </div>
+        <div class="transaction-card-body">
+          <div class="transaction-card-row">
+            <span class="transaction-card-label">Categoria</span>
+            <span>${escapeHtml(t.category)}</span>
           </div>
-          <div class="transaction-card-body">
-            <div class="transaction-card-row">
-              <span class="transaction-card-label">Categoria</span>
-              <span>${escapeHtml(t.category)}</span>
-            </div>
-            <div class="transaction-card-row">
-              <span class="transaction-card-label">Método</span>
-              <span>${escapeHtml(getMethodLabel(t.method))}</span>
-            </div>
-            <div class="transaction-card-row">
-              <span class="transaction-card-label">Data</span>
-              <span>${formatDate(t.date)}</span>
-            </div>
-            <div class="transaction-card-row">
-              <span class="transaction-card-label">Tipo</span>
-              <span>${badges}</span>
-            </div>
+          <div class="transaction-card-row">
+            <span class="transaction-card-label">Método</span>
+            <span>${escapeHtml(getMethodLabel(t.method))}</span>
           </div>
-          <div class="transaction-card-actions">${actions}</div>
-        </div>`;
-      }).join("");
-    } else {
-      el.transactionsTableBody.innerHTML = pageItems.map((t) => {
-        const cls = t.type === "receita" ? "value-income" : t.type === "despesa" ? "value-expense" : "value-investment";
-        const sign = t.type === "receita" ? "+" : "-";
-        let badges = `<span class="tag ${t.type}">${t.type}</span>`;
-        if (t.recurrence === "monthly") badges += ` <span class="tag recurrence">mensal</span>`;
-        if (t.installments > 1) badges += ` <span class="tag recurrence">${t.installmentNumber || 1}/${t.installments}</span>`;
-        const actions = t.isVirtual
-          ? `<button class="mini-btn" data-action="edit-transaction" data-id="${t.originalId || t.id}" type="button">Ver original</button>`
-          : `<button class="mini-btn" data-action="edit-transaction" data-id="${t.id}" type="button">Editar</button>
-             <button class="mini-btn" data-action="delete-transaction" data-id="${t.id}" type="button">Excluir</button>`;
-        return `<tr>
-          <td>${escapeHtml(t.description)}</td>
-          <td>${escapeHtml(t.category)}</td>
-          <td>${escapeHtml(getMethodLabel(t.method))}</td>
-          <td>${formatDate(t.date)}</td>
-          <td class="${cls}">${sign} ${formatCurrency(t.amount)}</td>
-          <td>${badges}<div class="mini-actions">${actions}</div></td>
-        </tr>`;
-      }).join("");
-    }
+          <div class="transaction-card-row">
+            <span class="transaction-card-label">Data</span>
+            <span>${formatDate(t.date)}</span>
+          </div>
+          <div class="transaction-card-row">
+            <span class="transaction-card-label">Tipo</span>
+            <span>${badges}</span>
+          </div>
+        </div>
+        <div class="transaction-card-actions">${actions}</div>
+      </div>`;
+    }).join("");
 
     // Pagination controls
     if (totalPages <= 1) { el.tablePagination.innerHTML = ""; return; }
@@ -719,7 +717,7 @@
     let e = Math.min(totalPages, s + maxBtns - 1);
     if (e - s + 1 < maxBtns) s = Math.max(1, e - maxBtns + 1);
     if (s > 1) pag += `<button data-page="1">1</button><span class="page-info">…</span>`;
-    for (let i = s; i <= e; i++) pag += `<button data-page="${i}" class="${i === state.tablePage ? "is-active" : ""}">${i}</button>`;
+    for (let i = s; i <= e; i++) pag += `<button data-page="${i}" class="${i === state.tablePage ? "is-active" : "}">${i}</button>`;
     if (e < totalPages) pag += `<span class="page-info">…</span><button data-page="${totalPages}">${totalPages}</button>`;
     pag += `<button ${state.tablePage >= totalPages ? "disabled" : ""} data-page="${state.tablePage + 1}">&gt;</button>`;
     el.tablePagination.innerHTML = pag;
@@ -2371,17 +2369,6 @@
   });
   window.addEventListener("unhandledrejection", (e) => {
     logToBackend("error", String(e.reason || "unhandled promise rejection"), { stack: e.reason?.stack });
-  });
-
-  // Re-render transactions on resize (mobile ↔ desktop switch)
-  let resizeTimer;
-  window.addEventListener("resize", () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      if (state.currentPage === "transactions" && state.transactions?.length > 0) {
-        renderTransactionsTable();
-      }
-    }, 250);
   });
 
 })();
