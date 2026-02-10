@@ -88,7 +88,7 @@ func (s *Sender) SendResetPasswordEmail(to, token string) error {
 	body := fmt.Sprintf(`
 <!DOCTYPE html>
 <html>
-<body style="font-family: 'Segoe UI', Tahoma, sans-serif; background:#0d1117; color:#e6edf3; padding:2rem;">
+<body style="font-family: 'Segoe UI', Tahoma, sans-serif; color:#e6edf3; padding:0; margin:0;">
   <div style="max-width:480px; margin:0 auto; background:#161b22; border-radius:12px; padding:2rem; border:1px solid #30363d;">
     <h2 style="color:#9e8bff; margin-top:0;">🔐 GoFund</h2>
     <p>Você solicitou a redefinição da sua senha.</p>
@@ -127,7 +127,7 @@ func (s *Sender) SendReminderEmail(to, userName string, items []ReminderItem) er
 	body := fmt.Sprintf(`
 <!DOCTYPE html>
 <html>
-<body style="font-family: 'Segoe UI', Tahoma, sans-serif; background:#0d1117; color:#e6edf3; padding:2rem;">
+<body style="font-family: 'Segoe UI', Tahoma, sans-serif; color:#e6edf3; padding:0; margin:0;">
   <div style="max-width:520px; margin:0 auto; background:#161b22; border-radius:12px; padding:2rem; border:1px solid #30363d;">
     <h2 style="color:#9e8bff; margin-top:0;">📋 GoFund — Lembrete</h2>
     <p>Olá <strong>%s</strong>, você tem contas vencendo nos próximos dias:</p>
@@ -199,7 +199,7 @@ func (s *Sender) SendMonthlySummaryEmail(to, userName, monthLabel string, data M
 	body := fmt.Sprintf(`
 <!DOCTYPE html>
 <html>
-<body style="font-family: 'Segoe UI', Tahoma, sans-serif; background:#0d1117; color:#e6edf3; padding:2rem;">
+<body style="font-family: 'Segoe UI', Tahoma, sans-serif; color:#e6edf3; padding:0; margin:0;">
   <div style="max-width:520px; margin:0 auto; background:#161b22; border-radius:12px; padding:2rem; border:1px solid #30363d;">
     <h2 style="color:#9e8bff; margin-top:0;">📊 GoFund — Resumo de %s</h2>
     <p>Olá <strong>%s</strong>, aqui está seu resumo financeiro:</p>
