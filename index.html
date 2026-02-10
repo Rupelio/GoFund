@@ -10,11 +10,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=6" />
+    <link rel="stylesheet" href="styles.css?v=7" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
-    <script src="app.js?v=6" defer></script>
+    <script src="app.js?v=7" defer></script>
   </head>
   <body data-theme="dark">
     <div class="app-bg"></div>
@@ -26,7 +26,7 @@
         <div class="auth-tabs"><button id="showLoginBtn" class="auth-tab is-active" type="button">Login</button><button id="showRegisterBtn" class="auth-tab" type="button">Cadastro</button></div>
         <form id="loginForm" class="auth-form">
           <label>Email<input id="loginEmail" type="email" placeholder="seu@email.com" required autocomplete="email"/></label>
-          <label>Senha<input id="loginPassword" type="password" placeholder="Sua senha" minlength="6" required autocomplete="current-password"/></label>
+          <label>Senha<input id="loginPassword" type="password" placeholder="Sua senha" minlength="8" required autocomplete="current-password"/></label>
           <button class="btn primary" type="submit">Entrar</button>
           <button class="auth-link" id="showForgotBtn" type="button">Esqueci minha senha</button>
         </form>
@@ -46,7 +46,7 @@
         <form id="registerForm" class="auth-form hidden">
           <label>Nome<input id="registerName" type="text" placeholder="Seu nome" minlength="2" required autocomplete="name"/></label>
           <label>Email<input id="registerEmail" type="email" placeholder="seu@email.com" required autocomplete="email"/></label>
-          <label>Senha<input id="registerPassword" type="password" placeholder="Mínimo 6 caracteres" minlength="6" required autocomplete="new-password"/></label>
+          <label>Senha<input id="registerPassword" type="password" placeholder="Mínimo 8 caracteres" minlength="8" required autocomplete="new-password"/></label>
           <button class="btn primary" type="submit">Criar conta</button>
         </form>
         <p id="authMessage" class="status-message" role="status" aria-live="polite"></p>
@@ -210,7 +210,7 @@
         <section class="page" data-page="settings">
           <section class="panel-grid">
             <article class="panel"><header class="panel-head"><h2>Segurança</h2></header>
-              <form id="changePasswordForm" class="form-stack"><label>Senha Atual<input id="currentPassword" type="password" required minlength="6" autocomplete="current-password"/></label><label>Nova Senha<input id="newPassword" type="password" required minlength="8" autocomplete="new-password"/></label><label>Confirmar<input id="confirmNewPassword" type="password" required minlength="8" autocomplete="new-password"/></label><div class="row-actions"><button class="btn primary" type="submit">Alterar Senha</button></div></form>
+              <form id="changePasswordForm" class="form-stack"><label>Senha Atual<input id="currentPassword" type="password" required minlength="8" autocomplete="current-password"/></label><label>Nova Senha<input id="newPassword" type="password" required minlength="8" autocomplete="new-password"/></label><label>Confirmar<input id="confirmNewPassword" type="password" required minlength="8" autocomplete="new-password"/></label><div class="row-actions"><button class="btn primary" type="submit">Alterar Senha</button></div></form>
             </article>
             <article class="panel"><header class="panel-head"><h2>Categorias</h2></header>
               <form id="categoryForm" class="form-stack"><div class="row-2"><label>Nome<input id="categoryName" type="text" placeholder="Ex: Alimentação" maxlength="40" required/></label><label>Tipo<select id="categoryType" required><option value="todas">Todas</option><option value="receita">Receita</option><option value="despesa">Despesa</option><option value="investimento">Investimento</option></select></label></div><label>Ícone<input id="categoryIcon" type="text" placeholder="📁" maxlength="4"/></label><div class="row-actions"><button class="btn primary" id="categorySubmitBtn" type="submit">Criar Categoria</button><button class="btn ghost hidden" id="cancelCategoryEditBtn" type="button">Cancelar</button></div></form>

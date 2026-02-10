@@ -505,8 +505,8 @@
       email: normalizeString(el.registerEmail.value),
       password: el.registerPassword.value,
     };
-    if (!payload.name || !payload.email || payload.password.length < 6) {
-      showMessage("auth", "Preencha nome, email e senha com no mínimo 6 caracteres.", "error");
+    if (!payload.name || !payload.email || payload.password.length < 8) {
+      showMessage("auth", "Preencha nome, email e senha com no mínimo 8 caracteres.", "error");
       return;
     }
     try {

@@ -151,7 +151,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 	})
 
 	srv := &http.Server{
-		Addr:         ":" + cfg.Port,
+		Addr:         "0.0.0.0:" + cfg.Port,
 		Handler:      r,
 		ReadTimeout:  cfg.ReadTimeout,
 		WriteTimeout: cfg.WriteTimeout,
