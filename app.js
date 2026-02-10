@@ -809,7 +809,7 @@
     let e = Math.min(totalPages, s + maxBtns - 1);
     if (e - s + 1 < maxBtns) s = Math.max(1, e - maxBtns + 1);
     if (s > 1) pag += `<button data-page="1">1</button><span class="page-info">…</span>`;
-    for (let i = s; i <= e; i++) pag += `<button data-page="${i}" class="${i === state.tablePage ? "is-active" : ""}">${i}</button>`;
+    for (let i = s; i <= e; i++) pag += `<button data-page="${i}" class="${i === state.tablePage ? 'is-active' : ''}">${i}</button>`;
     if (e < totalPages) pag += `<span class="page-info">…</span><button data-page="${totalPages}">${totalPages}</button>`;
     pag += `<button ${state.tablePage >= totalPages ? "disabled" : ""} data-page="${state.tablePage + 1}">&gt;</button>`;
     el.tablePagination.innerHTML = pag;
