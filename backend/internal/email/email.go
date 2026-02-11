@@ -163,6 +163,7 @@ type MonthlySummary struct {
 	Income        float64
 	Expenses      float64
 	Investment    float64
+	CreditCard    float64
 	Balance       float64
 	TopCategories []CategorySummary
 }
@@ -214,6 +215,16 @@ func (s *Sender) SendMonthlySummaryEmail(to, userName, monthLabel string, data M
         <div style="color:#f85149; font-size:1.2rem; font-weight:600;">R$ %.2f</div>
       </div>
       <div style="flex:1; min-width:120px; background:#21262d; border-radius:8px; padding:12px; text-align:center;">
+        <div style="color:#8b949e; font-size:0.75rem;">Investimentos</div>
+        <div style="color:#ffa657; font-size:1.2rem; font-weight:600;">R$ %.2f</div>
+      </div>
+    </div>
+    <div style="display:flex; gap:12px; margin:0 0 1rem 0; flex-wrap:wrap;">
+      <div style="flex:1; min-width:120px; background:#21262d; border-radius:8px; padding:12px; text-align:center;">
+        <div style="color:#8b949e; font-size:0.75rem;">Cartão de Crédito</div>
+        <div style="color:#9e8bff; font-size:1.2rem; font-weight:600;">R$ %.2f</div>
+      </div>
+      <div style="flex:1; min-width:120px; background:#21262d; border-radius:8px; padding:12px; text-align:center;">
         <div style="color:#8b949e; font-size:0.75rem;">Saldo</div>
         <div style="color:%s; font-size:1.2rem; font-weight:600;">%sR$ %.2f</div>
       </div>
@@ -239,7 +250,8 @@ func (s *Sender) SendMonthlySummaryEmail(to, userName, monthLabel string, data M
 </body>
 </html>`,
 		monthLabel, userName,
-		data.Income, data.Expenses,
+		data.Income, data.Expenses, data.Investment,
+		data.CreditCard,
 		balanceColor, balanceSign, absFloat(data.Balance),
 		catRows.String(),
 		s.cfg.AppURL)

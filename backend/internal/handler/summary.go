@@ -51,11 +51,18 @@ func (h *SummaryHandler) SendMonthlySummary(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Calculate summary
-	var income, expenses, investment float64
+	// Calculate summary — cash-basis: exclude method=credito from KPIs (matches dashboard logic)
+	var income, expenses, investment, creditCard float64
 	catMap := map[string]float64{}
 
 	for _, t := range items {
+		// Credit-card purchases are informational only (cash-basis accounting)
+		if t.Method == "credito" {
+			if t.Type == "despesa" {
+				creditCard += t.Amount
+			}
+			continue
+		}
 		switch t.Type {
 		case "receita":
 			income += t.Amount
@@ -95,6 +102,7 @@ func (h *SummaryHandler) SendMonthlySummary(w http.ResponseWriter, r *http.Reque
 		Income:        income,
 		Expenses:      expenses,
 		Investment:    investment,
+		CreditCard:    creditCard,
 		Balance:       income - expenses - investment,
 		TopCategories: topCats,
 	}
