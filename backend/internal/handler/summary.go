@@ -64,7 +64,7 @@ func (h *SummaryHandler) SendMonthlySummary(w http.ResponseWriter, r *http.Reque
 			catMap[t.Category] += t.Amount
 		case "investimento":
 			investment += t.Amount
-		// transferencia is intentionally ignored (neutral)
+			// transferencia is intentionally ignored (neutral)
 		}
 	}
 

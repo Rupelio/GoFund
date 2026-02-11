@@ -1,4 +1,4 @@
-const CACHE_NAME = "gofund-v12";
+const CACHE_NAME = "gofund-v13";
 const ASSETS = ["/", "/index.html", "/styles.css?v=8", "/app.js?v=8", "/manifest.json"];
 
 self.addEventListener("install", (e) => {

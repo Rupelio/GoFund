@@ -160,10 +160,10 @@ type ReminderItem struct {
 
 // MonthlySummary holds the data for a monthly financial summary email.
 type MonthlySummary struct {
-	Income     float64
-	Expenses   float64
-	Investment float64
-	Balance    float64
+	Income        float64
+	Expenses      float64
+	Investment    float64
+	Balance       float64
 	TopCategories []CategorySummary
 }
 

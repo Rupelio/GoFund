@@ -1474,12 +1474,18 @@
   function getAccountBalance(accountId) {
     const account = state.accounts.find((a) => a.id === accountId);
     if (!account) return 0;
-    let balance = account.initialBalance || 0;
-    state.transactions.filter((t) => t.accountId === accountId).forEach((t) => {
-      if (t.type === "transferencia") return; // Transferências entre contas: ignorar no saldo individual
-      if (t.method === "credito") return; // Compras no cartão não saem do saldo real
+    // Balance computed from transactions (backend auto-creates "Saldo inicial" receita)
+    let balance = 0;
+    const linked = state.transactions.filter((t) => t.accountId === accountId);
+    linked.forEach((t) => {
+      if (t.type === "transferencia") return;
+      if (t.method === "credito") return;
       balance += t.type === "receita" ? t.amount : -t.amount;
     });
+    // Fallback for legacy accounts without auto-transaction
+    if (balance === 0 && (account.initialBalance || 0) > 0 && linked.length === 0) {
+      balance = account.initialBalance;
+    }
     return round2(balance);
   }
 
@@ -1528,11 +1534,19 @@
       } else {
         const created = await apiRequest("/api/accounts", { method: "POST", body: payload });
         state.accounts.push(created);
+        // Reload transactions to include auto-created "Saldo inicial" transaction
+        if (payload.initialBalance > 0) {
+          try {
+            const data = await apiRequest("/api/bootstrap");
+            state.transactions = Array.isArray(data.transactions) ? data.transactions.map(normalizeTransaction).filter(isValidTransaction) : state.transactions;
+          } catch (_) { /* fallback: user can refresh */ }
+        }
         showMessage("app", "Conta criada.", "success");
       }
       resetAccountForm();
       renderAccounts();
       populateAccountSelector();
+      renderAll();
     } catch (error) {
       showMessage("app", getErrorMessage(error, "Falha ao salvar conta."), "error");
     }
@@ -2270,15 +2284,41 @@
         if (!inferredCategory || inferredCategory === "Outros") inferredCategory = "Fatura";
       }
 
+      // Detect installments from description: "Parcela X/Y" or "X/Y"
+      let inferredInstallments = idx.installments >= 0 ? Number(cols[idx.installments]) || 0 : 0;
+      let inferredRecurrence = idx.recurrence >= 0 ? String(cols[idx.recurrence] || "none") : "none";
+      let inferredRecurrenceEnd = idx.recurrenceEnd >= 0 ? String(cols[idx.recurrenceEnd] || "") : "";
+      const parcelaMatch = rawDesc.match(/[Pp]arcela\s*(\d+)\s*\/\s*(\d+)/);
+      if (parcelaMatch && inferredInstallments <= 0) {
+        const curInst = parseInt(parcelaMatch[1]);
+        const totalInst = parseInt(parcelaMatch[2]);
+        if (totalInst > 1 && curInst >= 1 && curInst <= totalInst) {
+          inferredInstallments = totalInst;
+          // Adjust date to installment 1 start date
+          if (curInst > 1 && parsedDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            const [py, pm, pd] = parsedDate.split("-").map(Number);
+            const startDate = new Date(py, pm - 1 - (curInst - 1), pd);
+            parsedDate = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}-${String(Math.min(pd, new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0).getDate())).padStart(2, "0")}`;
+          }
+        }
+      }
+
+      // Detect monthly subscriptions from credit card CSV
+      if (isCreditCardCsv && inferredInstallments <= 0 && inferredRecurrence === "none") {
+        if (/dl\*google|google\s*(one|play|premium)|amazonprimebr|amazon\s*prime\b|netflix|spotify|disney|hbo\s*max|paramount|dazn|youtube\s*prem/i.test(rawDesc)) {
+          inferredRecurrence = "monthly";
+        }
+      }
+
       const item = normalizeTransaction({
         id: idx.id >= 0 ? String(cols[idx.id] || "") : "",
         date: parsedDate, type: inferredType,
         category: inferredCategory, method: inferredMethod,
         description: rawDesc,
         amount: Math.abs(rawAmount),
-        recurrence: idx.recurrence >= 0 ? String(cols[idx.recurrence] || "none") : "none",
-        recurrenceEnd: idx.recurrenceEnd >= 0 ? String(cols[idx.recurrenceEnd] || "") : "",
-        installments: idx.installments >= 0 ? Number(cols[idx.installments]) || 0 : 0,
+        recurrence: inferredRecurrence,
+        recurrenceEnd: inferredRecurrenceEnd,
+        installments: inferredInstallments,
         createdAt: idx.createdAt >= 0 ? String(cols[idx.createdAt] || new Date().toISOString()) : new Date().toISOString(),
       });
       isValidTransaction(item) ? items.push(item) : skipped++;
@@ -2290,8 +2330,8 @@
     const rules = [
       // Alimentação / Supermercado
       [/supermercado|condor|angeloni|festval|carrefour|atacadão|atacadao|big\b|assai/, "Supermercado"],
-      [/restaurante|lanchonete|burger|mcdonald|subway|pizza|sushi|shawarma|shawarm|ifood|rappi/, "Alimentação"],
-      [/padaria|confeitaria|cafe\b|café/, "Alimentação"],
+      [/restaurante|lanchonete|burger|mcdonald|subway|pizza|sushi|shawarma|shawarm|ifood|rappi|99food|madeinchina/, "Alimentação"],
+      [/padaria|confeitaria|cafe\b|café|padariae/, "Alimentação"],
       // Transporte / Combustível
       [/posto|combustivel|combustível|shell|ipiranga|petrobras|auto posto/, "Transporte"],
       [/uber|99\b|cabify|estacionamento/, "Transporte"],
@@ -2300,21 +2340,26 @@
       // Moradia / Contas
       [/copel|sanepar|compagas|energia|eletri|agua\b|água/, "Contas"],
       [/aluguel|condominio|condomínio/, "Moradia"],
-      [/internet|telefone|claro\b|vivo\b|tim\b|oi\b/, "Internet"],
+      [/internet|telefone|claro\b|vivo\b|tim\*|oi\b/, "Internet"],
       // Educação
       [/universidade|faculdade|escola|curso|cultura|livraria|associacao.*cultura|apc/, "Educação"],
-      // Lazer
-      [/cinema|teatro|spotify|netflix|disney|amazon prime|steam|playstation|xbox|game/, "Lazer"],
+      // Lazer / Entretenimento
+      [/cinema|teatro|spotify|netflix|disney|amazon\s*prime|steam|playstation|xbox|game|nuuvem|sharkcraft/, "Lazer"],
+      // Assinaturas digitais
+      [/dl\*google|google\s*(one|play|premium)|amazonprimebr|youtube\s*prem/i, "Assinaturas"],
+      [/amazon\s*-\s*parcela|mercadolivre|mercado\s*livre/i, "Compras Online"],
       // Vestuário
       [/roupa|vestuario|vestuário|renner|cea\b|c&a|riachuelo|zara|seminario|semina/, "Vestuário"],
       // Investimento
       [/aplicação|aplicacao|rdb|cdb|tesouro|investimento|poupança|poupanca/, "Investimento"],
       // Salário / Receita
       [/salario|salário/, "Salário"],
-      // Transferências (receita para transferência recebida)
+      // Fatura
       [/fatura/, "Fatura"],
       // Impostos
       [/receita federal|imposto|darf|gps|inss|irpf/, "Impostos"],
+      // Domínio / Hosting
+      [/registrobr|registro\.br|hostgator|locaweb|godaddy/, "Internet"],
     ];
     for (const [regex, cat] of rules) {
       if (regex.test(desc)) return cat;
