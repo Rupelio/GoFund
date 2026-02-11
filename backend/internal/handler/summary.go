@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"gestao/backend/internal/domain"
 	"gestao/backend/internal/email"
 	"gestao/backend/internal/postgres"
 )
@@ -43,13 +44,14 @@ func (h *SummaryHandler) SendMonthlySummary(w http.ResponseWriter, r *http.Reque
 	ctx, cancel := context.WithTimeout(r.Context(), h.queryTimeout)
 	defer cancel()
 
-	// Fetch all transactions for the month (no pagination)
-	items, _, err := h.transactions.List(ctx, user.ID, month, 10000, 0)
+	// Fetch full history so summary can expand recurrence/installments like the dashboard.
+	allItems, err := h.transactions.ListAll(ctx, user.ID)
 	if err != nil {
 		slog.Error("summary: list transactions failed", "error", err)
 		WriteError(w, http.StatusInternalServerError, "could not fetch transactions")
 		return
 	}
+	items := expandTransactionsForMonth(allItems, month)
 
 	// Calculate summary — cash-basis: exclude method=credito from KPIs (matches dashboard logic)
 	var income, expenses, investment, creditCard float64
@@ -122,4 +124,68 @@ func formatMonthPt(t time.Time) string {
 		"Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 	}
 	return months[t.Month()-1] + " " + t.Format("2006")
+}
+
+// expandTransactionsForMonth applies the same month-expansion rules used by the frontend:
+// - monthly recurrence applies from start month until recurrenceEnd (if present)
+// - installments apply from start month for N months
+func expandTransactionsForMonth(items []domain.TransactionDTO, month string) []domain.TransactionDTO {
+	effective := make([]domain.TransactionDTO, 0, len(items))
+
+	for _, t := range items {
+		txMonth, ok := monthFromDate(t.Date)
+		if !ok {
+			continue
+		}
+
+		if t.Recurrence == "monthly" {
+			if txMonth > month {
+				continue
+			}
+			if t.RecurrenceEnd != "" {
+				if endMonth, ok := monthFromDate(t.RecurrenceEnd); ok && endMonth < month {
+					continue
+				}
+			}
+			effective = append(effective, t)
+			continue
+		}
+
+		if t.Installments > 1 {
+			diff, ok := monthDiff(txMonth, month)
+			if ok && diff >= 0 && diff < t.Installments {
+				effective = append(effective, t)
+			}
+			continue
+		}
+
+		if txMonth == month {
+			effective = append(effective, t)
+		}
+	}
+
+	return effective
+}
+
+func monthFromDate(date string) (string, bool) {
+	if len(date) < len("2006-01") {
+		return "", false
+	}
+	month := date[:7]
+	if _, err := time.Parse("2006-01", month); err != nil {
+		return "", false
+	}
+	return month, true
+}
+
+func monthDiff(startMonth, endMonth string) (int, bool) {
+	start, err := time.Parse("2006-01", startMonth)
+	if err != nil {
+		return 0, false
+	}
+	end, err := time.Parse("2006-01", endMonth)
+	if err != nil {
+		return 0, false
+	}
+	return (end.Year()-start.Year())*12 + int(end.Month()) - int(start.Month()), true
 }

@@ -17,6 +17,8 @@
 
   /* ── DOM Cache ───────────────────────────────────────────── */
   const el = {
+    globalLoader: document.getElementById("globalLoader"),
+    loaderText: document.getElementById("loaderText"),
     authShell: document.getElementById("authShell"),
     dashboardShell: document.getElementById("dashboardShell"),
     authMessage: document.getElementById("authMessage"),
@@ -498,13 +500,15 @@
       showMessage("auth", "Informe email e senha.", "error");
       return;
     }
+    const btn = el.loginForm.querySelector('button[type="submit"]');
+    setBtnLoading(btn, true, "Entrando…");
     try {
       const result = await apiRequest("/api/auth/login", { method: "POST", auth: false, body: payload });
       applyAuthResult(result);
       showMessage("app", "Login realizado com sucesso.", "success");
     } catch (error) {
       showMessage("auth", getErrorMessage(error, "Falha no login."), "error");
-    }
+    } finally { setBtnLoading(btn, false, "Entrar"); }
   }
 
   async function handleRegister(event) {
@@ -518,25 +522,29 @@
       showMessage("auth", "Preencha nome, email e senha com no mínimo 8 caracteres.", "error");
       return;
     }
+    const btn = el.registerForm.querySelector('button[type="submit"]');
+    setBtnLoading(btn, true, "Criando conta…");
     try {
       const result = await apiRequest("/api/auth/register", { method: "POST", auth: false, body: payload });
       applyAuthResult(result);
       showMessage("app", "Conta criada com sucesso.", "success");
     } catch (error) {
       showMessage("auth", getErrorMessage(error, "Falha no cadastro."), "error");
-    }
+    } finally { setBtnLoading(btn, false, "Criar conta"); }
   }
 
   async function handleForgotPassword(event) {
     event.preventDefault();
     const email = normalizeString(el.forgotEmail.value);
     if (!email) { showMessage("auth", "Informe seu email.", "error"); return; }
+    const btn = el.forgotPasswordForm.querySelector('button[type="submit"]');
+    setBtnLoading(btn, true, "Enviando…");
     try {
       await apiRequest("/api/auth/request-reset", { method: "POST", auth: false, body: { email } });
       el.forgotSuccessMsg.classList.remove("hidden");
     } catch (error) {
       showMessage("auth", getErrorMessage(error, "Falha ao enviar link."), "error");
-    }
+    } finally { setBtnLoading(btn, false, "Enviar link"); }
   }
 
   async function handleResetPassword(event) {
@@ -548,15 +556,16 @@
     const params = new URLSearchParams(window.location.search);
     const token = params.get("reset-token");
     if (!token) { showMessage("auth", "Token de redefinição ausente.", "error"); return; }
+    const btn = el.resetPasswordForm.querySelector('button[type="submit"]');
+    setBtnLoading(btn, true, "Redefinindo…");
     try {
       await apiRequest("/api/auth/confirm-reset", { method: "POST", auth: false, body: { token, newPassword: newPass } });
       showMessage("auth", "Senha redefinida com sucesso! Faça login.", "success");
-      // Clean URL
       window.history.replaceState({}, document.title, window.location.pathname);
       setAuthMode("login");
     } catch (error) {
       showMessage("auth", getErrorMessage(error, "Falha ao redefinir senha. Link expirado?"), "error");
-    }
+    } finally { setBtnLoading(btn, false, "Redefinir Senha"); }
   }
 
   function handleLogout() {
@@ -1868,23 +1877,32 @@
 
   /* ── Drag & drop CSV helper ────────────────────────────── */
   async function importCsvFile(file) {
+    showLoader("Importando CSV…");
     try {
       const text = await readFileAsText(file);
       const parsed = parseTransactionsFromCsv(text);
       if (!parsed.items.length) { showMessage("app", "Nenhuma transação encontrada no CSV.", "error"); return; }
-      let imported = 0, failed = 0;
+      const existing = buildExistingFingerprints();
+      let imported = 0, failed = 0, duplicates = 0;
       for (const item of parsed.items) {
+        const fp = txnFingerprint(item.date, item.description, item.amount);
+        if (existing.has(fp)) { duplicates++; continue; }
         try {
-          state.transactions.push(normalizeTransaction(await apiRequest("/api/transactions", { method: "POST", body: toPayload(item, false) })));
+          const created = normalizeTransaction(await apiRequest("/api/transactions", { method: "POST", body: toPayload(item, false) }));
+          state.transactions.push(created);
+          existing.add(fp);
           imported++;
         } catch { failed++; }
       }
       renderAll();
       const ignored = parsed.skipped + failed;
-      showMessage("app", `${imported} importadas, ${ignored} ignoradas.`, failed > 0 ? "error" : "success");
+      const parts = [`${imported} importadas`];
+      if (duplicates) parts.push(`${duplicates} duplicatas ignoradas`);
+      if (ignored) parts.push(`${ignored} inválidas`);
+      showMessage("app", parts.join(", ") + ".", failed > 0 ? "error" : "success");
     } catch (err) {
       showMessage("app", "Erro ao importar CSV: " + getErrorMessage(err), "error");
-    }
+    } finally { hideLoader(); }
   }
 
   /* ── Projection (original) ─────────────────────────────── */
@@ -2208,23 +2226,32 @@
   async function importCsv(event) {
     const file = event.target.files?.[0];
     if (!file) return;
+    showLoader("Importando CSV…");
     try {
       const text = await readFileAsText(file);
       const parsed = parseTransactionsFromCsv(text);
       if (!parsed.items.length) { showMessage("app", "Nenhuma movimentação válida no CSV.", "error"); return; }
-      let imported = 0, failed = 0;
+      const existing = buildExistingFingerprints();
+      let imported = 0, failed = 0, duplicates = 0;
       for (const item of parsed.items) {
+        const fp = txnFingerprint(item.date, item.description, item.amount);
+        if (existing.has(fp)) { duplicates++; continue; }
         try {
-          state.transactions.push(normalizeTransaction(await apiRequest("/api/transactions", { method: "POST", body: toPayload(item, false) })));
+          const created = normalizeTransaction(await apiRequest("/api/transactions", { method: "POST", body: toPayload(item, false) }));
+          state.transactions.push(created);
+          existing.add(fp);
           imported++;
         } catch { failed++; }
       }
       renderAll();
       const ignored = parsed.skipped + failed;
-      showMessage("app", `${imported} importadas, ${ignored} ignoradas.`, failed > 0 ? "error" : "success");
+      const parts = [`${imported} importadas`];
+      if (duplicates) parts.push(`${duplicates} duplicatas ignoradas`);
+      if (ignored) parts.push(`${ignored} inválidas`);
+      showMessage("app", parts.join(", ") + ".", failed > 0 ? "error" : "success");
     } catch (error) {
       showMessage("app", getErrorMessage(error, "Falha ao importar CSV."), "error");
-    } finally { event.target.value = ""; }
+    } finally { event.target.value = ""; hideLoader(); }
   }
 
   function parseTransactionsFromCsv(csvText) {
@@ -2474,6 +2501,23 @@
     }, delay);
   }
 
+  /* ── Global Loader ─────────────────────────────────────── */
+  let loaderStack = 0;
+  function showLoader(msg) {
+    loaderStack++;
+    if (el.loaderText) el.loaderText.textContent = msg || "Carregando…";
+    if (el.globalLoader) el.globalLoader.classList.remove("hidden");
+  }
+  function hideLoader() {
+    loaderStack = Math.max(0, loaderStack - 1);
+    if (loaderStack === 0 && el.globalLoader) el.globalLoader.classList.add("hidden");
+  }
+  function setBtnLoading(btn, loading, originalText) {
+    if (!btn) return;
+    if (loading) { btn.dataset.origText = btn.textContent; btn.disabled = true; btn.classList.add("is-loading"); btn.textContent = originalText || "Aguarde…"; }
+    else { btn.disabled = false; btn.classList.remove("is-loading"); btn.textContent = btn.dataset.origText || originalText || btn.textContent; }
+  }
+
   function getErrorMessage(error, fallback) {
     const text = normalizeString(String(error?.message || ""));
     return text ? `${fallback} (${text})` : fallback;
@@ -2483,6 +2527,21 @@
     const p = { date: t.date, type: t.type, category: t.category, method: t.method, description: t.description, amount: Number(t.amount), recurrence: t.recurrence || "none", recurrenceEnd: t.recurrenceEnd || "", installments: Number(t.installments) || 0 };
     if (preserveId && t.id) p.id = t.id;
     return p;
+  }
+
+  /** Create a fingerprint for deduplication: date + normalized description + amount */
+  function txnFingerprint(date, description, amount) {
+    const d = normalizeString(String(description)).toLowerCase().replace(/\s+/g, " ").trim();
+    return `${date}|${d}|${Math.abs(Number(amount)).toFixed(2)}`;
+  }
+
+  /** Build a Set of fingerprints from existing transactions */
+  function buildExistingFingerprints() {
+    const set = new Set();
+    for (const t of state.transactions) {
+      set.add(txnFingerprint(t.date, t.description, t.amount));
+    }
+    return set;
   }
 
   /* ── Normalizers ─────────────────────────────────────────── */
