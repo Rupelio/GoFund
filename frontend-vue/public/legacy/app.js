@@ -1704,7 +1704,6 @@
     const invChange = changeInfo(curInvest, prevInvest);
     const ccChange = changeInfo(curCreditCard, prevCreditCard);
     const balChange = changeInfo(curBalance, prevBalance);
-
     const arrow = (cls) => cls === "up" ? "↑" : cls === "down" ? "↓" : "→";
 
     // Category breakdown
@@ -2307,8 +2306,10 @@
   }
 
   async function importCsvCore(file) {
-    showLoader("Importando CSV...");
+    let loaderVisible = false;
     try {
+      showLoader("Lendo CSV...");
+      loaderVisible = true;
       const text = await readFileAsText(file);
       const parsed = parseTransactionsFromCsv(text);
       if (!parsed.items.length) { showMessage("app", "Nenhuma movimentacao valida no CSV.", "error"); return; }
@@ -2324,6 +2325,11 @@
         `- Duplicatas dentro do arquivo: ${preview.duplicatesInFile}`,
         `- Linhas invalidas: ${invalidPreview}`,
       ].join("\n");
+      // Hide loader before asking for confirmation so modal buttons remain clickable.
+      if (loaderVisible) {
+        hideLoader();
+        loaderVisible = false;
+      }
       const confirmed = await showConfirmDialog({
         title: "Confirmar importação CSV",
         message: `${confirmText}\n\nDeseja continuar?`,
@@ -2336,6 +2342,8 @@
         return;
       }
 
+      showLoader("Importando CSV...");
+      loaderVisible = true;
       const result = await apiRequest("/api/transactions/import", {
         method: "POST",
         body: { items: preview.toImport.map((item) => toPayload(item, false)) },
@@ -2354,7 +2362,9 @@
     } catch (error) {
       showMessage("app", getErrorMessage(error, "Falha ao importar CSV."), "error");
     } finally {
-      hideLoader();
+      if (loaderVisible) {
+        hideLoader();
+      }
     }
   }
 

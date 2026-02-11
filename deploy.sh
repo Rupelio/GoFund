@@ -1,39 +1,45 @@
 #!/bin/bash
-# deploy.sh — Script para atualizar frontend e/ou backend
+# deploy.sh - deploy frontend/backend
 
-set -e
+set -euo pipefail
 
 show_help() {
-  cat << EOF
-GoFund — Script de Deploy
+  cat << 'EOF'
+GoFund - Script de Deploy
 
 Uso:
   ./deploy.sh [frontend|backend|all]
 
-Opções:
+Opcoes:
   frontend    Deploy apenas do frontend (Vercel)
   backend     Deploy apenas do backend (Fly.io)
   all         Deploy completo (frontend + backend)
 
 Exemplos:
-  ./deploy.sh frontend     # Atualiza só o Vercel
-  ./deploy.sh backend      # Atualiza só o Fly.io
-  ./deploy.sh all          # Atualiza tudo
+  ./deploy.sh frontend
+  ./deploy.sh backend
+  ./deploy.sh all
 EOF
 }
 
+set_vercel_project_env() {
+  if [ -f ".vercel/project.json" ]; then
+    export VERCEL_ORG_ID="$(node -e "process.stdout.write(require('./.vercel/project.json').orgId)")"
+    export VERCEL_PROJECT_ID="$(node -e "process.stdout.write(require('./.vercel/project.json').projectId)")"
+  fi
+}
+
 deploy_frontend() {
-  echo "📦 Deployando frontend no Vercel..."
-  vercel --prod
-  echo "✅ Frontend atualizado!"
+  echo "[frontend] Deployando no Vercel..."
+  set_vercel_project_env
+  vercel --prod --yes --cwd frontend-vue
+  echo "[frontend] Deploy concluido."
 }
 
 deploy_backend() {
-  echo "🚀 Deployando backend no Fly.io..."
-  cd backend
-  fly deploy
-  cd ..
-  echo "✅ Backend atualizado!"
+  echo "[backend] Deployando no Fly.io..."
+  (cd backend && fly deploy)
+  echo "[backend] Deploy concluido."
 }
 
 case "${1:-all}" in
@@ -51,16 +57,14 @@ case "${1:-all}" in
     show_help
     ;;
   *)
-    echo "❌ Opção inválida: $1"
+    echo "Opcao invalida: $1"
     show_help
     exit 1
     ;;
 esac
 
-echo ""
-echo "🎉 Deploy concluído!"
-echo ""
-echo "URLs:"
-echo "  Frontend: https://gestao-htvb05zze-rupelios-projects.vercel.app"
-echo "  Backend:  https://gestao-api.fly.dev"
-echo "  Health:   https://gestao-api.fly.dev/health"
+echo
+echo "Deploy finalizado."
+echo "Frontend: https://gestao-htvb05zze-rupelios-projects.vercel.app"
+echo "Backend:  https://gestao-api.fly.dev"
+echo "Health:   https://gestao-api.fly.dev/health"
