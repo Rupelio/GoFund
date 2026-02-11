@@ -3092,7 +3092,10 @@
     if (installments <= 0 && installmentInfo) {
       installments = installmentInfo.total;
     }
-    const dateValue = adjustToInstallmentStartDate(normalizeString(String(t?.date || "")), installmentInfo);
+    // Keep persisted date as source of truth.
+    // Installment start-date rebasing must happen only during CSV parsing;
+    // rebasing again here would shift records backwards every bootstrap refresh.
+    const dateValue = normalizeString(String(t?.date || ""));
     const type = normalizeString(String(t?.type || "")).toLowerCase();
     const category = normalizeCategory(String(t?.category || ""));
     const method = normalizeString(String(t?.method || "")).toLowerCase();
