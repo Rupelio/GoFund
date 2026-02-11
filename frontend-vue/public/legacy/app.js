@@ -638,6 +638,7 @@
   }
 
   async function loadBootstrap() {
+    showLoader("Carregando dados…");
     try {
       const data = await apiRequest("/api/bootstrap");
       state.user = normalizeUser(data.user || {});
@@ -665,7 +666,7 @@
       localStorage.removeItem(AUTH_STORAGE_KEY);
       showAuth();
       showMessage("auth", getErrorMessage(error, "Sessão inválida. Faça login novamente."), "error");
-    }
+    } finally { hideLoader(); }
   }
 
   function showAuth() {
@@ -945,6 +946,7 @@
       accountId: el.transactionAccount.value || "",
     };
     if (!isValidTransaction(payload)) { showMessage("app", "Dados inválidos.", "error"); return; }
+    setBtnLoading(el.transactionSubmitBtn, true, "Salvando…");
     try {
       if (editingTransactionId) {
         const updated = normalizeTransaction(await apiRequest(`/api/transactions/${encodeURIComponent(editingTransactionId)}`, { method: "PUT", body: payload }));
@@ -960,7 +962,7 @@
       renderAll();
     } catch (error) {
       showMessage("app", getErrorMessage(error, "Falha ao salvar."), "error");
-    }
+    } finally { setBtnLoading(el.transactionSubmitBtn, false, "Salvar"); }
   }
 
   async function handleTransactionTableActions(event) {
@@ -1004,6 +1006,7 @@
         tone: "danger",
       });
       if (!confirmed) return;
+      showLoader("Excluindo…");
       try {
         await apiRequest(`/api/transactions/${encodeURIComponent(id)}`, { method: "DELETE", expectNoContent: true });
         state.transactions = state.transactions.filter((t) => t.id !== id);
@@ -1012,7 +1015,7 @@
         showMessage("app", "Movimentação removida.", "success");
       } catch (error) {
         showMessage("app", getErrorMessage(error, "Falha ao excluir."), "error");
-      }
+      } finally { hideLoader(); }
     }
   }
 
@@ -1065,6 +1068,8 @@
       showMessage("app", "Categoria e limite são obrigatórios.", "error");
       return;
     }
+    const budgetBtn = el.budgetForm.querySelector('button[type="submit"]');
+    setBtnLoading(budgetBtn, true, "Salvando…");
     try {
       if (editingBudgetId) {
         const updated = normalizeBudget(await apiRequest(`/api/budgets/${encodeURIComponent(editingBudgetId)}`, { method: "PUT", body: payload }));
@@ -1079,7 +1084,7 @@
       showMessage("app", "Orçamento salvo.", "success");
     } catch (error) {
       showMessage("app", getErrorMessage(error, "Falha ao salvar orçamento."), "error");
-    }
+    } finally { setBtnLoading(budgetBtn, false, "Salvar"); }
   }
 
   async function handleBudgetActions(event) {
@@ -1105,6 +1110,7 @@
         tone: "danger",
       });
       if (!confirmed) return;
+      showLoader("Excluindo orçamento…");
       try {
         await apiRequest(`/api/budgets/${encodeURIComponent(id)}`, { method: "DELETE", expectNoContent: true });
         state.budgets = state.budgets.filter((b) => b.id !== id);
@@ -1113,7 +1119,7 @@
         showMessage("app", "Orçamento removido.", "success");
       } catch (error) {
         showMessage("app", getErrorMessage(error, "Falha ao excluir."), "error");
-      }
+      } finally { hideLoader(); }
     }
   }
 
@@ -1130,6 +1136,8 @@
       dueDate: el.goalDueDate.value || "",
     };
     if (!isValidGoal(payload)) { showMessage("app", "Dados inválidos para meta.", "error"); return; }
+    const goalBtn = el.goalForm.querySelector('button[type="submit"]');
+    setBtnLoading(goalBtn, true, "Salvando…");
     try {
       if (editingGoalId) {
         const updated = normalizeGoal(await apiRequest(`/api/goals/${encodeURIComponent(editingGoalId)}`, { method: "PUT", body: payload }));
@@ -1144,7 +1152,7 @@
       renderGoals();
     } catch (error) {
       showMessage("app", getErrorMessage(error, "Falha ao salvar meta."), "error");
-    }
+    } finally { setBtnLoading(goalBtn, false, "Criar Meta"); }
   }
 
   async function handleGoalActions(event) {
@@ -1173,6 +1181,7 @@
         tone: "danger",
       });
       if (!confirmed) return;
+      showLoader("Excluindo…");
       try {
         await apiRequest(`/api/goals/${encodeURIComponent(id)}`, { method: "DELETE", expectNoContent: true });
         state.goals = state.goals.filter((g) => g.id !== id);
@@ -1181,7 +1190,7 @@
         showMessage("app", "Meta removida.", "success");
       } catch (error) {
         showMessage("app", getErrorMessage(error, "Falha ao excluir meta."), "error");
-      }
+      } finally { hideLoader(); }
     }
   }
 
@@ -1196,6 +1205,8 @@
       showMessage("app", "Informe um aporte válido.", "error");
       return;
     }
+    const contribBtn = form.querySelector('button[type="submit"]');
+    setBtnLoading(contribBtn, true, "Salvando…");
     try {
       const updated = normalizeGoal(await apiRequest(`/api/goals/${encodeURIComponent(id)}/contributions`, { method: "POST", body: { amount } }));
       const idx = state.goals.findIndex((g) => g.id === id);
@@ -1205,7 +1216,7 @@
       showMessage("app", "Aporte registrado.", "success");
     } catch (error) {
       showMessage("app", getErrorMessage(error, "Falha ao registrar aporte."), "error");
-    }
+    } finally { setBtnLoading(contribBtn, false, "Aportar"); }
   }
 
   function resetGoalForm() {
@@ -1345,14 +1356,15 @@
     if (!/[a-zA-Z]/.test(newPwd) || !/\d/.test(newPwd)) {
       showMessage("app", "Nova senha deve conter letras e números.", "error"); return;
     }
-
+    const pwdBtn = el.changePasswordForm.querySelector('button[type="submit"]');
+    setBtnLoading(pwdBtn, true, "Alterando…");
     try {
       await apiRequest("/api/auth/password", { method: "PUT", body: { currentPassword: current, newPassword: newPwd } });
       el.changePasswordForm.reset();
       showMessage("app", "Senha alterada com sucesso.", "success");
     } catch (error) {
       showMessage("app", getErrorMessage(error, "Falha ao alterar senha."), "error");
-    }
+    } finally { setBtnLoading(pwdBtn, false, "Alterar Senha"); }
   }
 
   function renderGoals() {
@@ -1509,6 +1521,7 @@
       icon: normalizeString(el.categoryIcon.value) || "📁",
     };
     if (!payload.name) { showMessage("app", "Nome da categoria é obrigatório.", "error"); return; }
+    setBtnLoading(el.categorySubmitBtn, true, "Salvando…");
     try {
       if (editingCategoryId) {
         const updated = await apiRequest(`/api/categories/${encodeURIComponent(editingCategoryId)}`, { method: "PUT", body: payload });
@@ -1525,7 +1538,7 @@
       populateCategorySelect();
     } catch (error) {
       showMessage("app", getErrorMessage(error, "Falha ao salvar categoria."), "error");
-    }
+    } finally { setBtnLoading(el.categorySubmitBtn, false, editingCategoryId ? "Atualizar" : "Criar Categoria"); }
   }
 
   async function handleCategoryActions(event) {
@@ -1552,6 +1565,7 @@
         tone: "danger",
       });
       if (!confirmed) return;
+      showLoader("Excluindo categoria…");
       try {
         await apiRequest(`/api/categories/${encodeURIComponent(id)}`, { method: "DELETE", expectNoContent: true });
         state.categories = state.categories.filter((c) => c.id !== id);
@@ -1561,7 +1575,7 @@
         showMessage("app", "Categoria removida.", "success");
       } catch (error) {
         showMessage("app", getErrorMessage(error, "Falha ao excluir categoria."), "error");
-      }
+      } finally { hideLoader(); }
     }
   }
 
@@ -1635,6 +1649,7 @@
       color: el.accountColor.value || "#5e7fff",
     };
     if (!payload.name) { showMessage("app", "Nome da conta é obrigatório.", "error"); return; }
+    setBtnLoading(el.accountSubmitBtn, true, "Salvando…");
     try {
       if (editingAccountId) {
         const updated = await apiRequest(`/api/accounts/${encodeURIComponent(editingAccountId)}`, { method: "PUT", body: payload });
@@ -1653,7 +1668,7 @@
       renderAll();
     } catch (error) {
       showMessage("app", getErrorMessage(error, "Falha ao salvar conta."), "error");
-    }
+    } finally { setBtnLoading(el.accountSubmitBtn, false, editingAccountId ? "Atualizar Conta" : "Criar Conta"); }
   }
 
   async function handleAccountActions(event) {
@@ -1681,6 +1696,7 @@
         tone: "danger",
       });
       if (!confirmed) return;
+      showLoader("Excluindo conta…");
       try {
         await apiRequest(`/api/accounts/${encodeURIComponent(id)}`, { method: "DELETE", expectNoContent: true });
         state.accounts = state.accounts.filter((a) => a.id !== id);
@@ -1690,7 +1706,7 @@
         showMessage("app", "Conta removida.", "success");
       } catch (error) {
         showMessage("app", getErrorMessage(error, "Falha ao excluir conta."), "error");
-      }
+      } finally { hideLoader(); }
     }
   }
 
@@ -1945,7 +1961,7 @@
       showMessage("app", "Bibliotecas de PDF não carregadas. Recarregue a página.", "error");
       return;
     }
-    showMessage("app", "Gerando PDF… aguarde.", "info");
+    showLoader("Gerando PDF…");
     try {
       // Captura o painel do relatório mensal
       const target = el.reportPanel;
@@ -1987,7 +2003,7 @@
       showMessage("app", "PDF salvo como relatorio-" + state.selectedMonth + ".pdf", "success");
     } catch (err) {
       showMessage("app", "Erro ao gerar PDF: " + getErrorMessage(err), "error");
-    }
+    } finally { hideLoader(); }
   }
 
   /* ── Drag & drop CSV helper ────────────────────────────── */
@@ -2018,6 +2034,8 @@
     if ([income, expense, investment].some((v) => v !== null && v < 0)) {
       showMessage("app", "Valores não podem ser negativos.", "error"); return;
     }
+    const projBtn = el.projectionForm.querySelector('button[type="submit"]');
+    if (projBtn) setBtnLoading(projBtn, true, "Calculando…");
     try {
       const updated = normalizeProjection(await apiRequest("/api/projection", { method: "PUT", body: { months, income, expense, investment } }));
       state.projection = updated;
@@ -2027,7 +2045,7 @@
       showMessage("app", "Projeção atualizada.", "success");
     } catch (error) {
       showMessage("app", getErrorMessage(error, "Falha ao atualizar projeção."), "error");
-    }
+    } finally { if (projBtn) setBtnLoading(projBtn, false, "Recalcular"); }
   }
 
   function renderProjectionSummary() {
@@ -2268,16 +2286,14 @@
 
   /* ── CSV ──────────────────────────────────────────────────── */
   async function sendMonthlySummary() {
+    setBtnLoading(el.sendSummaryBtn, true, "Enviando…");
     try {
-      el.sendSummaryBtn.disabled = true;
-      el.sendSummaryBtn.textContent = "Enviando…";
       const res = await apiRequest(`/api/summary/send?month=${state.selectedMonth}`, { method: "POST" });
       showMessage("app", res.message || "Resumo enviado!", "success");
     } catch (error) {
       showMessage("app", getErrorMessage(error, "Falha ao enviar resumo."), "error");
     } finally {
-      el.sendSummaryBtn.disabled = false;
-      el.sendSummaryBtn.textContent = "📊 Resumo";
+      setBtnLoading(el.sendSummaryBtn, false, "📊 Resumo");
     }
   }
 
@@ -2298,9 +2314,8 @@
       tone: "danger",
     });
     if (!secondConfirm) return;
+    showLoader("Excluindo movimentações…");
     try {
-      el.deleteAllTransactionsBtn.disabled = true;
-      el.deleteAllTransactionsBtn.textContent = "Excluindo…";
       const res = await apiRequest("/api/transactions", { method: "DELETE" });
       state.transactions = [];
       showMessage("app", res.message || `${count} movimentações excluídas.`, "success");
@@ -2308,8 +2323,7 @@
     } catch (error) {
       showMessage("app", getErrorMessage(error, "Falha ao excluir movimentações."), "error");
     } finally {
-      el.deleteAllTransactionsBtn.disabled = false;
-      el.deleteAllTransactionsBtn.textContent = "🗑️ Apagar Tudo";
+      hideLoader();
     }
   }
 
