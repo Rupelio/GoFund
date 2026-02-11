@@ -29,3 +29,10 @@ yarn-error.log*
 .idea/
 *.swp
 *.swo
+
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib

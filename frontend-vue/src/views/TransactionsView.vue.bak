@@ -1,0 +1,324 @@
+<template>
+  <div class="transactions-page">
+    <section class="panel-grid">
+      <!-- Transaction Form -->
+      <article class="panel">
+        <header class="panel-head"><h2>{{ editingId ? 'Editar Movimentação' : 'Nova Movimentação' }}</h2></header>
+        <form class="form-stack" @submit.prevent="handleSubmit">
+          <label>Descrição<input ref="descriptionInput" v-model="form.description" type="text" placeholder="Ex: Salário, Aluguel..." maxlength="80" required /></label>
+          <div class="row-2">
+            <label>Valor (R$)<input v-model.number="form.amount" type="number" min="0.01" step="0.01" placeholder="0,00" required /></label>
+            <label>Data<input v-model="form.date" type="date" required /></label>
+          </div>
+          <div class="row-2">
+            <label>Categoria
+              <div class="input-with-action">
+                <select v-model="form.category" required>
+                  <option v-for="cat in categoryOptions" :key="cat" :value="cat">{{ cat }}</option>
+                </select>
+                <button class="btn-icon-add" type="button" title="Nova categoria" @click="showQuickCategory = true">+</button>
+              </div>
+            </label>
+            <label>Tipo
+              <select v-model="form.type" required>
+                <option value="receita">Receita</option>
+                <option value="despesa">Despesa</option>
+                <option value="investimento">Investimento</option>
+                <option value="transferencia">Transferência</option>
+              </select>
+            </label>
+          </div>
+          <div class="row-2">
+            <label>Método
+              <select v-model="form.method" required>
+                <option value="pix">PIX</option>
+                <option value="debito">Débito</option>
+                <option value="credito">Crédito</option>
+                <option value="dinheiro">Dinheiro</option>
+                <option value="transferencia">Transferência</option>
+                <option value="outros">Outros</option>
+              </select>
+            </label>
+            <label>Conta
+              <select v-model="form.accountId">
+                <option value="">Sem conta</option>
+                <option v-for="acc in data.accounts" :key="acc.id" :value="acc.id">{{ acc.name }}</option>
+              </select>
+            </label>
+          </div>
+          <div class="row-2">
+            <label>Recorrência
+              <select v-model="recurrenceMode">
+                <option value="none">Única</option>
+                <option value="monthly">Mensal</option>
+                <option value="installments">Parcelado</option>
+              </select>
+            </label>
+            <label v-if="recurrenceMode === 'installments'">Parcelas<input v-model.number="form.installments" type="number" min="2" max="48" placeholder="12" /></label>
+            <label v-if="recurrenceMode === 'monthly'">Fim<input v-model="form.recurrenceEnd" type="date" /></label>
+          </div>
+          <div class="row-actions">
+            <button class="btn primary" type="submit">{{ editingId ? 'Atualizar' : 'Salvar' }}</button>
+            <button v-if="editingId" class="btn ghost" type="button" @click="cancelEdit">Cancelar</button>
+          </div>
+        </form>
+      </article>
+
+      <!-- Transactions Table -->
+      <article class="panel panel-table">
+        <header class="panel-head transactions-header">
+          <h2>Movimentações</h2>
+          <div class="table-tools">
+            <input v-model="data.searchQuery" type="search" placeholder="Buscar... (/)" />
+            <select v-model="data.filterType">
+              <option value="todos">Todos</option>
+              <option value="receita">Receita</option>
+              <option value="despesa">Despesa</option>
+              <option value="investimento">Investimento</option>
+              <option value="transferencia">Transferência</option>
+            </select>
+            <select v-model="data.filterCategory">
+              <option value="todas">Todas</option>
+              <option v-for="cat in data.allCategoryNames" :key="cat" :value="cat">{{ cat }}</option>
+            </select>
+            <select v-model="data.filterMethod">
+              <option value="todos">Todos Métodos</option>
+              <option value="pix">PIX</option>
+              <option value="debito">Débito</option>
+              <option value="credito">Crédito</option>
+              <option value="dinheiro">Dinheiro</option>
+              <option value="boleto">Boleto</option>
+              <option value="transferencia">Transferência</option>
+              <option value="outros">Outros</option>
+            </select>
+            <select v-model="data.filterRecurrence">
+              <option value="todos">Todas Freq.</option>
+              <option value="none">Única</option>
+              <option value="monthly">Mensal</option>
+              <option value="installments">Parcelado</option>
+            </select>
+          </div>
+        </header>
+
+        <!-- Desktop table -->
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Descrição</th><th>Categoria</th><th>Método</th><th>Data</th><th>Valor</th><th>Ações</th></tr></thead>
+            <tbody>
+              <tr v-for="t in paginatedTransactions" :key="t.id + (t.isVirtual ? '-v' : '')" :class="{ 'virtual-row': t.isVirtual }">
+                <td>
+                  <span>{{ t.description }}</span>
+                  <span v-if="t.recurrence === 'monthly'" class="badge recurrence">🔄 Mensal</span>
+                  <span v-if="t.installments > 1" class="badge installment">📦 {{ t.installmentNumber || '?' }}/{{ t.installments }}</span>
+                </td>
+                <td>{{ t.category }}</td>
+                <td>{{ getMethodLabel(t.method) }}</td>
+                <td>{{ formatDate(t.date) }}</td>
+                <td :class="t.type === 'receita' ? 'positive' : t.type === 'despesa' ? 'negative' : 'warning'">
+                  {{ formatCurrency(t.amount) }}
+                </td>
+                <td>
+                  <button v-if="!t.isVirtual" class="btn ghost tiny" @click="editTransaction(t)">✏️</button>
+                  <button v-if="!t.isVirtual" class="btn ghost tiny danger-text" @click="confirmDelete(t)">🗑️</button>
+                </td>
+              </tr>
+              <tr v-if="!paginatedTransactions.length">
+                <td colspan="6" class="text-muted text-center">Nenhuma movimentação encontrada.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Mobile cards -->
+        <div class="transactions-cards-container">
+          <div v-for="t in paginatedTransactions" :key="'card-' + t.id + (t.isVirtual ? '-v' : '')" class="transaction-card" :class="t.type">
+            <div class="transaction-card-header">
+              <span class="transaction-card-desc">{{ t.description }}</span>
+              <span :class="t.type === 'receita' ? 'positive' : t.type === 'despesa' ? 'negative' : 'warning'">{{ formatCurrency(t.amount) }}</span>
+            </div>
+            <div class="transaction-card-meta">
+              <span>{{ t.category }}</span>
+              <span>{{ getMethodLabel(t.method) }}</span>
+              <span>{{ formatDate(t.date) }}</span>
+            </div>
+            <div v-if="t.recurrence === 'monthly' || t.installments > 1" class="transaction-card-badges">
+              <span v-if="t.recurrence === 'monthly'" class="badge recurrence">🔄 Mensal</span>
+              <span v-if="t.installments > 1" class="badge installment">📦 {{ t.installmentNumber || '?' }}/{{ t.installments }}</span>
+            </div>
+            <div v-if="!t.isVirtual" class="transaction-card-actions">
+              <button class="btn ghost tiny" @click="editTransaction(t)">✏️ Editar</button>
+              <button class="btn ghost tiny danger-text" @click="confirmDelete(t)">🗑️ Excluir</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter summary -->
+        <div class="table-filter-summary">
+          {{ data.filteredTransactions.length }} movimentação(ões) encontrada(s)
+        </div>
+
+        <!-- Pagination -->
+        <div v-if="totalPages > 1" class="table-pagination">
+          <button class="btn ghost tiny" :disabled="data.tablePage <= 1" @click="data.tablePage--">← Anterior</button>
+          <span>Página {{ data.tablePage }} de {{ totalPages }}</span>
+          <button class="btn ghost tiny" :disabled="data.tablePage >= totalPages" @click="data.tablePage++">Próximo →</button>
+        </div>
+
+        <!-- Empty state -->
+        <div v-if="!data.filteredTransactions.length && !data.searchQuery && data.filterType === 'todos'" style="display:block">
+          <div class="info-banner">
+            <p><strong><i class="fa-solid fa-wallet"></i> Bem-vindo às Movimentações!</strong></p>
+            <p>Aqui você registra todas as suas receitas, despesas e investimentos para acompanhar suas finanças.</p>
+            <p><strong>Para começar:</strong> Preencha o formulário acima com sua primeira movimentação.</p>
+            <p><strong>Dica:</strong> Use o atalho <kbd>N</kbd> para focar no formulário rapidamente.</p>
+          </div>
+          <p class="empty-state">Nenhuma movimentação registrada. Use o formulário acima ou importe um CSV.</p>
+        </div>
+      </article>
+    </section>
+
+    <!-- Quick Category Dialog -->
+    <div v-if="showQuickCategory" class="dialog-backdrop" @click.self="showQuickCategory = false">
+      <section class="dialog-card" role="dialog">
+        <header class="dialog-header">
+          <h3>Nova Categoria</h3>
+          <button class="dialog-close-btn" type="button" @click="showQuickCategory = false">&times;</button>
+        </header>
+        <div class="dialog-body">
+          <form class="form-stack" @submit.prevent="createQuickCategory">
+            <label>Nome<input v-model="quickCategoryName" type="text" maxlength="40" required /></label>
+            <div class="row-actions">
+              <button class="btn primary" type="submit">Criar</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </div>
+
+    <!-- Confirm Delete Dialog -->
+    <div v-if="confirmDeleteItem" class="dialog-backdrop" @click.self="confirmDeleteItem = null">
+      <section class="dialog-card" role="dialog">
+        <header class="dialog-header">
+          <h3>Confirmar exclusão</h3>
+          <button class="dialog-close-btn" type="button" @click="confirmDeleteItem = null">&times;</button>
+        </header>
+        <div class="dialog-body">
+          <p>Deseja excluir "<strong>{{ confirmDeleteItem.description }}</strong>" ({{ formatCurrency(confirmDeleteItem.amount) }})?</p>
+        </div>
+        <footer class="dialog-footer">
+          <button class="btn ghost tiny" @click="confirmDeleteItem = null">Cancelar</button>
+          <button class="btn primary tiny dialog-ok-danger" @click="doDelete">Excluir</button>
+        </footer>
+      </section>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted, nextTick } from 'vue'
+import { useDataStore } from '../stores/data.js'
+import { useAppStore } from '../stores/app.js'
+import { formatDate, formatCurrency, getMethodLabel, getTodayDate, normalizeCategory } from '../helpers.js'
+
+const data = useDataStore()
+const app = useAppStore()
+
+const descriptionInput = ref(null)
+const showQuickCategory = ref(false)
+const quickCategoryName = ref('')
+const confirmDeleteItem = ref(null)
+
+const form = ref({
+  description: '',
+  amount: null,
+  date: getTodayDate(),
+  category: '',
+  type: 'despesa',
+  method: 'pix',
+  accountId: '',
+  installments: null,
+  recurrenceEnd: '',
+})
+
+const recurrenceMode = ref('none')
+const editingId = computed(() => data.editingTransactionId)
+
+const categoryOptions = computed(() => {
+  const cats = new Set(data.allCategoryNames)
+  if (form.value.category && !cats.has(form.value.category)) cats.add(form.value.category)
+  return [...cats].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+})
+
+const totalPages = computed(() => Math.max(1, Math.ceil(data.filteredTransactions.length / data.tablePageSize)))
+
+const paginatedTransactions = computed(() => {
+  const start = (data.tablePage - 1) * data.tablePageSize
+  return data.filteredTransactions.slice(start, start + data.tablePageSize)
+})
+
+function handleSubmit() {
+  const payload = {
+    description: form.value.description,
+    amount: form.value.amount,
+    date: form.value.date,
+    category: normalizeCategory(form.value.category),
+    type: form.value.type,
+    method: form.value.method,
+    accountId: form.value.accountId || undefined,
+    recurrence: recurrenceMode.value === 'installments' ? 'none' : recurrenceMode.value,
+    recurrenceEnd: recurrenceMode.value === 'monthly' ? form.value.recurrenceEnd : '',
+    installments: recurrenceMode.value === 'installments' ? (form.value.installments || 0) : 0,
+  }
+  data.saveTransaction(payload).then(ok => {
+    if (ok) resetForm()
+  })
+}
+
+function resetForm() {
+  form.value = { description: '', amount: null, date: getTodayDate(), category: '', type: 'despesa', method: 'pix', accountId: '', installments: null, recurrenceEnd: '' }
+  recurrenceMode.value = 'none'
+  data.editingTransactionId = null
+}
+
+function editTransaction(t) {
+  data.editingTransactionId = t.id
+  form.value = {
+    description: t.description,
+    amount: t.amount,
+    date: t.date,
+    category: t.category,
+    type: t.type,
+    method: t.method,
+    accountId: t.accountId || '',
+    installments: t.installments || null,
+    recurrenceEnd: t.recurrenceEnd || '',
+  }
+  if (t.installments > 1) recurrenceMode.value = 'installments'
+  else if (t.recurrence === 'monthly') recurrenceMode.value = 'monthly'
+  else recurrenceMode.value = 'none'
+  nextTick(() => descriptionInput.value?.focus())
+}
+
+function cancelEdit() { resetForm() }
+
+function confirmDelete(t) { confirmDeleteItem.value = t }
+function doDelete() {
+  data.deleteTransaction(confirmDeleteItem.value.id)
+  confirmDeleteItem.value = null
+}
+
+async function createQuickCategory() {
+  if (!quickCategoryName.value.trim()) return
+  const cat = normalizeCategory(quickCategoryName.value)
+  await data.saveCategory({ name: cat, type: 'todas', icon: '📁' })
+  form.value.category = cat
+  quickCategoryName.value = ''
+  showQuickCategory.value = false
+}
+
+onMounted(() => {
+  if (!form.value.category && categoryOptions.value.length) {
+    form.value.category = categoryOptions.value[0]
+  }
+})
+</script>

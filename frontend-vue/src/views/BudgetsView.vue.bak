@@ -1,0 +1,69 @@
+<template>
+  <div>
+    <section class="panel-grid"><article class="panel">
+      <header class="panel-head"><h2>Orçamentos Mensais</h2></header>
+      <form class="budget-form-row" @submit.prevent="handleSubmit">
+        <label>Categoria
+          <select v-model="form.category" required>
+            <option value="" disabled>Selecione...</option>
+            <option v-for="cat in data.allCategoryNames" :key="cat" :value="cat">{{ cat }}</option>
+          </select>
+        </label>
+        <label>Limite (R$)<input v-model.number="form.limit" type="number" min="0.01" step="0.01" placeholder="0,00" required /></label>
+        <button class="btn ghost tiny" type="submit">Salvar</button>
+      </form>
+      <div class="stack-list" style="margin-top:1.25rem">
+        <div v-if="!data.budgets.length" class="empty-state">Nenhum orçamento cadastrado.</div>
+        <div v-for="b in budgetRows" :key="b.id" class="budget-row">
+          <div class="budget-info">
+            <strong>{{ b.category }}</strong>
+            <span class="text-muted text-sm">{{ formatCurrency(b.spent) }} / {{ formatCurrency(b.limit) }}</span>
+          </div>
+          <div class="budget-bar">
+            <div class="budget-bar-fill" :style="{ width: Math.min(b.pct, 100) + '%', background: b.pct > 100 ? 'var(--danger)' : b.pct > 80 ? 'var(--warning)' : 'var(--success)' }"></div>
+          </div>
+          <span class="budget-pct" :class="{ 'negative': b.pct > 100, 'warning': b.pct > 80 && b.pct <= 100 }">{{ Math.round(b.pct) }}%</span>
+          <div class="budget-actions">
+            <button class="btn ghost tiny" @click="editBudget(b)">✏️</button>
+            <button class="btn ghost tiny danger-text" @click="deleteBudget(b)">🗑️</button>
+          </div>
+        </div>
+      </div>
+    </article></section>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed } from 'vue'
+import { useDataStore } from '../stores/data.js'
+import { useAppStore } from '../stores/app.js'
+import { formatCurrency, round2 } from '../helpers.js'
+
+const data = useDataStore()
+const app = useAppStore()
+const form = ref({ category: '', limit: null })
+
+const budgetRows = computed(() => {
+  const monthly = data.monthlyTransactions(app.currentMonth)
+  return data.budgets.map(b => {
+    const spent = monthly
+      .filter(t => t.type === 'despesa' && t.category.toLowerCase() === b.category.toLowerCase())
+      .reduce((s, t) => s + t.amount, 0)
+    const pct = b.limit > 0 ? round2((spent / b.limit) * 100) : 0
+    return { ...b, spent, pct }
+  })
+})
+
+function handleSubmit() {
+  data.saveBudget({ category: form.value.category, limit: form.value.limit }).then(ok => {
+    if (ok) { form.value = { category: '', limit: null } }
+  })
+}
+
+function editBudget(b) {
+  data.editingBudgetId = b.id
+  form.value = { category: b.category, limit: b.limit }
+}
+
+function deleteBudget(b) { data.deleteBudget(b.id) }
+</script>

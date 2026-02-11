@@ -1,0 +1,91 @@
+<template>
+  <div>
+    <section class="panel-grid"><article class="panel">
+      <header class="panel-head"><h2>Metas Financeiras</h2></header>
+      <form class="form-stack" @submit.prevent="handleSubmit">
+        <label>Nome<input v-model="form.name" type="text" placeholder="Ex: Viagem" maxlength="60" required /></label>
+        <div class="row-2">
+          <label>Alvo (R$)<input v-model.number="form.target" type="number" min="0.01" step="0.01" placeholder="0,00" required /></label>
+          <label>Atual (R$)<input v-model.number="form.current" type="number" min="0" step="0.01" placeholder="0,00" required /></label>
+        </div>
+        <label>Prazo<input v-model="form.dueDate" type="date" /></label>
+        <div class="row-actions">
+          <button class="btn primary" type="submit">{{ editingId ? 'Atualizar' : 'Criar Meta' }}</button>
+          <button v-if="editingId" class="btn ghost" type="button" @click="cancelEdit">Cancelar</button>
+        </div>
+      </form>
+      <div class="stack-list" style="margin-top:1.25rem">
+        <div v-if="!data.goals.length" class="empty-state">Nenhuma meta cadastrada.</div>
+        <div v-for="g in data.goals" :key="g.id" class="goal-card">
+          <div class="goal-info">
+            <strong>{{ g.name }}</strong>
+            <span v-if="g.dueDate" class="text-muted text-sm">{{ formatGoalDueDate(g.dueDate) }}</span>
+          </div>
+          <div class="goal-progress">
+            <div class="budget-bar">
+              <div class="budget-bar-fill" :style="{ width: Math.min(goalPct(g), 100) + '%', background: goalPct(g) >= 100 ? 'var(--success)' : 'var(--primary)' }"></div>
+            </div>
+            <span class="text-sm">{{ formatCurrency(g.current) }} / {{ formatCurrency(g.target) }} ({{ Math.round(goalPct(g)) }}%)</span>
+          </div>
+          <div class="goal-actions">
+            <button class="btn ghost tiny" @click="showContribution(g)">💰 Aporte</button>
+            <button class="btn ghost tiny" @click="editGoal(g)">✏️</button>
+            <button class="btn ghost tiny danger-text" @click="deleteGoal(g)">🗑️</button>
+          </div>
+        </div>
+      </div>
+    </article></section>
+
+    <!-- Contribution Dialog -->
+    <div v-if="contributionTarget" class="dialog-backdrop" @click.self="contributionTarget = null">
+      <section class="dialog-card" role="dialog">
+        <header class="dialog-header"><h3>Aporte para {{ contributionTarget.name }}</h3><button class="dialog-close-btn" type="button" @click="contributionTarget = null">&times;</button></header>
+        <div class="dialog-body">
+          <form class="form-stack" @submit.prevent="doContribution">
+            <label>Valor (R$)<input v-model.number="contributionAmount" type="number" min="0.01" step="0.01" required /></label>
+            <div class="row-actions"><button class="btn primary" type="submit">Confirmar</button></div>
+          </form>
+        </div>
+      </section>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed } from 'vue'
+import { useDataStore } from '../stores/data.js'
+import { formatCurrency, formatGoalDueDate, round2 } from '../helpers.js'
+
+const data = useDataStore()
+const form = ref({ name: '', target: null, current: 0, dueDate: '' })
+const contributionTarget = ref(null)
+const contributionAmount = ref(null)
+const editingId = computed(() => data.editingGoalId)
+
+function goalPct(g) { return g.target > 0 ? round2((g.current / g.target) * 100) : 0 }
+
+function handleSubmit() {
+  data.saveGoal({ name: form.value.name, target: form.value.target, current: form.value.current, dueDate: form.value.dueDate || undefined }).then(ok => {
+    if (ok) resetForm()
+  })
+}
+
+function resetForm() {
+  form.value = { name: '', target: null, current: 0, dueDate: '' }
+  data.editingGoalId = null
+}
+
+function editGoal(g) {
+  data.editingGoalId = g.id
+  form.value = { name: g.name, target: g.target, current: g.current, dueDate: g.dueDate || '' }
+}
+
+function cancelEdit() { resetForm() }
+function deleteGoal(g) { data.deleteGoal(g.id) }
+function showContribution(g) { contributionTarget.value = g; contributionAmount.value = null }
+function doContribution() {
+  if (!contributionAmount.value || contributionAmount.value <= 0) return
+  data.addGoalContribution(contributionTarget.value.id, contributionAmount.value)
+  contributionTarget.value = null
+}
+</script>

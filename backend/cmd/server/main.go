@@ -20,8 +20,9 @@ func main() {
 
 	cfg := config.Load()
 
-	if cfg.JWTSecret == "change-me-in-production" || cfg.JWTSecret == "super-secret-change-me" {
-		logger.Warn("using default JWT_SECRET — set a strong secret via JWT_SECRET env var for production")
+	if err := cfg.Validate(); err != nil {
+		logger.Error("configuration validation failed", "error", err)
+		os.Exit(1)
 	}
 
 	rootCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

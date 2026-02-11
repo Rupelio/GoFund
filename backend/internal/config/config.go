@@ -1,12 +1,22 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// insecureJWTSecrets lists default/placeholder secrets that must never be used in production.
+var insecureJWTSecrets = map[string]struct{}{
+	"change-me-in-production":    {},
+	"super-secret-change-me":     {},
+	"secret":                     {},
+	"changeme":                   {},
+}
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
@@ -25,12 +35,51 @@ type Config struct {
 	DBMaxConns          int32
 	DBMinConns          int32
 	AllowedOrigins      []string
+	Environment         string // "production" or "development" (default)
 
 	// Email (Resend)
 	ResendAPIKey string
 	ResendFrom   string
 	AppURL       string
 	AppVersion   string
+}
+
+// IsProduction returns true when APP_ENV is set to "production".
+func (c Config) IsProduction() bool {
+	return c.Environment == "production"
+}
+
+// Validate checks that security-critical settings are safe for the current environment.
+// In production it returns an error; in development it logs warnings.
+func (c Config) Validate() error {
+	_, insecure := insecureJWTSecrets[strings.ToLower(c.JWTSecret)]
+	corsWildcard := len(c.AllowedOrigins) == 1 && c.AllowedOrigins[0] == "*"
+
+	if c.IsProduction() {
+		var errs []error
+		if insecure {
+			errs = append(errs, fmt.Errorf("JWT_SECRET is using an insecure default value — set a strong secret via JWT_SECRET env var"))
+		}
+		if len(c.JWTSecret) < 32 {
+			errs = append(errs, fmt.Errorf("JWT_SECRET is too short (got %d chars, need at least 32)", len(c.JWTSecret)))
+		}
+		if corsWildcard {
+			errs = append(errs, fmt.Errorf("CORS_ALLOWED_ORIGINS is set to '*' — restrict to your frontend domain in production"))
+		}
+		if len(errs) > 0 {
+			return errors.Join(errs...)
+		}
+		return nil
+	}
+
+	// Development: warn but don't block startup
+	if insecure {
+		slog.Warn("using default JWT_SECRET — set a strong secret via JWT_SECRET env var for production")
+	}
+	if corsWildcard {
+		slog.Warn("CORS_ALLOWED_ORIGINS is set to '*' — restrict in production")
+	}
+	return nil
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -51,6 +100,7 @@ func Load() Config {
 		DBMaxConns:          int32(intEnvOrDefault("DB_MAX_CONNS", 16)),
 		DBMinConns:          int32(intEnvOrDefault("DB_MIN_CONNS", 2)),
 		AllowedOrigins:      csvEnvOrDefault("CORS_ALLOWED_ORIGINS", "*"),
+		Environment:         envOrDefault("APP_ENV", "development"),
 
 		ResendAPIKey: envOrDefault("RESEND_API_KEY", ""),
 		ResendFrom:   envOrDefault("RESEND_FROM", "GoFund <noreply@gofund.com.br>"),

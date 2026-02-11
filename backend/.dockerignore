@@ -1,6 +1,7 @@
 .git
 *.md
 *.log
+*.exe
 tmp
 bin
 dist
