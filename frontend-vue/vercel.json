@@ -1,7 +1,9 @@
 {
   "rewrites": [
     { "source": "/api/:path*", "destination": "https://gestao-api.fly.dev/api/:path*" },
-    { "source": "/health", "destination": "https://gestao-api.fly.dev/health" }
+    { "source": "/health", "destination": "https://gestao-api.fly.dev/health" },
+    { "source": "/legacy/:path*", "destination": "/legacy/:path*" },
+    { "source": "/((?!assets|legacy|favicon|manifest|sw).*)", "destination": "/index.html" }
   ],
   "headers": [
     {

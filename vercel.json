@@ -11,6 +11,14 @@
         {
             "source": "/health",
             "destination": "https://gestao-api.fly.dev/health"
+        },
+        {
+            "source": "/legacy/:path*",
+            "destination": "/legacy/:path*"
+        },
+        {
+            "source": "/((?!assets|legacy|favicon|manifest|sw).*)",
+            "destination": "/index.html"
         }
     ],
     "headers": [
