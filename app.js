@@ -13,6 +13,7 @@
     credito: "Crédito",
     dinheiro: "Dinheiro",
     transferencia: "Transferência",
+    outros: "Outros",
   };
 
   /* ── DOM Cache ───────────────────────────────────────────── */
@@ -27,8 +28,10 @@
     "chatgpt", "openai", "perplexity", "notion", "canva", "adobe", "figma", "grammarly", "midjourney",
     "microsoft\\s*365", "office\\s*365", "github\\s*(copilot)?", "vercel", "fly\\.io", "cloudflare",
     "railway", "render", "heroku", "digitalocean", "linode", "\\baws\\b", "google\\s*cloud", "\\bgcp\\b",
-    "\\bazure\\b", "supabase", "nordvpn", "expressvpn", "surfshark", "kaspersky", "avast", "mcafee",
-    "strava", "myfitnesspal", "headspace", "calm",
+    "\\bazure\\b", "supabase", "mongodb\\s*atlas", "uol\\s*host", "hostinger", "hostgator", "namecheap",
+    "nordvpn", "expressvpn", "surfshark", "kaspersky", "avast", "mcafee",
+    "strava", "myfitnesspal", "headspace", "calm", "linkedin\\s*premium", "x\\s*premium", "patreon",
+    "substack", "meta\\s*verified", "discord\\s*nitro", "telegram\\s*premium",
   ];
   const SUBSCRIPTION_REGEX = new RegExp(SUBSCRIPTION_KEYWORDS.join("|"), "i");
 
@@ -39,6 +42,12 @@
     dashboardShell: document.getElementById("dashboardShell"),
     authMessage: document.getElementById("authMessage"),
     appMessage: document.getElementById("appMessage"),
+    confirmModal: document.getElementById("confirmModal"),
+    confirmTitle: document.getElementById("confirmTitle"),
+    confirmMessage: document.getElementById("confirmMessage"),
+    confirmCancelBtn: document.getElementById("confirmCancelBtn"),
+    confirmCloseBtn: document.getElementById("confirmCloseBtn"),
+    confirmOkBtn: document.getElementById("confirmOkBtn"),
 
     showLoginBtn: document.getElementById("showLoginBtn"),
     showRegisterBtn: document.getElementById("showRegisterBtn"),
@@ -205,6 +214,9 @@
   let cashFlowChartInstance = null;
   let projectionChartInstance = null;
   let expenseChartInstance = null;
+  let dialogResolver = null;
+  let dialogEscHandler = null;
+  let dialogLastFocused = null;
 
   // Default category type mapping
   const defaultCategoryTypes = {
@@ -241,6 +253,15 @@
 
   /* ── Event Bindings ──────────────────────────────────────── */
   function bindEvents() {
+    if (el.confirmModal) {
+      el.confirmCancelBtn?.addEventListener("click", () => closeDialog(false));
+      el.confirmCloseBtn?.addEventListener("click", () => closeDialog(false));
+      el.confirmOkBtn?.addEventListener("click", () => closeDialog(true));
+      el.confirmModal.addEventListener("click", (event) => {
+        if (event.target === el.confirmModal) closeDialog(false);
+      });
+    }
+
     // Auth
     el.showLoginBtn.addEventListener("click", () => setAuthMode("login"));
     el.showRegisterBtn.addEventListener("click", () => setAuthMode("register"));
@@ -422,6 +443,14 @@
 
   /* ── Keyboard Shortcuts ──────────────────────────────────── */
   function handleGlobalKeydown(e) {
+    if (isDialogOpen()) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeDialog(false);
+      }
+      return;
+    }
+
     // Ignore when typing in inputs
     const tag = e.target.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
@@ -938,7 +967,13 @@
     }
 
     if (action === "delete-transaction") {
-      if (!window.confirm("Deseja excluir esta movimentação?")) return;
+      const confirmed = await showConfirmDialog({
+        title: "Excluir movimentação",
+        message: "Deseja excluir esta movimentação?",
+        confirmLabel: "Excluir",
+        tone: "danger",
+      });
+      if (!confirmed) return;
       try {
         await apiRequest(`/api/transactions/${encodeURIComponent(id)}`, { method: "DELETE", expectNoContent: true });
         state.transactions = state.transactions.filter((t) => t.id !== id);
@@ -1033,7 +1068,13 @@
       return;
     }
     if (action === "delete-budget") {
-      if (!window.confirm("Deseja excluir este orçamento?")) return;
+      const confirmed = await showConfirmDialog({
+        title: "Excluir orçamento",
+        message: "Deseja excluir este orçamento?",
+        confirmLabel: "Excluir",
+        tone: "danger",
+      });
+      if (!confirmed) return;
       try {
         await apiRequest(`/api/budgets/${encodeURIComponent(id)}`, { method: "DELETE", expectNoContent: true });
         state.budgets = state.budgets.filter((b) => b.id !== id);
@@ -1095,7 +1136,13 @@
       return;
     }
     if (action === "delete-goal") {
-      if (!window.confirm("Deseja excluir esta meta?")) return;
+      const confirmed = await showConfirmDialog({
+        title: "Excluir meta",
+        message: "Deseja excluir esta meta?",
+        confirmLabel: "Excluir",
+        tone: "danger",
+      });
+      if (!confirmed) return;
       try {
         await apiRequest(`/api/goals/${encodeURIComponent(id)}`, { method: "DELETE", expectNoContent: true });
         state.goals = state.goals.filter((g) => g.id !== id);
@@ -1468,7 +1515,13 @@
       return;
     }
     if (action === "delete-category") {
-      if (!window.confirm(`Excluir a categoria "${item.name}"?`)) return;
+      const confirmed = await showConfirmDialog({
+        title: "Excluir categoria",
+        message: `Excluir a categoria "${item.name}"?`,
+        confirmLabel: "Excluir",
+        tone: "danger",
+      });
+      if (!confirmed) return;
       try {
         await apiRequest(`/api/categories/${encodeURIComponent(id)}`, { method: "DELETE", expectNoContent: true });
         state.categories = state.categories.filter((c) => c.id !== id);
@@ -1561,15 +1614,9 @@
       } else {
         const created = await apiRequest("/api/accounts", { method: "POST", body: payload });
         state.accounts.push(created);
-        // Reload transactions to include auto-created "Saldo inicial" transaction
-        if (payload.initialBalance > 0) {
-          try {
-            const data = await apiRequest("/api/bootstrap");
-            state.transactions = Array.isArray(data.transactions) ? data.transactions.map(normalizeTransaction).filter(isValidTransaction) : state.transactions;
-          } catch (_) { /* fallback: user can refresh */ }
-        }
         showMessage("app", "Conta criada.", "success");
       }
+      await refreshTransactionsSnapshotForImport();
       resetAccountForm();
       renderAccounts();
       populateAccountSelector();
@@ -1597,7 +1644,13 @@
       return;
     }
     if (action === "delete-account") {
-      if (!window.confirm(`Excluir a conta "${item.name}"?`)) return;
+      const confirmed = await showConfirmDialog({
+        title: "Excluir conta",
+        message: `Excluir a conta "${item.name}"?`,
+        confirmLabel: "Excluir",
+        tone: "danger",
+      });
+      if (!confirmed) return;
       try {
         await apiRequest(`/api/accounts/${encodeURIComponent(id)}`, { method: "DELETE", expectNoContent: true });
         state.accounts = state.accounts.filter((a) => a.id !== id);
@@ -1893,39 +1946,10 @@
 
   /* ── Drag & drop CSV helper ────────────────────────────── */
   async function importCsvFile(file) {
-    showLoader("Importando CSV…");
-    try {
-      const text = await readFileAsText(file);
-      const parsed = parseTransactionsFromCsv(text);
-      if (!parsed.items.length) { showMessage("app", "Nenhuma transação encontrada no CSV.", "error"); return; }
-      await refreshTransactionsSnapshotForImport();
-      const existing = buildExistingFingerprints();
-      let imported = 0, failed = 0, duplicates = 0;
-      for (const item of parsed.items) {
-        const fp = txnFingerprint(item.date, item.description, item.amount);
-        if (existing.has(fp)) { duplicates++; continue; }
-        try {
-          const created = normalizeTransaction(await apiRequest("/api/transactions", { method: "POST", body: toPayload(item, false) }));
-          state.transactions.push(created);
-          existing.add(fp);
-          imported++;
-        } catch (error) {
-          if (isDuplicateTransactionError(error)) { duplicates++; existing.add(fp); continue; }
-          failed++;
-        }
-      }
-      renderAll();
-      const ignored = parsed.skipped + failed;
-      const parts = [`${imported} importadas`];
-      if (duplicates) parts.push(`${duplicates} duplicatas ignoradas`);
-      if (ignored) parts.push(`${ignored} inválidas`);
-      showMessage("app", parts.join(", ") + ".", failed > 0 ? "error" : "success");
-    } catch (err) {
-      showMessage("app", "Erro ao importar CSV: " + getErrorMessage(err), "error");
-    } finally { hideLoader(); }
+    await importCsvCore(file);
   }
 
-  /* ── Projection (original) ─────────────────────────────── */
+  /* ── Projection (original) ────────────────────────────── */
   function hydrateProjectionForm() {
     const p = normalizeProjection(state.projection);
     state.projection = p;
@@ -2214,8 +2238,20 @@
   async function deleteAllTransactions() {
     const count = state.transactions.length;
     if (!count) { showMessage("app", "Não há movimentações para excluir.", "error"); return; }
-    if (!window.confirm(`⚠️ ATENÇÃO: Isso vai excluir TODAS as ${count} movimentações permanentemente.\n\nTem certeza?`)) return;
-    if (!window.confirm("Última chance! Confirma a exclusão de TODAS as movimentações?")) return;
+    const firstConfirm = await showConfirmDialog({
+      title: "Excluir todas as movimentações",
+      message: `ATENÇÃO: isso vai excluir permanentemente todas as ${count} movimentações.`,
+      confirmLabel: "Continuar",
+      tone: "danger",
+    });
+    if (!firstConfirm) return;
+    const secondConfirm = await showConfirmDialog({
+      title: "Confirmar exclusão total",
+      message: "Última confirmação: deseja realmente excluir tudo?",
+      confirmLabel: "Excluir tudo",
+      tone: "danger",
+    });
+    if (!secondConfirm) return;
     try {
       el.deleteAllTransactionsBtn.disabled = true;
       el.deleteAllTransactionsBtn.textContent = "Excluindo…";
@@ -2246,52 +2282,99 @@
   async function importCsv(event) {
     const file = event.target.files?.[0];
     if (!file) return;
-    showLoader("Importando CSV…");
+    try {
+      await importCsvCore(file);
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function importCsvCore(file) {
+    showLoader("Importando CSV...");
     try {
       const text = await readFileAsText(file);
       const parsed = parseTransactionsFromCsv(text);
-      if (!parsed.items.length) { showMessage("app", "Nenhuma movimentação válida no CSV.", "error"); return; }
+      if (!parsed.items.length) { showMessage("app", "Nenhuma movimentacao valida no CSV.", "error"); return; }
+
       await refreshTransactionsSnapshotForImport();
       const existing = buildExistingFingerprints();
-      let imported = 0, failed = 0, duplicates = 0;
-      for (const item of parsed.items) {
-        const fp = txnFingerprint(item.date, item.description, item.amount);
-        if (existing.has(fp)) { duplicates++; continue; }
-        try {
-          const created = normalizeTransaction(await apiRequest("/api/transactions", { method: "POST", body: toPayload(item, false) }));
-          state.transactions.push(created);
-          existing.add(fp);
-          imported++;
-        } catch (error) {
-          if (isDuplicateTransactionError(error)) { duplicates++; existing.add(fp); continue; }
-          failed++;
-        }
+      const preview = buildImportPreview(parsed.items, existing);
+      const invalidPreview = parsed.skipped + preview.invalid;
+      const confirmText = [
+        `Resumo da importacao (${file.name}):`,
+        `- Novas para importar: ${preview.toImport.length}`,
+        `- Duplicatas ja existentes: ${preview.duplicatesExisting}`,
+        `- Duplicatas dentro do arquivo: ${preview.duplicatesInFile}`,
+        `- Linhas invalidas: ${invalidPreview}`,
+      ].join("\n");
+      const confirmed = await showConfirmDialog({
+        title: "Confirmar importação CSV",
+        message: `${confirmText}\n\nDeseja continuar?`,
+        confirmLabel: "Importar",
+      });
+      if (!confirmed) return;
+
+      if (!preview.toImport.length) {
+        showMessage("app", "Nada novo para importar (somente duplicatas/invalidas).", "error");
+        return;
       }
+
+      const result = await apiRequest("/api/transactions/import", {
+        method: "POST",
+        body: { items: preview.toImport.map((item) => toPayload(item, false)) },
+      });
+
+      await refreshTransactionsSnapshotForImport();
       renderAll();
-      const ignored = parsed.skipped + failed;
+
+      const imported = Number(result?.imported || 0);
+      const duplicates = preview.duplicatesExisting + preview.duplicatesInFile + Number(result?.duplicates || 0);
+      const invalid = invalidPreview + Math.max(0, Number(result?.invalid || 0) - preview.invalid);
       const parts = [`${imported} importadas`];
       if (duplicates) parts.push(`${duplicates} duplicatas ignoradas`);
-      if (ignored) parts.push(`${ignored} inválidas`);
-      showMessage("app", parts.join(", ") + ".", failed > 0 ? "error" : "success");
+      if (invalid) parts.push(`${invalid} invalidas`);
+      showMessage("app", parts.join(", ") + ".", imported > 0 ? "success" : "error");
     } catch (error) {
       showMessage("app", getErrorMessage(error, "Falha ao importar CSV."), "error");
-    } finally { event.target.value = ""; hideLoader(); }
+    } finally {
+      hideLoader();
+    }
+  }
+
+  function buildImportPreview(parsedItems, existingFingerprints) {
+    const toImport = [];
+    const inFileFingerprints = new Set();
+    let duplicatesExisting = 0;
+    let duplicatesInFile = 0;
+    let invalid = 0;
+
+    for (const item of parsedItems) {
+      if (!isValidTransaction(item)) { invalid++; continue; }
+      const fp = txnFingerprint(item.date, item.description, item.amount);
+      if (existingFingerprints.has(fp)) { duplicatesExisting++; continue; }
+      if (inFileFingerprints.has(fp)) { duplicatesInFile++; continue; }
+      inFileFingerprints.add(fp);
+      toImport.push(item);
+    }
+
+    return { toImport, duplicatesExisting, duplicatesInFile, invalid };
   }
 
   function parseTransactionsFromCsv(csvText) {
     const lines = csvText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     if (lines.length < 2) throw new Error("CSV vazio.");
-    const headers = parseCsvLine(lines[0]).map(normalizeHeader);
+    const delimiter = detectCsvDelimiter(lines[0]);
+    const headers = parseCsvLine(lines[0], delimiter).map(normalizeHeader);
     const idx = {
       id: findHeaderIdx(headers, ["id", "identificador"]),
-      date: findHeaderIdx(headers, ["date", "data"]),
+      date: findHeaderIdx(headers, ["date", "data", "datalancamento", "datamovimento", "datatransacao", "transactiondate"]),
       type: findHeaderIdx(headers, ["type", "tipo"]),
       category: findHeaderIdx(headers, ["category", "categoria"]),
-      method: findHeaderIdx(headers, ["method", "metodo", "metododepagamento", "pagamento"]),
-      description: findHeaderIdx(headers, ["description", "descricao", "title", "titulo"]),
-      amount: findHeaderIdx(headers, ["amount", "valor"]),
-      debit: findHeaderIdx(headers, ["debit", "debito", "saida", "saidas", "withdrawal", "valor_saida"]),
-      credit: findHeaderIdx(headers, ["credit", "credito", "entrada", "entradas", "deposit", "valor_entrada"]),
+      method: findHeaderIdx(headers, ["method", "metodo", "metododepagamento", "pagamento", "meiodepagamento"]),
+      description: findHeaderIdx(headers, ["description", "descricao", "title", "titulo", "historico", "detalhes", "estabelecimento", "favorecido", "memo"]),
+      amount: findHeaderIdx(headers, ["amount", "valor", "valorr", "valorliquido", "valoroperacao"]),
+      debit: findHeaderIdx(headers, ["debit", "debito", "saida", "saidas", "withdrawal", "valorsaida"]),
+      credit: findHeaderIdx(headers, ["credit", "credito", "entrada", "entradas", "deposit", "valorentrada"]),
       recurrence: findHeaderIdx(headers, ["recurrence", "recorrencia"]),
       recurrenceEnd: findHeaderIdx(headers, ["recurrenceend", "recurrence_end", "fimrecorrencia"]),
       installments: findHeaderIdx(headers, ["installments", "parcelas"]),
@@ -2308,7 +2391,7 @@
     const isCreditCardCsv = isBankCsv && headers.includes("title");
     const items = []; let skipped = 0;
     lines.slice(1).forEach((line) => {
-      const cols = parseCsvLine(line);
+      const cols = parseCsvLine(line, delimiter);
       let rawAmount = idx.amount >= 0 ? parseFlexibleNumber(cols[idx.amount]) : NaN;
       if (!Number.isFinite(rawAmount) && (idx.debit >= 0 || idx.credit >= 0)) {
         const creditAmount = idx.credit >= 0 ? parseFlexibleNumber(cols[idx.credit]) : NaN;
@@ -2324,6 +2407,10 @@
       let parsedDate = rawDate;
       const brDate = rawDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
       if (brDate) parsedDate = `${brDate[3]}-${brDate[2]}-${brDate[1]}`;
+      const brDateDash = rawDate.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+      if (brDateDash) parsedDate = `${brDateDash[3]}-${brDateDash[2]}-${brDateDash[1]}`;
+      const isoSlashDate = rawDate.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
+      if (isoSlashDate) parsedDate = `${isoSlashDate[1]}-${isoSlashDate[2]}-${isoSlashDate[3]}`;
 
       // For bank CSVs, infer type/category/method from description and amount sign
       let inferredType = idx.type >= 0 ? String(cols[idx.type] || "") : "";
@@ -2490,6 +2577,8 @@
 
     const isPix = method === "pix" || /\bpix\b/.test(normalizedDesc);
     if (isPix && PIX_TRANSFER_HINT_REGEX.test(normalizedDesc)) return "Transferência";
+    if (isPix && type === "despesa") return "Outros";
+    if (isPix && type === "receita") return "Outros";
     if (isPix) return "Transferência";
     return "Outros";
   }
@@ -2555,6 +2644,91 @@
     }, delay);
   }
 
+  function isDialogOpen() {
+    return Boolean(el.confirmModal && !el.confirmModal.classList.contains("hidden"));
+  }
+
+  function closeDialog(result) {
+    if (!isDialogOpen()) return;
+    if (dialogEscHandler) {
+      document.removeEventListener("keydown", dialogEscHandler);
+      dialogEscHandler = null;
+    }
+    el.confirmModal.classList.add("hidden");
+    el.confirmModal.setAttribute("aria-hidden", "true");
+    if (dialogLastFocused && typeof dialogLastFocused.focus === "function") {
+      dialogLastFocused.focus();
+    }
+    const resolver = dialogResolver;
+    dialogResolver = null;
+    if (resolver) resolver(Boolean(result));
+  }
+
+  function showDialog(options = {}) {
+    if (!el.confirmModal || !el.confirmTitle || !el.confirmMessage || !el.confirmOkBtn || !el.confirmCancelBtn) {
+      showMessage("app", "Modal de confirmação indisponível no momento.", "error");
+      return Promise.resolve(false);
+    }
+
+    if (dialogResolver) {
+      closeDialog(false);
+    }
+
+    const {
+      title = "Confirmar ação",
+      message = "Tem certeza?",
+      confirmLabel = "Confirmar",
+      cancelLabel = "Cancelar",
+      tone = "primary",
+      hideCancel = false,
+    } = options;
+
+    dialogLastFocused = document.activeElement;
+    el.confirmTitle.textContent = normalizeString(title);
+    el.confirmMessage.textContent = normalizeString(message);
+    el.confirmModal.classList.remove("hidden");
+    el.confirmModal.setAttribute("aria-hidden", "false");
+
+    el.confirmCancelBtn.textContent = normalizeString(cancelLabel);
+    el.confirmCancelBtn.classList.toggle("hidden", hideCancel);
+    el.confirmCancelBtn.disabled = hideCancel;
+
+    el.confirmOkBtn.textContent = normalizeString(confirmLabel);
+    el.confirmOkBtn.classList.toggle("dialog-ok-danger", tone === "danger");
+    el.confirmOkBtn.classList.toggle("primary", tone !== "danger");
+    el.confirmOkBtn.classList.add("btn", "tiny");
+
+    dialogEscHandler = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeDialog(false);
+      }
+    };
+    document.addEventListener("keydown", dialogEscHandler);
+
+    setTimeout(() => {
+      if (hideCancel) el.confirmOkBtn.focus();
+      else el.confirmCancelBtn.focus();
+    }, 0);
+
+    return new Promise((resolve) => {
+      dialogResolver = resolve;
+    });
+  }
+
+  async function showConfirmDialog(options = {}) {
+    return showDialog({ ...options, hideCancel: false });
+  }
+
+  async function showAlertDialog(options = {}) {
+    await showDialog({
+      ...options,
+      hideCancel: true,
+      confirmLabel: options.confirmLabel || "Entendi",
+      tone: options.tone || "primary",
+    });
+  }
+
   /* ── Global Loader ─────────────────────────────────────── */
   let loaderStack = 0;
   function showLoader(msg) {
@@ -2592,13 +2766,6 @@
     } catch (_) { /* fallback: keep current in-memory snapshot */ }
   }
 
-  function isDuplicateTransactionError(error) {
-    const msg = normalizeString(String(error?.message || "")).toLowerCase();
-    return msg.includes("transaction already exists")
-      || msg.includes("transacao ja existe")
-      || msg.includes("duplicate")
-      || msg.includes("duplicat");
-  }
 
   function normalizeDescriptionForFingerprint(description) {
     return normalizeString(String(description))
@@ -2665,7 +2832,7 @@
     if (!t || typeof t !== "object") return false;
     if (t.id != null && !normalizeString(t.id)) return false;
     if (!isValidDate(t.date)) return false;
-    if (!["receita", "despesa", "investimento"].includes(t.type)) return false;
+    if (!["receita", "despesa", "investimento", "transferencia"].includes(t.type)) return false;
     if (!normalizeString(t.category) || !METHOD_LABELS[t.method]) return false;
     if (!normalizeString(t.description)) return false;
     return Number.isFinite(t.amount) && t.amount > 0;
@@ -2820,7 +2987,7 @@
   function createId() { return window.crypto?.randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
   function escapeHtml(v) { return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
 
-  function normalizeHeader(v) { return normalizeString(String(v || "")).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[\s_-]+/g, ""); }
+  function normalizeHeader(v) { return normalizeString(String(v || "").replace(/^\uFEFF/, "")).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, ""); }
   function findHeaderIdx(headers, aliases) { for (const a of aliases) { const i = headers.indexOf(a); if (i >= 0) return i; } return -1; }
 
   function parseFlexibleNumber(v) {
@@ -2832,12 +2999,34 @@
     return Number(n);
   }
 
-  function parseCsvLine(line) {
+  function detectCsvDelimiter(headerLine) {
+    const candidates = [",", ";", "\t"];
+    const counts = candidates.map((candidate) => ({ candidate, count: countUnquotedDelimiters(headerLine, candidate) }));
+    counts.sort((a, b) => b.count - a.count);
+    return counts[0].count > 0 ? counts[0].candidate : ",";
+  }
+
+  function countUnquotedDelimiters(line, delimiter) {
+    let inQ = false;
+    let count = 0;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') {
+        if (inQ && line[i + 1] === '"') i++;
+        else inQ = !inQ;
+        continue;
+      }
+      if (!inQ && c === delimiter) count++;
+    }
+    return count;
+  }
+
+  function parseCsvLine(line, delimiter = ",") {
     const vals = []; let cur = "", inQ = false;
     for (let i = 0; i < line.length; i++) {
       const c = line[i];
       if (c === '"') { if (inQ && line[i + 1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
-      else if (c === "," && !inQ) { vals.push(cur); cur = ""; }
+      else if (c === delimiter && !inQ) { vals.push(cur); cur = ""; }
       else cur += c;
     }
     vals.push(cur); return vals;

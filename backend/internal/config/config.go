@@ -30,6 +30,7 @@ type Config struct {
 	ResendAPIKey string
 	ResendFrom   string
 	AppURL       string
+	AppVersion   string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -54,6 +55,7 @@ func Load() Config {
 		ResendAPIKey: envOrDefault("RESEND_API_KEY", ""),
 		ResendFrom:   envOrDefault("RESEND_FROM", "GoFund <noreply@gofund.com.br>"),
 		AppURL:       envOrDefault("APP_URL", "http://localhost:5500"),
+		AppVersion:   envOrDefault("APP_VERSION", "dev"),
 	}
 }
 

@@ -14,10 +14,19 @@ import (
 type HealthHandler struct {
 	pool         *pgxpool.Pool
 	queryTimeout time.Duration
+	serviceName  string
+	version      string
+	startedAt    time.Time
 }
 
-func NewHealthHandler(pool *pgxpool.Pool, timeout time.Duration) *HealthHandler {
-	return &HealthHandler{pool: pool, queryTimeout: timeout}
+func NewHealthHandler(pool *pgxpool.Pool, timeout time.Duration, serviceName, version string) *HealthHandler {
+	return &HealthHandler{
+		pool:         pool,
+		queryTimeout: timeout,
+		serviceName:  serviceName,
+		version:      version,
+		startedAt:    time.Now().UTC(),
+	}
 }
 
 func (h *HealthHandler) Handle(w http.ResponseWriter, r *http.Request) {
@@ -29,9 +38,19 @@ func (h *HealthHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	WriteJSON(w, http.StatusOK, map[string]string{
-		"status": "ok",
-		"time":   time.Now().UTC().Format(time.RFC3339),
+	stats := h.pool.Stat()
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"status":        "ok",
+		"time":          time.Now().UTC().Format(time.RFC3339),
+		"service":       h.serviceName,
+		"version":       h.version,
+		"uptimeSeconds": int64(time.Since(h.startedAt).Seconds()),
+		"database": map[string]any{
+			"status":   "ok",
+			"acquired": stats.AcquiredConns(),
+			"idle":     stats.IdleConns(),
+			"total":    stats.TotalConns(),
+		},
 	})
 }
 

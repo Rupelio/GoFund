@@ -74,6 +74,7 @@ Authorization: Bearer <jwt>
 - `GET /api/transactions?month=YYYY-MM`
 - `GET /api/transactions/{id}`
 - `POST /api/transactions`
+- `POST /api/transactions/import` (importacao em lote, idempotente)
 - `PUT /api/transactions/{id}`
 - `DELETE /api/transactions/{id}`
 

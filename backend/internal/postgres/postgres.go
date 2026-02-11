@@ -123,6 +123,7 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS recurrence TEXT NOT NULL DEFAULT 'none'`,
 		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS recurrence_end DATE`,
 		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS installments INT NOT NULL DEFAULT 0`,
+		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS dedupe_key TEXT`,
 	); err != nil {
 		return err
 	}
@@ -156,6 +157,7 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 
 	return execStatements(ctx, pool,
 		`CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON transactions (user_id, date DESC, created_at DESC)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_user_dedupe_key ON transactions (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL`,
 		`CREATE INDEX IF NOT EXISTS idx_goals_user_due_date ON goals (user_id, due_date)`,
 		`CREATE INDEX IF NOT EXISTS idx_categories_user ON categories (user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts (user_id)`,
@@ -179,6 +181,11 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_type_check;
 			ALTER TABLE accounts ADD CONSTRAINT accounts_type_check CHECK (type IN ('corrente', 'poupanca', 'carteira', 'investimento', 'credito'));
 		END $$`,
+		// Migrate legacy initial-balance transactions to a supported method.
+		`UPDATE transactions
+		 SET method = 'transferencia'
+		 WHERE description = 'Saldo inicial'
+		   AND method = 'outros'`,
 	)
 }
 

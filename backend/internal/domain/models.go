@@ -44,6 +44,18 @@ type TransactionPayload struct {
 	AccountID     string  `json:"accountId,omitempty"`
 }
 
+type TransactionImportPayload struct {
+	Items []TransactionPayload `json:"items"`
+}
+
+type TransactionImportResult struct {
+	Total      int `json:"total"`
+	Valid      int `json:"valid"`
+	Imported   int `json:"imported"`
+	Duplicates int `json:"duplicates"`
+	Invalid    int `json:"invalid"`
+}
+
 type TransactionDTO struct {
 	ID            string  `json:"id"`
 	Date          string  `json:"date"`

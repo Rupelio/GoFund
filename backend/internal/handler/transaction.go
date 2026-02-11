@@ -9,16 +9,25 @@ import (
 	"time"
 
 	"gestao/backend/internal/domain"
-	"gestao/backend/internal/postgres"
 )
+
+type transactionStore interface {
+	List(ctx context.Context, userID, month string, limit, offset int) ([]domain.TransactionDTO, int, error)
+	FindByID(ctx context.Context, id, userID string) (domain.TransactionDTO, error)
+	Create(ctx context.Context, userID string, dateValue time.Time, recurrenceEnd *time.Time, p domain.TransactionPayload) (domain.TransactionDTO, error)
+	CreateImported(ctx context.Context, userID string, dateValue time.Time, recurrenceEnd *time.Time, p domain.TransactionPayload, dedupeKey string) (bool, error)
+	Update(ctx context.Context, id, userID string, dateValue time.Time, recurrenceEnd *time.Time, p domain.TransactionPayload) (domain.TransactionDTO, error)
+	Delete(ctx context.Context, id, userID string) error
+	DeleteAll(ctx context.Context, userID string) (int64, error)
+}
 
 // TransactionHandler handles transaction CRUD.
 type TransactionHandler struct {
-	transactions *postgres.TransactionRepo
+	transactions transactionStore
 	queryTimeout time.Duration
 }
 
-func NewTransactionHandler(repo *postgres.TransactionRepo, timeout time.Duration) *TransactionHandler {
+func NewTransactionHandler(repo transactionStore, timeout time.Duration) *TransactionHandler {
 	return &TransactionHandler{transactions: repo, queryTimeout: timeout}
 }
 
@@ -102,6 +111,15 @@ func (h *TransactionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	dto, err := h.transactions.Create(ctx, user.ID, dateValue, recurrenceEnd, normalized)
+	if errors.Is(err, domain.ErrConflict) {
+		WriteError(w, http.StatusConflict, "transaction already exists")
+		return
+	}
+	var validationErr *domain.ValidationError
+	if errors.As(err, &validationErr) {
+		WriteError(w, http.StatusBadRequest, validationErr.Error())
+		return
+	}
 	if err != nil {
 		slog.Error("createTransaction failed", "error", err)
 		WriteError(w, http.StatusInternalServerError, "could not create transaction")
@@ -140,6 +158,15 @@ func (h *TransactionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	dto, err := h.transactions.Update(ctx, id, user.ID, dateValue, recurrenceEnd, normalized)
 	if errors.Is(err, domain.ErrNotFound) {
 		WriteError(w, http.StatusNotFound, "transaction not found")
+		return
+	}
+	if errors.Is(err, domain.ErrConflict) {
+		WriteError(w, http.StatusConflict, "transaction already exists")
+		return
+	}
+	var validationErr *domain.ValidationError
+	if errors.As(err, &validationErr) {
+		WriteError(w, http.StatusBadRequest, validationErr.Error())
 		return
 	}
 	if err != nil {
@@ -197,4 +224,78 @@ func (h *TransactionHandler) DeleteAll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]any{"deleted": count, "message": fmt.Sprintf("%d movimentações excluídas", count)})
+}
+
+// Import handles batch CSV import in a single request.
+func (h *TransactionHandler) Import(w http.ResponseWriter, r *http.Request) {
+	user, ok := MustCurrentUser(w, r)
+	if !ok {
+		return
+	}
+
+	var payload domain.TransactionImportPayload
+	if err := DecodeJSON(r, &payload); err != nil {
+		WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	total := len(payload.Items)
+	if total == 0 {
+		WriteError(w, http.StatusBadRequest, "items are required")
+		return
+	}
+	if total > 5000 {
+		WriteError(w, http.StatusBadRequest, "too many rows for a single import (max 5000)")
+		return
+	}
+
+	importTimeout := h.queryTimeout
+	if importTimeout < 30*time.Second {
+		importTimeout = 30 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), importTimeout)
+	defer cancel()
+
+	startedAt := time.Now()
+	result := domain.TransactionImportResult{Total: total}
+	for i, item := range payload.Items {
+		dateValue, recurrenceEnd, normalized, err := domain.ValidateTransactionPayload(item)
+		if err != nil {
+			result.Invalid++
+			continue
+		}
+
+		result.Valid++
+		dedupeKey := domain.TransactionDedupeKey(dateValue, normalized.Description, normalized.Amount)
+		imported, err := h.transactions.CreateImported(ctx, user.ID, dateValue, recurrenceEnd, normalized, dedupeKey)
+		if err != nil {
+			var validationErr *domain.ValidationError
+			if errors.As(err, &validationErr) {
+				result.Invalid++
+				continue
+			}
+
+			slog.Error("importTransactions failed", "error", err, "userID", user.ID, "rowIndex", i)
+			WriteError(w, http.StatusInternalServerError, "could not import transactions")
+			return
+		}
+
+		if imported {
+			result.Imported++
+			continue
+		}
+		result.Duplicates++
+	}
+
+	slog.Info(
+		"transactions import summary",
+		"userID", user.ID,
+		"total", result.Total,
+		"valid", result.Valid,
+		"imported", result.Imported,
+		"duplicates", result.Duplicates,
+		"invalid", result.Invalid,
+		"durationMs", time.Since(startedAt).Milliseconds(),
+	)
+	WriteJSON(w, http.StatusOK, result)
 }

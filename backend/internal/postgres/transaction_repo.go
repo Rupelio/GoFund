@@ -9,6 +9,7 @@ import (
 	"gestao/backend/internal/domain"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -165,6 +166,31 @@ func (r *TransactionRepo) FindByID(ctx context.Context, id, userID string) (doma
 	return row.toDTO(), nil
 }
 
+// FindInitialBalanceByAccount finds the synthetic "Saldo inicial" transaction for an account.
+func (r *TransactionRepo) FindInitialBalanceByAccount(ctx context.Context, userID, accountID string) (domain.TransactionDTO, error) {
+	query := fmt.Sprintf(
+		`SELECT %s
+		 FROM transactions
+		 WHERE user_id = $1
+		   AND account_id = $2
+		   AND type = 'receita'
+		   AND description = 'Saldo inicial'
+		 ORDER BY created_at ASC
+		 LIMIT 1`,
+		transactionColumns,
+	)
+
+	var row transactionRow
+	err := r.pool.QueryRow(ctx, query, userID, accountID).Scan(row.targets()...)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.TransactionDTO{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return domain.TransactionDTO{}, err
+	}
+	return row.toDTO(), nil
+}
+
 // Create inserts a new transaction.
 func (r *TransactionRepo) Create(ctx context.Context, userID string, dateValue time.Time, recurrenceEnd *time.Time, p domain.TransactionPayload) (domain.TransactionDTO, error) {
 	id := p.ID
@@ -185,6 +211,10 @@ func (r *TransactionRepo) Create(ctx context.Context, userID string, dateValue t
 		id, userID, dateValue, p.Type, p.Category, p.Method, p.Description, p.Amount, p.Recurrence, recurrenceEnd, p.Installments, accountID,
 	).Scan(&createdAt, &updatedAt)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return domain.TransactionDTO{}, domain.ErrConflict
+		}
 		return domain.TransactionDTO{}, err
 	}
 
@@ -200,6 +230,51 @@ func (r *TransactionRepo) Create(ctx context.Context, userID string, dateValue t
 		dto.RecurrenceEnd = recurrenceEnd.Format("2006-01-02")
 	}
 	return dto, nil
+}
+
+// CreateImported inserts one transaction for CSV import.
+// Returns imported=false when the row was skipped due to idempotency/conflict.
+func (r *TransactionRepo) CreateImported(ctx context.Context, userID string, dateValue time.Time, recurrenceEnd *time.Time, p domain.TransactionPayload, dedupeKey string) (bool, error) {
+	id := p.ID
+	if id == "" {
+		id = domain.MustUUID()
+	}
+
+	var accountID *string
+	if p.AccountID != "" {
+		accountID = &p.AccountID
+	}
+
+	var createdAt time.Time
+	err := r.pool.QueryRow(ctx,
+		`INSERT INTO transactions (
+			id, user_id, date, type, category, method, description, amount,
+			recurrence, recurrence_end, installments, account_id, dedupe_key, created_at, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8,
+			$9, $10, $11, $12, $13, NOW(), NOW()
+		)
+		ON CONFLICT DO NOTHING
+		RETURNING created_at`,
+		id, userID, dateValue, p.Type, p.Category, p.Method, p.Description, p.Amount,
+		p.Recurrence, recurrenceEnd, p.Installments, accountID, dedupeKey,
+	).Scan(&createdAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			switch pgErr.Code {
+			case "23503", "23514", "22P02":
+				return false, domain.NewValidationError("invalid transaction row")
+			case "23505":
+				return false, nil
+			}
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 // Update modifies an existing transaction.
@@ -223,6 +298,10 @@ func (r *TransactionRepo) Update(ctx context.Context, id, userID string, dateVal
 		return domain.TransactionDTO{}, domain.ErrNotFound
 	}
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return domain.TransactionDTO{}, domain.ErrConflict
+		}
 		return domain.TransactionDTO{}, err
 	}
 

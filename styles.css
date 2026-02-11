@@ -899,6 +899,83 @@ canvas:not(.chart-wrap canvas) { width: 100% !important; max-height: 300px; }
 }
 .csv-drop-zone-inner span { font-size: 2.5rem; }
 
+/* Dialog (Bootbox-like) */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(6, 10, 20, 0.76);
+  backdrop-filter: blur(4px);
+}
+.dialog-backdrop.hidden {
+  display: none;
+}
+.dialog-card {
+  width: min(520px, 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(175deg, var(--surface), var(--bg-2));
+  box-shadow: var(--shadow-lg), var(--shadow-glow);
+  overflow: hidden;
+}
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.95rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+}
+.dialog-header h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.dialog-close-btn {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.03);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+.dialog-close-btn:hover {
+  color: var(--text);
+  border-color: var(--border-hover);
+  background: rgba(255,255,255,0.07);
+}
+.dialog-body {
+  padding: 1rem 1.1rem;
+}
+.dialog-body p {
+  color: var(--text-secondary);
+  white-space: pre-line;
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  padding: 0.9rem 1.1rem 1.1rem;
+}
+.dialog-ok-danger {
+  color: #fff;
+  border-color: rgba(255, 90, 101, 0.5);
+  background: linear-gradient(135deg, #ff5a65, #ff7e87);
+}
+.dialog-ok-danger:hover {
+  border-color: rgba(255, 90, 101, 0.65);
+  box-shadow: var(--shadow-md);
+}
+
 /* ── Keyboard Shortcuts ──────────────────────────────────── */
 .shortcut-list { display: flex; flex-direction: column; gap: 0.65rem; }
 .shortcut-row { display: flex; align-items: center; gap: 1rem; font-size: 0.9rem; color: var(--text-secondary); }
@@ -940,4 +1017,3 @@ canvas:not(.chart-wrap canvas) { width: 100% !important; max-height: 300px; }
   border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff;
   animation: spin 0.6s linear infinite; vertical-align: middle;
 }
-

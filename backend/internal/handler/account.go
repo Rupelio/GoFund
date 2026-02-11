@@ -73,22 +73,8 @@ func (h *AccountHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create automatic transaction if initialBalance > 0
-	if normalized.InitialBalance > 0 {
-		txnPayload := domain.TransactionPayload{
-			Type:        "receita",
-			Category:    "Outros",
-			Method:      "outros",
-			Description: "Saldo inicial",
-			Amount:      normalized.InitialBalance,
-			AccountID:   dto.ID,
-		}
-		dateValue := time.Now()
-		_, err := h.transactions.Create(ctx, user.ID, dateValue, nil, txnPayload)
-		if err != nil {
-			slog.Warn("createAccount: initial balance transaction failed", "error", err, "accountID", dto.ID)
-			// Don't fail the account creation, just log the warning
-		}
+	if err := h.syncInitialBalanceTransaction(ctx, user.ID, dto.ID, normalized.InitialBalance); err != nil {
+		slog.Warn("createAccount: sync initial balance transaction failed", "error", err, "accountID", dto.ID)
 	}
 
 	WriteJSON(w, http.StatusCreated, dto)
@@ -135,6 +121,10 @@ func (h *AccountHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.syncInitialBalanceTransaction(ctx, user.ID, dto.ID, normalized.InitialBalance); err != nil {
+		slog.Warn("updateAccount: sync initial balance transaction failed", "error", err, "accountID", dto.ID)
+	}
+
 	WriteJSON(w, http.StatusOK, dto)
 }
 
@@ -164,4 +154,64 @@ func (h *AccountHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *AccountHandler) syncInitialBalanceTransaction(ctx context.Context, userID, accountID string, initialBalance float64) error {
+	initialTxn, err := h.transactions.FindInitialBalanceByAccount(ctx, userID, accountID)
+	hasInitialTxn := err == nil
+	if err != nil && !errors.Is(err, domain.ErrNotFound) {
+		return err
+	}
+
+	if initialBalance <= 0 {
+		if hasInitialTxn {
+			return h.transactions.Delete(ctx, initialTxn.ID, userID)
+		}
+		return nil
+	}
+
+	if hasInitialTxn {
+		dateValue, parseErr := time.Parse("2006-01-02", initialTxn.Date)
+		if parseErr != nil {
+			dateValue = time.Now()
+		}
+
+		method := initialTxn.Method
+		if method == "" || method == "outros" {
+			method = "transferencia"
+		}
+		category := initialTxn.Category
+		if category == "" {
+			category = "Outros"
+		}
+
+		payload := domain.TransactionPayload{
+			Date:         dateValue.Format("2006-01-02"),
+			Type:         "receita",
+			Category:     category,
+			Method:       method,
+			Description:  "Saldo inicial",
+			Amount:       initialBalance,
+			Recurrence:   "none",
+			Installments: 0,
+			AccountID:    accountID,
+		}
+		_, updateErr := h.transactions.Update(ctx, initialTxn.ID, userID, dateValue, nil, payload)
+		return updateErr
+	}
+
+	now := time.Now()
+	payload := domain.TransactionPayload{
+		Date:         now.Format("2006-01-02"),
+		Type:         "receita",
+		Category:     "Outros",
+		Method:       "transferencia",
+		Description:  "Saldo inicial",
+		Amount:       initialBalance,
+		Recurrence:   "none",
+		Installments: 0,
+		AccountID:    accountID,
+	}
+	_, createErr := h.transactions.Create(ctx, userID, now, nil, payload)
+	return createErr
 }

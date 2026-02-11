@@ -64,7 +64,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 	catH := handler.NewCategoryHandler(catRepo, timeout)
 	accH := handler.NewAccountHandler(accRepo, txnRepo, timeout)
 	bootstrapH := handler.NewBootstrapHandler(userRepo, txnRepo, budgetRepo, goalRepo, projRepo, catRepo, accRepo, timeout)
-	healthH := handler.NewHealthHandler(pool, timeout)
+	healthH := handler.NewHealthHandler(pool, timeout, "gestao-api", cfg.AppVersion)
 	meH := handler.NewMeHandler(userRepo, timeout)
 	logH := handler.NewLogHandler(logger)
 	summaryH := handler.NewSummaryHandler(txnRepo, emailSender, timeout)
@@ -111,6 +111,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 			priv.Route("/transactions", func(rt chi.Router) {
 				rt.Get("/", txnH.List)
 				rt.Post("/", txnH.Create)
+				rt.Post("/import", txnH.Import)
 				rt.Delete("/", txnH.DeleteAll)
 				rt.Get("/{id}", txnH.Get)
 				rt.Put("/{id}", txnH.Update)

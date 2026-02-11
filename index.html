@@ -10,11 +10,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=15" />
+    <link rel="stylesheet" href="styles.css?v=16" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
-    <script src="app.js?v=15" defer></script>
+    <script src="app.js?v=16" defer></script>
   </head>
   <body data-theme="dark">
     <div class="app-bg"></div>
@@ -136,7 +136,7 @@
                 <label>Descrição<input id="transactionDescription" type="text" placeholder="Ex: Salário, Aluguel..." maxlength="80" required/></label>
                 <div class="row-2"><label>Valor (R$)<input id="transactionAmount" type="number" min="0.01" step="0.01" placeholder="0,00" required/></label><label>Data<input id="transactionDate" type="date" required/></label></div>
                 <div class="row-2"><label>Categoria<div class="input-with-action"><select id="transactionCategory" required></select><button class="btn-icon-add" id="addCategoryQuickBtn" type="button" title="Nova categoria">+</button></div></label><label>Tipo<select id="transactionType" required><option value="receita">Receita</option><option value="despesa">Despesa</option><option value="investimento">Investimento</option><option value="transferencia">Transferência</option></select></label></div>
-                <div class="row-2"><label>Método<select id="transactionMethod" required><option value="pix">PIX</option><option value="debito">Débito</option><option value="credito">Crédito</option><option value="dinheiro">Dinheiro</option><option value="transferencia">Transferência</option></select></label><label>Conta<select id="transactionAccount"><option value="">Sem conta</option></select></label></div>
+                <div class="row-2"><label>Método<select id="transactionMethod" required><option value="pix">PIX</option><option value="debito">Débito</option><option value="credito">Crédito</option><option value="dinheiro">Dinheiro</option><option value="transferencia">Transferência</option><option value="outros">Outros</option></select></label><label>Conta<select id="transactionAccount"><option value="">Sem conta</option></select></label></div>
                 <div class="row-2"><label>Recorrência<select id="transactionRecurrence"><option value="none">Única</option><option value="monthly">Mensal</option><option value="installments">Parcelado</option></select></label><label id="installmentsLabel" class="hidden">Parcelas<input id="transactionInstallments" type="number" min="2" max="48" placeholder="12"/></label><label id="recurrenceEndLabel" class="hidden">Fim<input id="transactionRecurrenceEnd" type="date"/></label></div>
                 <div class="row-actions"><button class="btn primary" id="transactionSubmitBtn" type="submit">Salvar</button><button class="btn ghost hidden" id="cancelTransactionEditBtn" type="button">Cancelar</button></div>
               </form>
@@ -253,5 +253,21 @@
 
       </div>
     </main>
+
+    <div id="confirmModal" class="dialog-backdrop hidden" aria-hidden="true">
+      <section class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
+        <header class="dialog-header">
+          <h3 id="confirmTitle">Confirmar ação</h3>
+          <button id="confirmCloseBtn" class="dialog-close-btn" type="button" aria-label="Fechar">&times;</button>
+        </header>
+        <div class="dialog-body">
+          <p id="confirmMessage"></p>
+        </div>
+        <footer class="dialog-footer">
+          <button id="confirmCancelBtn" class="btn ghost tiny" type="button">Cancelar</button>
+          <button id="confirmOkBtn" class="btn primary tiny" type="button">Confirmar</button>
+        </footer>
+      </section>
+    </div>
   </body>
 </html>
