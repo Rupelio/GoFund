@@ -2268,8 +2268,9 @@
 
       if (isCreditCardCsv) {
         const desc = rawDesc.toLowerCase();
-        // Skip credit card internal operations
-        if (desc.includes("pagamento recebido") || desc.includes("parcelamento de fatura")) { skipped++; return; }
+        // Skip credit card internal operations only when amount is negative (credits/payments)
+        // Positive "Parcelamento de Fatura" entries are real installment charges (refinanced bill)
+        if (rawAmount <= 0 && (desc.includes("pagamento recebido") || desc.includes("parcelamento de fatura"))) { skipped++; return; }
         // Credit card: positive = despesa (compras), negative = estorno/reembolso
         if (!inferredType) {
           inferredType = rawAmount >= 0 ? "despesa" : "receita";
