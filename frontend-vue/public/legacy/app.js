@@ -1469,9 +1469,15 @@
       if (t.recurrenceEnd && t.recurrenceEnd.slice(0, 7) < month) return false;
       return true;
     });
-    if (upcomingRecurring.length > 0) {
-      const total = upcomingRecurring.reduce((s, t) => s + t.amount, 0);
-      alerts.push({ type: "info", icon: "🔁", text: `${upcomingRecurring.length} despesas recorrentes este mês (${formatCurrency(total)})` });
+    const recurringExpenses = upcomingRecurring.filter((t) => t.type === "despesa");
+    const recurringIncome = upcomingRecurring.filter((t) => t.type === "receita");
+    if (recurringExpenses.length > 0) {
+      const total = recurringExpenses.reduce((s, t) => s + t.amount, 0);
+      alerts.push({ type: "info", icon: "🔁", text: `${recurringExpenses.length} despesas recorrentes este mês (${formatCurrency(total)})` });
+    }
+    if (recurringIncome.length > 0) {
+      const total = recurringIncome.reduce((s, t) => s + t.amount, 0);
+      alerts.push({ type: "success", icon: "🔁", text: `${recurringIncome.length} receitas recorrentes este mês (${formatCurrency(total)})` });
     }
 
     el.alertsBar.innerHTML = alerts.map((a) => `
