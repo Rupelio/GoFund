@@ -3,7 +3,7 @@
 (function () {
   /* ── Constants ───────────────────────────────────────────── */
   const AUTH_STORAGE_KEY = "gestao_auth_v2";
-  const API_TIMEOUT_MS = 12000;
+  const API_TIMEOUT_MS = 30000;
   const API_BASE_URL = resolveApiBaseUrl();
   const CURRENCY = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -807,7 +807,8 @@
         if (typeFilter !== "todos" && t.type !== typeFilter) return false;
         if (catFilter !== "todas" && t.category.toLowerCase() !== catFilter.toLowerCase()) return false;
         if (methodFilter !== "todos" && t.method !== methodFilter) return false;
-        if (recFilter !== "todos" && (t.recurrence || "none") !== recFilter) return false;
+        if (recFilter === "installments" && !(t.installments > 1)) return false;
+        else if (recFilter !== "todos" && recFilter !== "installments" && (t.recurrence || "none") !== recFilter) return false;
         if (!search) return true;
         return `${t.description} ${t.category} ${t.method}`.toLowerCase().includes(search);
       })
@@ -1888,8 +1889,8 @@
         datasets: [{
           label: "Patrimônio Líquido",
           data,
-          borderColor: theme.primary,
-          backgroundColor: withAlpha(theme.primary, 0.12),
+          borderColor: theme.actualColor,
+          backgroundColor: withAlpha(theme.actualColor, 0.12),
           fill: true, tension: 0.35, pointRadius: 3, pointHoverRadius: 6,
         }],
       },
@@ -2713,6 +2714,7 @@
       }
 
       const item = normalizeTransaction({
+        _csvImport: true,
         id: idx.id >= 0 ? String(cols[idx.id] || "") : "",
         date: parsedDate, type: inferredType,
         category: inferredCategory, method: inferredMethod,
@@ -2802,9 +2804,13 @@
     if (!installmentInfo || installmentInfo.current <= 1) return dateValue;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateValue || ""))) return dateValue;
     const [py, pm, pd] = String(dateValue).split("-").map(Number);
-    const startDate = new Date(py, pm - 1 - (installmentInfo.current - 1), pd);
-    const monthLastDay = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0).getDate();
-    return `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}-${String(Math.min(pd, monthLastDay)).padStart(2, "0")}`;
+    // Subtract (current - 1) months to find installment 1 start date.
+    // Use day=1 first to avoid month overflow (e.g. Mar 31 - 1 month → Feb 31 → Mar 3),
+    // then clamp the original day to the target month's last day.
+    const targetDate = new Date(py, pm - 1 - (installmentInfo.current - 1), 1);
+    const monthLastDay = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0).getDate();
+    const clampedDay = Math.min(pd, monthLastDay);
+    return `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, "0")}-${String(clampedDay).padStart(2, "0")}`;
   }
 
   function shouldInferMonthlyBankRecurrence(desc, method, type, category, amount) {
@@ -2935,24 +2941,34 @@
     const method = options.method || "GET";
     const expectNoContent = Boolean(options.expectNoContent);
     const useAuth = options.auth !== false;
-    const ctrl = new AbortController();
-    const tid = window.setTimeout(() => ctrl.abort(), API_TIMEOUT_MS);
-    try {
-      const headers = {};
-      if (options.body) headers["Content-Type"] = "application/json";
-      if (useAuth && state.token) headers.Authorization = `Bearer ${state.token}`;
-      const res = await fetch(`${API_BASE_URL}${path}`, {
-        method, headers, body: options.body ? JSON.stringify(options.body) : undefined, signal: ctrl.signal,
-      });
-      if (expectNoContent && res.status === 204) return null;
-      const ct = res.headers.get("content-type") || "";
-      const data = ct.includes("application/json") ? await res.json() : null;
-      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-      return data;
-    } catch (error) {
-      if (error?.name === "AbortError") throw new Error("Tempo de resposta excedido.");
-      throw error;
-    } finally { window.clearTimeout(tid); }
+    const maxRetries = options.retries ?? 1;
+    let lastError;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const ctrl = new AbortController();
+      const tid = window.setTimeout(() => ctrl.abort(), API_TIMEOUT_MS);
+      try {
+        const headers = {};
+        if (options.body) headers["Content-Type"] = "application/json";
+        if (useAuth && state.token) headers.Authorization = `Bearer ${state.token}`;
+        const res = await fetch(`${API_BASE_URL}${path}`, {
+          method, headers, body: options.body ? JSON.stringify(options.body) : undefined, signal: ctrl.signal,
+        });
+        if (expectNoContent && res.status === 204) return null;
+        const ct = res.headers.get("content-type") || "";
+        const data = ct.includes("application/json") ? await res.json() : null;
+        if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+        return data;
+      } catch (error) {
+        lastError = error;
+        if (error?.name === "AbortError" && attempt < maxRetries) {
+          console.warn(`[apiRequest] Timeout on attempt ${attempt + 1}, retrying…`);
+          continue;
+        }
+        if (error?.name === "AbortError") throw new Error("Tempo de resposta excedido. Tente novamente.");
+        throw error;
+      } finally { window.clearTimeout(tid); }
+    }
+    throw lastError;
   }
 
   function resolveApiBaseUrl() {
@@ -3032,7 +3048,8 @@
 
     dialogLastFocused = document.activeElement;
     el.confirmTitle.textContent = normalizeString(title);
-    el.confirmMessage.textContent = normalizeString(message);
+    el.confirmMessage.style.whiteSpace = "pre-line";
+    el.confirmMessage.textContent = message;
     el.confirmModal.classList.remove("hidden");
     el.confirmModal.setAttribute("aria-hidden", "false");
 
@@ -3181,12 +3198,16 @@
     const method = normalizeString(String(t?.method || "")).toLowerCase();
     const amount = Number(t?.amount);
     let recurrence = normalizeString(String(t?.recurrence || "none")).toLowerCase();
-    if ((recurrence === "" || recurrence === "none") && installments <= 1) {
+    // Only infer recurrence during CSV import (when _csvImport flag is set).
+    // Re-inferring on every bootstrap would silently mutate persisted data.
+    if (t?._csvImport && (recurrence === "" || recurrence === "none") && installments <= 1) {
       if (shouldInferMonthlyBankRecurrence(description, method, type, category, Math.abs(amount))) {
         recurrence = "monthly";
       } else {
         recurrence = "none";
       }
+    } else if (recurrence === "") {
+      recurrence = "none";
     }
 
     return {
