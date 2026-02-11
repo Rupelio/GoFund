@@ -197,6 +197,7 @@
     user: null,
     selectedMonth: getCurrentMonth(),
     transactions: [],
+    importSnapshotTransactions: [],
     budgets: [],
     goals: [],
     categories: [],
@@ -614,7 +615,16 @@
   }
 
   function handleLogout() {
-    Object.assign(state, { token: "", user: null, transactions: [], budgets: [], goals: [], categories: [], accounts: [] });
+    Object.assign(state, {
+      token: "",
+      user: null,
+      transactions: [],
+      importSnapshotTransactions: [],
+      budgets: [],
+      goals: [],
+      categories: [],
+      accounts: [],
+    });
     localStorage.removeItem(AUTH_STORAGE_KEY);
     showAuth();
   }
@@ -631,7 +641,14 @@
     try {
       const data = await apiRequest("/api/bootstrap");
       state.user = normalizeUser(data.user || {});
-      state.transactions = Array.isArray(data.transactions) ? data.transactions.map(normalizeTransaction).filter(isValidTransaction) : [];
+      if (Array.isArray(data.transactions)) {
+        const normalizedTransactions = data.transactions.map(normalizeTransaction);
+        state.importSnapshotTransactions = normalizedTransactions;
+        state.transactions = normalizedTransactions.filter(isValidTransaction);
+      } else {
+        state.importSnapshotTransactions = [];
+        state.transactions = [];
+      }
       state.budgets = Array.isArray(data.budgets) ? data.budgets.map(normalizeBudget).filter(isValidBudget) : [];
       state.goals = Array.isArray(data.goals) ? data.goals.map(normalizeGoal).filter(isValidGoal) : [];
       state.categories = Array.isArray(data.categories) ? data.categories : [];
@@ -2403,7 +2420,7 @@
     for (const item of parsedItems) {
       if (!isValidTransaction(item)) { invalid++; continue; }
       const fp = txnFingerprint(item.date, item.description, item.amount);
-      const existing = existingByFingerprint.get(fp);
+      const existing = findExistingByAnyFingerprint(item, existingByFingerprint);
       if (existing) {
         duplicatesExisting++;
         if (shouldUpgradeDuplicateTransaction(existing, item)) {
@@ -2427,6 +2444,27 @@
     };
   }
 
+  function findExistingByAnyFingerprint(item, existingByFingerprint) {
+    const fingerprints = buildImportCandidateFingerprints(item);
+    for (const fp of fingerprints) {
+      const existing = existingByFingerprint.get(fp);
+      if (existing) return existing;
+    }
+    return null;
+  }
+
+  function buildImportCandidateFingerprints(item) {
+    const set = new Set();
+    set.add(txnFingerprint(item.date, item.description, item.amount));
+
+    const rawDate = normalizeString(String(item?._csvOriginalDate || ""));
+    if (rawDate && isValidDate(rawDate)) {
+      set.add(txnFingerprint(rawDate, item.description, item.amount));
+    }
+
+    return set;
+  }
+
   function selectBestUpgradeCandidate(currentCandidate, nextCandidate) {
     if (!currentCandidate) return nextCandidate;
     const currentInstallments = Number(currentCandidate.installments) || 0;
@@ -2445,6 +2483,16 @@
     const existingInstallments = Number(existing.installments) || 0;
     const incomingInstallments = Number(incoming.installments) || 0;
     if (incomingInstallments > existingInstallments) return true;
+
+    if (
+      existingInstallments > 1 &&
+      incomingInstallments === existingInstallments &&
+      isValidDate(existing.date) &&
+      isValidDate(incoming.date) &&
+      existing.date !== incoming.date
+    ) {
+      return true;
+    }
 
     const existingRecurrence = normalizeString(existing.recurrence || "none").toLowerCase() || "none";
     const incomingRecurrence = normalizeString(incoming.recurrence || "none").toLowerCase() || "none";
@@ -2473,6 +2521,15 @@
       payload.recurrence = "none";
       payload.recurrenceEnd = "";
       if (isValidDate(incoming.date)) payload.date = incoming.date;
+    }
+
+    if (
+      payload.installments > 1 &&
+      incomingInstallments === payload.installments &&
+      isValidDate(incoming.date) &&
+      payload.date !== incoming.date
+    ) {
+      payload.date = incoming.date;
     }
 
     if (payload.installments <= 1 && payload.recurrence === "none" && incomingRecurrence === "monthly") {
@@ -2561,6 +2618,7 @@
 
       // Parse date with broad CSV support (DD/MM/YYYY, DD-MM-YYYY, YYYY/MM/DD, ISO datetime)
       let parsedDate = normalizeCsvDate(rawDate);
+      const originalParsedDate = parsedDate;
 
       // For bank CSVs, infer type/category/method from description and amount sign
       let inferredType = idx.type >= 0 ? String(cols[idx.type] || "") : "";
@@ -2651,6 +2709,9 @@
         installments: inferredInstallments,
         createdAt: idx.createdAt >= 0 ? String(cols[idx.createdAt] || new Date().toISOString()) : new Date().toISOString(),
       });
+      if (isValidDate(originalParsedDate)) {
+        item._csvOriginalDate = originalParsedDate;
+      }
       isValidTransaction(item) ? items.push(item) : skipped++;
     });
     return { items, skipped };
@@ -3033,7 +3094,9 @@
     try {
       const data = await apiRequest("/api/bootstrap");
       if (Array.isArray(data.transactions)) {
-        state.transactions = data.transactions.map(normalizeTransaction).filter(isValidTransaction);
+        const normalizedTransactions = data.transactions.map(normalizeTransaction);
+        state.importSnapshotTransactions = normalizedTransactions;
+        state.transactions = normalizedTransactions.filter(isValidTransaction);
       }
     } catch (_) { /* fallback: keep current in-memory snapshot */ }
   }
@@ -3058,7 +3121,10 @@
   /** Build a Map fingerprint => richest existing transaction metadata */
   function buildExistingFingerprints() {
     const map = new Map();
-    for (const t of state.transactions) {
+    const source = Array.isArray(state.importSnapshotTransactions) && state.importSnapshotTransactions.length
+      ? state.importSnapshotTransactions
+      : state.transactions;
+    for (const t of source) {
       const fp = txnFingerprint(t.date, t.description, t.amount);
       const previous = map.get(fp);
       if (!previous || isTransactionMetadataRicher(t, previous)) {
