@@ -235,6 +235,8 @@ body {
     font-weight: 600;
     cursor: pointer;
     transition: all var(--duration) var(--ease);
+    text-align: center;
+    text-decoration: none;
 }
 
 .auth-tab:hover {
