@@ -124,6 +124,7 @@
     exportCsvBtn: document.getElementById("exportCsvBtn"),
     importCsvBtn: document.getElementById("importCsvBtn"),
     sendSummaryBtn: document.getElementById("sendSummaryBtn"),
+    deleteAllTransactionsBtn: document.getElementById("deleteAllTransactionsBtn"),
     csvInput: document.getElementById("csvInput"),
 
     kpiNetWorth: document.getElementById("kpiNetWorth"),
@@ -333,6 +334,7 @@
     el.exportCsvBtn.addEventListener("click", exportCsv);
     el.importCsvBtn.addEventListener("click", () => el.csvInput.click());
     el.sendSummaryBtn.addEventListener("click", sendMonthlySummary);
+    el.deleteAllTransactionsBtn.addEventListener("click", deleteAllTransactions);
     el.csvInput.addEventListener("change", (e) => void importCsv(e));
 
     // Categories CRUD
@@ -2171,6 +2173,26 @@
     }
   }
 
+  async function deleteAllTransactions() {
+    const count = state.transactions.length;
+    if (!count) { showMessage("app", "Não há movimentações para excluir.", "error"); return; }
+    if (!window.confirm(`⚠️ ATENÇÃO: Isso vai excluir TODAS as ${count} movimentações permanentemente.\n\nTem certeza?`)) return;
+    if (!window.confirm("Última chance! Confirma a exclusão de TODAS as movimentações?")) return;
+    try {
+      el.deleteAllTransactionsBtn.disabled = true;
+      el.deleteAllTransactionsBtn.textContent = "Excluindo…";
+      const res = await apiRequest("/api/transactions", { method: "DELETE" });
+      state.transactions = [];
+      showMessage("app", res.message || `${count} movimentações excluídas.`, "success");
+      renderAll();
+    } catch (error) {
+      showMessage("app", getErrorMessage(error, "Falha ao excluir movimentações."), "error");
+    } finally {
+      el.deleteAllTransactionsBtn.disabled = false;
+      el.deleteAllTransactionsBtn.textContent = "🗑️ Apagar Tudo";
+    }
+  }
+
   function exportCsv() {
     if (!state.transactions.length) { showMessage("app", "Sem movimentações para exportar.", "error"); return; }
     const headers = ["id", "date", "type", "category", "method", "description", "amount", "recurrence", "recurrenceEnd", "installments", "createdAt"];
@@ -2305,7 +2327,14 @@
 
       // Detect monthly subscriptions from credit card CSV
       if (isCreditCardCsv && inferredInstallments <= 0 && inferredRecurrence === "none") {
-        if (/dl\*google|google\s*(one|play|premium)|amazonprimebr|amazon\s*prime\b|netflix|spotify|disney|hbo\s*max|paramount|dazn|youtube\s*prem/i.test(rawDesc)) {
+        if (/dl\*google|google\s*(one|play|storage|premium)|amazonprimebr|amazon\s*prime\b|netflix|spotify|disney|hbo|paramount|dazn|youtube\s*prem|apple\s*(music|tv|one|arcade)|icloud|crunchyroll|globoplay|twitch|chatgpt|openai|notion|canva|adobe|figma|microsoft\s*365|office\s*365|dropbox/i.test(rawDesc)) {
+          inferredRecurrence = "monthly";
+        }
+      }
+
+      // Also detect subscriptions from bank CSV (Tim, internet providers, etc.)
+      if (isBankCsv && inferredInstallments <= 0 && inferredRecurrence === "none") {
+        if (/copel|sanepar|compagas|enel|cemig|celesc|claro\b|vivo\b|tim\*|tim\b|oi\b|net\b|sky\b|aluguel|condom[ií]nio|seguro\s*(auto|vida|resid)/i.test(rawDesc.toLowerCase())) {
           inferredRecurrence = "monthly";
         }
       }
@@ -2328,38 +2357,54 @@
 
   function inferCategoryFromDescription(desc) {
     const rules = [
-      // Alimentação / Supermercado
-      [/supermercado|condor|angeloni|festval|carrefour|atacadão|atacadao|big\b|assai/, "Supermercado"],
-      [/restaurante|lanchonete|burger|mcdonald|subway|pizza|sushi|shawarma|shawarm|ifood|rappi|99food|madeinchina/, "Alimentação"],
-      [/padaria|confeitaria|cafe\b|café|padariae/, "Alimentação"],
-      // Transporte / Combustível
-      [/posto|combustivel|combustível|shell|ipiranga|petrobras|auto posto/, "Transporte"],
-      [/uber|99\b|cabify|estacionamento/, "Transporte"],
-      // Saúde / Farmácia
-      [/farmacia|farmácia|panvel|drogaria|droga raia|drogasil|pague menos/, "Saúde"],
-      // Moradia / Contas
-      [/copel|sanepar|compagas|energia|eletri|agua\b|água/, "Contas"],
-      [/aluguel|condominio|condomínio/, "Moradia"],
-      [/internet|telefone|claro\b|vivo\b|tim\*|oi\b/, "Internet"],
-      // Educação
-      [/universidade|faculdade|escola|curso|cultura|livraria|associacao.*cultura|apc/, "Educação"],
-      // Lazer / Entretenimento
-      [/cinema|teatro|spotify|netflix|disney|amazon\s*prime|steam|playstation|xbox|game|nuuvem|sharkcraft/, "Lazer"],
-      // Assinaturas digitais
-      [/dl\*google|google\s*(one|play|premium)|amazonprimebr|youtube\s*prem/i, "Assinaturas"],
-      [/amazon\s*-\s*parcela|mercadolivre|mercado\s*livre/i, "Compras Online"],
-      // Vestuário
-      [/roupa|vestuario|vestuário|renner|cea\b|c&a|riachuelo|zara|seminario|semina/, "Vestuário"],
-      // Investimento
-      [/aplicação|aplicacao|rdb|cdb|tesouro|investimento|poupança|poupanca/, "Investimento"],
-      // Salário / Receita
-      [/salario|salário/, "Salário"],
-      // Fatura
-      [/fatura/, "Fatura"],
-      // Impostos
-      [/receita federal|imposto|darf|gps|inss|irpf/, "Impostos"],
-      // Domínio / Hosting
-      [/registrobr|registro\.br|hostgator|locaweb|godaddy/, "Internet"],
+      // ── Supermercado / Mercado ──
+      [/supermercado|condor|angeloni|festval|carrefour|atacad[ãa]o|big\b|assa[ií]|walmart|p[ãa]o de a[çc][úu]car|extra\s*hiper|zaffari|nacional|koch|bistek|giassi|fort\s*atacadista|sams?\s*club|makro|maxxi|mini\s*mercado|mini\s*pre[çc]o|dia\s*supermercado/, "Supermercado"],
+      // ── Alimentação / Restaurante / Delivery ──
+      [/restaurante|lanchonete|churrascaria|sorveteria|burger|mcdonald|mc\s*donald|subway|pizza|sushi|shawarma|shawarm|ifood|rappi|99\s*food|madeinchina|habib|bobs?\b|kfc|outback|spoleto|giraffas|coco\s*bambu|cantina|bistr[oô]|a\s*baiana|temakeria|acai|a[çc]a[ií]/, "Alimentação"],
+      [/padaria|confeitaria|cafe\b|café|padariae|starbucks|cafeteria|doceria|bolo|torta/, "Alimentação"],
+      // ── Transporte / Combustível ──
+      [/posto|combustivel|combust[ií]vel|shell\b|ipiranga|petrobras|auto\s*posto|ale\b|br\s*distribuidora|gasolina|etanol|diesel|gnv/, "Transporte"],
+      [/uber|99\b|cabify|estacionamento|estapar|zona\s*azul|park|vaga\s*livre/, "Transporte"],
+      [/ped[áa]gio|sem\s*parar|veloe|move\s*mais|conect\s*car|auto\s*pista/, "Transporte"],
+      [/mec[âa]nica|oficina|borracharia|pneu|auto\s*el[eé]trica|auto\s*pe[çc]as|funilaria|lava\s*(r[áa]pido|jato|car)/, "Transporte"],
+      // ── Saúde / Farmácia / Médico ──
+      [/farm[áa]cia|panvel|drogaria|droga\s*raia|drogasil|pague\s*menos|ultrafarm|rede\s*d['']or|farma/, "Saúde"],
+      [/hospital|cl[ií]nica|m[ée]dico|lab(orat[óo]rio)?|consult(a|[oó]rio)|dentista|odonto|fisio(terapia)?|psic[oó]logo|exame|unimed|amil|sulam[ée]rica|hapvida|prevent\s*senior|bradesco\s*sa[úu]de/, "Saúde"],
+      [/[óo]tica|[óo]culos|lentes|vision/, "Saúde"],
+      // ── Moradia / Contas da casa ──
+      [/copel|sanepar|compagas|energi[as]|eletri|[áa]gua\b|enel|cemig|ceee|celesc|coelba|equatorial|neoenergia|light\b|celpe|cosern/, "Contas"],
+      [/aluguel|condom[ií]nio|iptu|seguro\s*resid/, "Moradia"],
+      // ── Internet / Telefone / TV ──
+      [/internet|telefone|claro\b|vivo\b|tim\*|tim\b|oi\b|net\b|sky\b|brisanet|desktop\b|algar|sercomtel/, "Internet"],
+      // ── Educação ──
+      [/universidade|faculdade|escola|curso|cultura|livraria|associa[çc][ãa]o.*cultura|apc|saraiva|amazon\s*kindle/, "Educação"],
+      [/udemy|coursera|alura|rocketseat|origamid|domestika|duolingo/, "Educação"],
+      // ── Lazer / Entretenimento ──
+      [/cinema|teatro|spotify|netflix|disney|amazon\s*prime|steam|playstation|xbox|game|nuuvem|sharkcraft|twitch|crunchyroll|hbo|paramount|dazn|apple\s*tv|globoplay|ingresso/, "Lazer"],
+      [/bar\b|pub\b|cerveja|balada|boate|show|festival|parque|praia|hotel|hostel|airbnb|booking/, "Lazer"],
+      // ── Assinaturas digitais ──
+      [/dl\*google|google\s*(one|play|storage|premium)|amazonprimebr|youtube\s*prem|icloud|dropbox|adobe|chatgpt|openai|canva|notion|figma|github|heroku|vercel|fly\.io|microsoft\s*365|office\s*365/, "Assinaturas"],
+      [/apple\.com|apple\s*music|apple\s*one|apple\s*arcade/, "Assinaturas"],
+      // ── Compras Online ──
+      [/amazon|mercadolivre|mercado\s*livre|shopee|aliexpress|shein|magalu|magazine|americanas|casas\s*bahia|submarino|kabum|pichau|terabyte/, "Compras Online"],
+      // ── Vestuário ──
+      [/roupa|vestu[áa]rio|renner|cea\b|c&a|riachuelo|zara|semina|hering|marisa|centauro|netshoes|adidas|nike|puma|decathlon|lupo/, "Vestuário"],
+      // ── Pet / Animais ──
+      [/pet\s*shop|pet\s*center|cobasi|petz|veterin[áa]rio|ra[çc][ãa]o|cachorro|gato/, "Pet"],
+      // ── Investimento ──
+      [/aplica[çc][ãa]o|rdb|cdb|tesouro|investimento|poupan[çc]a|fundo|a[çc][ãa]o|etf|cri\b|cra\b|debenture|lci|lca|coe|previdencia/, "Investimento"],
+      // ── Salário / Receita ──
+      [/sal[áa]rio|folha\s*de\s*pagamento|pro\s*labore|honorario|freelance|comiss[ãa]o|bonifica[çc][ãa]o/, "Salário"],
+      // ── Fatura ──
+      [/fatura|pgto\s*cart|cart[ãa]o\s*de\s*cr[ée]dito/, "Fatura"],
+      // ── Impostos / Governo ──
+      [/receita\s*federal|imposto|darf|gps|inss|irpf|irpj|icms|iss\b|simples\s*nacional|das\b|gru\b|detran|dpvat|ipva|licenciamento/, "Impostos"],
+      // ── Internet / Domínio / Hosting ──
+      [/registrobr|registro\.br|hostgator|locaweb|godaddy|cloudflare|namecheap/, "Internet"],
+      // ── Seguros ──
+      [/seguro\s*(auto|vida|viagem)|porto\s*seguro|liberty|mapfre|zurich|tokio\s*marine|sulam[ée]rica\s*segur/, "Seguros"],
+      // ── Transferências genéricas ──
+      [/transfer[êe]ncia\s*recebida/, "Transferência"],
     ];
     for (const [regex, cat] of rules) {
       if (regex.test(desc)) return cat;

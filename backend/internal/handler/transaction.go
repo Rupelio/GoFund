@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -176,4 +177,24 @@ func (h *TransactionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// DeleteAll removes all transactions for the authenticated user.
+func (h *TransactionHandler) DeleteAll(w http.ResponseWriter, r *http.Request) {
+	user, ok := MustCurrentUser(w, r)
+	if !ok {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), h.queryTimeout)
+	defer cancel()
+
+	count, err := h.transactions.DeleteAll(ctx, user.ID)
+	if err != nil {
+		slog.Error("deleteAllTransactions failed", "error", err)
+		WriteError(w, http.StatusInternalServerError, "could not delete transactions")
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]any{"deleted": count, "message": fmt.Sprintf("%d movimentações excluídas", count)})
 }

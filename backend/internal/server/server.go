@@ -111,6 +111,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 			priv.Route("/transactions", func(rt chi.Router) {
 				rt.Get("/", txnH.List)
 				rt.Post("/", txnH.Create)
+				rt.Delete("/", txnH.DeleteAll)
 				rt.Get("/{id}", txnH.Get)
 				rt.Put("/{id}", txnH.Update)
 				rt.Delete("/{id}", txnH.Delete)

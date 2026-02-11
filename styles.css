@@ -243,6 +243,8 @@ input[type="search"]::-webkit-search-cancel-button { display: none; }
 .btn.ghost { background: rgba(255,255,255,0.03); border-color: var(--border); }
 .btn.ghost:hover { background: rgba(255,255,255,0.06); border-color: var(--border-hover); }
 .btn.tiny { padding: 0.45rem 0.85rem; font-size: 0.8rem; border-radius: var(--radius-sm); }
+.btn.danger-text { color: var(--danger); }
+.btn.danger-text:hover { background: rgba(255,90,101,0.1); border-color: rgba(255,90,101,0.3); }
 
 /* -- Status Messages --------------------------------------- */
 .status-message {

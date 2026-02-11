@@ -251,3 +251,12 @@ func (r *TransactionRepo) Delete(ctx context.Context, id, userID string) error {
 	}
 	return nil
 }
+
+// DeleteAll removes all transactions for a user. Returns the count of deleted rows.
+func (r *TransactionRepo) DeleteAll(ctx context.Context, userID string) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM transactions WHERE user_id = $1`, userID)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
