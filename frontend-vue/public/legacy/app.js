@@ -2363,6 +2363,161 @@
     }
   }
 
+  /**
+   * Show a dialog asking the user to select or create an account for CSV import.
+   * Returns { accountId, createNew, newAccount } or null if cancelled entirely.
+   * accountId = "" means "skip / don't link".
+   */
+  function showCsvAccountDialog(earliestDate) {
+    return new Promise((resolve) => {
+      const accounts = state.accounts;
+      const formattedDate = earliestDate
+        ? new Date(earliestDate + "T00:00:00").toLocaleDateString("pt-BR")
+        : "";
+
+      const accountOptions = accounts
+        .slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+        .map((a) => `<option value="${a.id}">${escapeHtml(a.name)} (${escapeHtml(a.type)})</option>`)
+        .join("");
+
+      const backdrop = document.createElement("div");
+      backdrop.className = "dialog-backdrop";
+      backdrop.setAttribute("aria-hidden", "false");
+      backdrop.innerHTML = `
+        <section class="dialog-card" role="dialog" aria-modal="true" style="max-width:480px">
+          <header class="dialog-header">
+            <h3>Vincular a uma conta</h3>
+            <button class="dialog-close-btn csv-acct-close" type="button" aria-label="Fechar">&times;</button>
+          </header>
+          <div class="dialog-body" style="display:flex;flex-direction:column;gap:0.75rem">
+            <p style="margin:0;font-size:0.88rem;color:var(--text-secondary)">
+              Selecione ou crie uma conta para vincular as transações do extrato.
+              Isso garante que o saldo da conta seja calculado corretamente.
+            </p>
+            <label style="font-weight:600;font-size:0.85rem">Conta
+              <select id="csvAccountSelect" class="input" style="margin-top:0.25rem;width:100%">
+                <option value="__new__">➕ Criar nova conta</option>
+                ${accountOptions}
+                <option value="">Não vincular a nenhuma conta</option>
+              </select>
+            </label>
+            <div id="csvNewAccountFields" style="display:flex;flex-direction:column;gap:0.5rem;padding:0.75rem;border-radius:8px;background:var(--bg-card);border:1px solid var(--border)">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
+                <label style="font-size:0.85rem">Nome
+                  <input id="csvAccountName" class="input" type="text" placeholder="Ex: Nubank" maxlength="40" style="width:100%;margin-top:0.15rem"/>
+                </label>
+                <label style="font-size:0.85rem">Tipo
+                  <select id="csvAccountType" class="input" style="width:100%;margin-top:0.15rem">
+                    <option value="corrente">Corrente</option>
+                    <option value="poupanca">Poupança</option>
+                    <option value="carteira">Carteira</option>
+                    <option value="investimento">Investimento</option>
+                    <option value="credito">Cartão de Crédito</option>
+                  </select>
+                </label>
+              </div>
+              <label style="font-size:0.85rem">Saldo anterior a ${formattedDate || "o extrato"}
+                <input id="csvAccountBalance" class="input" type="number" min="0" step="0.01" value="0" style="width:100%;margin-top:0.15rem"/>
+                <small style="color:var(--text-secondary);font-weight:400;display:block;margin-top:0.2rem">
+                  Quanto você tinha na conta <strong>antes</strong> da primeira transação do extrato.
+                  Deixe 0 se o extrato cobre todo o histórico.
+                </small>
+              </label>
+              <label style="font-size:0.85rem">Cor
+                <input id="csvAccountColor" type="color" value="#5e7fff" style="margin-top:0.15rem"/>
+              </label>
+            </div>
+            <div id="csvExistingAccountInfo" style="display:none;padding:0.5rem 0.75rem;border-radius:8px;background:var(--bg-card);border:1px solid var(--border);font-size:0.85rem">
+              <span id="csvExistingAccountText"></span>
+            </div>
+          </div>
+          <footer class="dialog-footer">
+            <button class="btn ghost tiny csv-acct-cancel" type="button">Cancelar</button>
+            <button class="btn primary tiny csv-acct-ok" type="button">Continuar</button>
+          </footer>
+        </section>
+      `;
+
+      document.body.appendChild(backdrop);
+
+      const select = backdrop.querySelector("#csvAccountSelect");
+      const newFields = backdrop.querySelector("#csvNewAccountFields");
+      const existingInfo = backdrop.querySelector("#csvExistingAccountInfo");
+      const existingText = backdrop.querySelector("#csvExistingAccountText");
+
+      function updateVisibility() {
+        const val = select.value;
+        if (val === "__new__") {
+          newFields.style.display = "flex";
+          existingInfo.style.display = "none";
+        } else if (val && val !== "") {
+          newFields.style.display = "none";
+          const acct = accounts.find((a) => a.id === val);
+          if (acct && (acct.initialBalance || 0) > 0) {
+            existingText.innerHTML = `⚠️ Esta conta tem saldo inicial de <strong>${formatCurrency(acct.initialBalance)}</strong>. Se o extrato já contém todo o histórico, considere zerar o saldo inicial na seção de Contas para evitar duplicidade.`;
+            existingInfo.style.display = "block";
+          } else {
+            existingInfo.style.display = "none";
+          }
+        } else {
+          newFields.style.display = "none";
+          existingInfo.style.display = "none";
+        }
+      }
+
+      select.addEventListener("change", updateVisibility);
+      updateVisibility();
+
+      let resolved = false;
+      function cleanup(result) {
+        if (resolved) return;
+        resolved = true;
+        document.removeEventListener("keydown", escHandler);
+        backdrop.remove();
+        resolve(result);
+      }
+
+      backdrop.querySelector(".csv-acct-close").addEventListener("click", () => cleanup(null));
+      backdrop.querySelector(".csv-acct-cancel").addEventListener("click", () => cleanup(null));
+      backdrop.addEventListener("click", (e) => {
+        if (e.target === backdrop) cleanup(null);
+      });
+
+      backdrop.querySelector(".csv-acct-ok").addEventListener("click", () => {
+        const val = select.value;
+        if (val === "__new__") {
+          const name = backdrop.querySelector("#csvAccountName").value.trim();
+          if (!name) {
+            backdrop.querySelector("#csvAccountName").focus();
+            return;
+          }
+          cleanup({
+            accountId: "",
+            createNew: true,
+            newAccount: {
+              name,
+              type: backdrop.querySelector("#csvAccountType").value,
+              initialBalance: Number(backdrop.querySelector("#csvAccountBalance").value) || 0,
+              color: backdrop.querySelector("#csvAccountColor").value || "#5e7fff",
+            },
+          });
+        } else {
+          cleanup({ accountId: val || "", createNew: false });
+        }
+      });
+
+      const escHandler = (e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          cleanup(null);
+        }
+      };
+      document.addEventListener("keydown", escHandler);
+
+      setTimeout(() => select.focus(), 50);
+    });
+  }
+
   async function importCsvCore(file) {
     let loaderVisible = false;
     try {
@@ -2372,18 +2527,60 @@
       const parsed = parseTransactionsFromCsv(text);
       if (!parsed.items.length) { showMessage("app", "Nenhuma movimentacao valida no CSV.", "error"); return; }
 
+      // ── Step 1: Ask user to select / create an account ──────────
+      const earliestDate = parsed.items.reduce((min, t) => (t.date < min ? t.date : min), parsed.items[0].date);
+      if (loaderVisible) { hideLoader(); loaderVisible = false; }
+
+      const accountChoice = await showCsvAccountDialog(earliestDate);
+      if (accountChoice === null) return; // user cancelled
+
+      let importAccountId = "";
+      if (accountChoice.createNew) {
+        showLoader("Criando conta…");
+        loaderVisible = true;
+        try {
+          const created = await apiRequest("/api/accounts", { method: "POST", body: accountChoice.newAccount });
+          state.accounts.push(created);
+          importAccountId = created.id;
+          populateAccountSelector();
+          renderAccounts();
+        } catch (error) {
+          showMessage("app", getErrorMessage(error, "Falha ao criar conta."), "error");
+          return;
+        }
+        hideLoader();
+        loaderVisible = false;
+      } else if (accountChoice.accountId) {
+        importAccountId = accountChoice.accountId;
+      }
+
+      // Attach accountId to all parsed items
+      if (importAccountId) {
+        parsed.items.forEach((item) => { item.accountId = importAccountId; });
+      }
+
+      // ── Step 2: Dedup & confirmation ────────────────────────────
+      showLoader("Processando…");
+      loaderVisible = true;
       await refreshTransactionsSnapshotForImport();
       const existing = buildExistingFingerprints();
       const preview = buildImportPreview(parsed.items, existing);
       const invalidPreview = parsed.skipped + preview.invalid;
-      const confirmText = [
+      const accountName = importAccountId
+        ? (state.accounts.find((a) => a.id === importAccountId)?.name || "")
+        : "";
+      const confirmLines = [
         `Resumo da importacao (${file.name}):`,
+      ];
+      if (accountName) confirmLines.push(`- Conta: ${accountName}`);
+      confirmLines.push(
         `- Novas para importar: ${preview.toImport.length}`,
         `- Duplicatas ja existentes: ${preview.duplicatesExisting}`,
         `- Duplicatas dentro do arquivo: ${preview.duplicatesInFile}`,
         `- Duplicatas com metadados atualizados: ${preview.toUpgrade.length}`,
         `- Linhas invalidas: ${invalidPreview}`,
-      ].join("\n");
+      );
+      const confirmText = confirmLines.join("\n");
       // Hide loader before asking for confirmation so modal buttons remain clickable.
       if (loaderVisible) {
         hideLoader();
@@ -3130,6 +3327,7 @@
 
   function toPayload(t, preserveId) {
     const p = { date: t.date, type: t.type, category: t.category, method: t.method, description: t.description, amount: Number(t.amount), recurrence: t.recurrence || "none", recurrenceEnd: t.recurrenceEnd || "", installments: Number(t.installments) || 0 };
+    if (t.accountId) p.accountId = t.accountId;
     if (preserveId && t.id) p.id = t.id;
     return p;
   }
