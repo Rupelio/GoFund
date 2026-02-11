@@ -2336,6 +2336,7 @@
         `- Novas para importar: ${preview.toImport.length}`,
         `- Duplicatas ja existentes: ${preview.duplicatesExisting}`,
         `- Duplicatas dentro do arquivo: ${preview.duplicatesInFile}`,
+        `- Duplicatas com metadados atualizados: ${preview.toUpgrade.length}`,
         `- Linhas invalidas: ${invalidPreview}`,
       ].join("\n");
       // Hide loader before asking for confirmation so modal buttons remain clickable.
@@ -2350,28 +2351,38 @@
       });
       if (!confirmed) return;
 
-      if (!preview.toImport.length) {
+      if (!preview.toImport.length && !preview.toUpgrade.length) {
         showMessage("app", "Nada novo para importar (somente duplicatas/invalidas).", "error");
         return;
       }
 
       showLoader("Importando CSV...");
       loaderVisible = true;
-      const result = await apiRequest("/api/transactions/import", {
-        method: "POST",
-        body: { items: preview.toImport.map((item) => toPayload(item, false)) },
-      });
+      let result = { imported: 0, duplicates: 0, invalid: 0 };
+      if (preview.toImport.length) {
+        result = await apiRequest("/api/transactions/import", {
+          method: "POST",
+          body: { items: preview.toImport.map((item) => toPayload(item, false)) },
+        });
+      }
+      const upgradeResult = await applyImportMetadataUpgrades(preview.toUpgrade);
 
       await refreshTransactionsSnapshotForImport();
       renderAll();
 
       const imported = Number(result?.imported || 0);
-      const duplicates = preview.duplicatesExisting + preview.duplicatesInFile + Number(result?.duplicates || 0);
+      const upgraded = Number(upgradeResult?.updated || 0);
+      const upgradeFailed = Number(upgradeResult?.failed || 0);
+      const duplicates = Math.max(0, preview.duplicatesExisting - upgraded) + preview.duplicatesInFile + Number(result?.duplicates || 0);
       const invalid = invalidPreview + Math.max(0, Number(result?.invalid || 0) - preview.invalid);
-      const parts = [`${imported} importadas`];
+      const parts = [];
+      if (imported) parts.push(`${imported} importadas`);
+      if (upgraded) parts.push(`${upgraded} atualizadas`);
       if (duplicates) parts.push(`${duplicates} duplicatas ignoradas`);
       if (invalid) parts.push(`${invalid} invalidas`);
-      showMessage("app", parts.join(", ") + ".", imported > 0 ? "success" : "error");
+      if (upgradeFailed) parts.push(`${upgradeFailed} atualizacoes falharam`);
+      if (!parts.length) parts.push("Nenhuma alteracao");
+      showMessage("app", parts.join(", ") + ".", imported > 0 || upgraded > 0 ? "success" : "error");
     } catch (error) {
       showMessage("app", getErrorMessage(error, "Falha ao importar CSV."), "error");
     } finally {
@@ -2381,9 +2392,10 @@
     }
   }
 
-  function buildImportPreview(parsedItems, existingFingerprints) {
+  function buildImportPreview(parsedItems, existingByFingerprint) {
     const toImport = [];
     const inFileFingerprints = new Set();
+    const upgradeByTransactionId = new Map();
     let duplicatesExisting = 0;
     let duplicatesInFile = 0;
     let invalid = 0;
@@ -2391,13 +2403,117 @@
     for (const item of parsedItems) {
       if (!isValidTransaction(item)) { invalid++; continue; }
       const fp = txnFingerprint(item.date, item.description, item.amount);
-      if (existingFingerprints.has(fp)) { duplicatesExisting++; continue; }
+      const existing = existingByFingerprint.get(fp);
+      if (existing) {
+        duplicatesExisting++;
+        if (shouldUpgradeDuplicateTransaction(existing, item)) {
+          const previous = upgradeByTransactionId.get(existing.id);
+          const incoming = selectBestUpgradeCandidate(previous?.incoming, item);
+          upgradeByTransactionId.set(existing.id, { existing, incoming });
+        }
+        continue;
+      }
       if (inFileFingerprints.has(fp)) { duplicatesInFile++; continue; }
       inFileFingerprints.add(fp);
       toImport.push(item);
     }
 
-    return { toImport, duplicatesExisting, duplicatesInFile, invalid };
+    return {
+      toImport,
+      toUpgrade: Array.from(upgradeByTransactionId.values()),
+      duplicatesExisting,
+      duplicatesInFile,
+      invalid,
+    };
+  }
+
+  function selectBestUpgradeCandidate(currentCandidate, nextCandidate) {
+    if (!currentCandidate) return nextCandidate;
+    const currentInstallments = Number(currentCandidate.installments) || 0;
+    const nextInstallments = Number(nextCandidate.installments) || 0;
+    if (nextInstallments > currentInstallments) return nextCandidate;
+    if (nextInstallments < currentInstallments) return currentCandidate;
+
+    const currentRecurrence = normalizeString(currentCandidate.recurrence || "none").toLowerCase() || "none";
+    const nextRecurrence = normalizeString(nextCandidate.recurrence || "none").toLowerCase() || "none";
+    if (currentRecurrence !== "monthly" && nextRecurrence === "monthly") return nextCandidate;
+    return currentCandidate;
+  }
+
+  function shouldUpgradeDuplicateTransaction(existing, incoming) {
+    if (!existing || !incoming) return false;
+    const existingInstallments = Number(existing.installments) || 0;
+    const incomingInstallments = Number(incoming.installments) || 0;
+    if (incomingInstallments > existingInstallments) return true;
+
+    const existingRecurrence = normalizeString(existing.recurrence || "none").toLowerCase() || "none";
+    const incomingRecurrence = normalizeString(incoming.recurrence || "none").toLowerCase() || "none";
+    return existingInstallments <= 1 && existingRecurrence === "none" && incomingRecurrence === "monthly";
+  }
+
+  function buildUpgradePayload(existing, incoming) {
+    const payload = {
+      date: normalizeString(existing.date),
+      type: normalizeString(existing.type).toLowerCase(),
+      category: normalizeString(existing.category),
+      method: normalizeString(existing.method).toLowerCase(),
+      description: normalizeString(existing.description),
+      amount: Number(existing.amount),
+      recurrence: normalizeString(existing.recurrence || "none").toLowerCase() || "none",
+      recurrenceEnd: normalizeString(existing.recurrenceEnd || ""),
+      installments: Number(existing.installments) || 0,
+      accountId: normalizeString(existing.accountId || ""),
+    };
+
+    const incomingInstallments = Number(incoming.installments) || 0;
+    const incomingRecurrence = normalizeString(incoming.recurrence || "none").toLowerCase() || "none";
+
+    if (incomingInstallments > payload.installments) {
+      payload.installments = incomingInstallments;
+      payload.recurrence = "none";
+      payload.recurrenceEnd = "";
+      if (isValidDate(incoming.date)) payload.date = incoming.date;
+    }
+
+    if (payload.installments <= 1 && payload.recurrence === "none" && incomingRecurrence === "monthly") {
+      payload.recurrence = "monthly";
+      if (incoming.recurrenceEnd && isValidDate(incoming.recurrenceEnd)) {
+        payload.recurrenceEnd = incoming.recurrenceEnd;
+      }
+    }
+
+    return payload;
+  }
+
+  async function applyImportMetadataUpgrades(upgrades) {
+    let updated = 0;
+    let failed = 0;
+
+    for (const upgrade of upgrades || []) {
+      const existing = upgrade?.existing;
+      const incoming = upgrade?.incoming;
+      if (!existing?.id || !incoming) continue;
+      try {
+        const payload = buildUpgradePayload(existing, incoming);
+        if (!isValidTransaction(payload)) {
+          failed++;
+          continue;
+        }
+        const dto = await apiRequest(`/api/transactions/${encodeURIComponent(existing.id)}`, {
+          method: "PUT",
+          body: payload,
+        });
+        const normalized = normalizeTransaction(dto);
+        const idx = state.transactions.findIndex((t) => t.id === existing.id);
+        if (idx >= 0) state.transactions[idx] = normalized;
+        else state.transactions.push(normalized);
+        updated++;
+      } catch (_) {
+        failed++;
+      }
+    }
+
+    return { updated, failed };
   }
 
   function parseTransactionsFromCsv(csvText) {
@@ -2939,13 +3055,29 @@
     return `${date}|${d}|${Math.abs(Number(amount)).toFixed(2)}`;
   }
 
-  /** Build a Set of fingerprints from existing transactions */
+  /** Build a Map fingerprint => richest existing transaction metadata */
   function buildExistingFingerprints() {
-    const set = new Set();
+    const map = new Map();
     for (const t of state.transactions) {
-      set.add(txnFingerprint(t.date, t.description, t.amount));
+      const fp = txnFingerprint(t.date, t.description, t.amount);
+      const previous = map.get(fp);
+      if (!previous || isTransactionMetadataRicher(t, previous)) {
+        map.set(fp, t);
+      }
     }
-    return set;
+    return map;
+  }
+
+  function isTransactionMetadataRicher(candidate, baseline) {
+    const candidateInstallments = Number(candidate?.installments) || 0;
+    const baselineInstallments = Number(baseline?.installments) || 0;
+    if (candidateInstallments !== baselineInstallments) return candidateInstallments > baselineInstallments;
+
+    const candidateRecurrence = normalizeString(candidate?.recurrence || "none").toLowerCase() || "none";
+    const baselineRecurrence = normalizeString(baseline?.recurrence || "none").toLowerCase() || "none";
+    if (candidateRecurrence !== baselineRecurrence) return candidateRecurrence === "monthly";
+
+    return false;
   }
 
   /* ── Normalizers ─────────────────────────────────────────── */
