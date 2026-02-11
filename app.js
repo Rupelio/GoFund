@@ -1676,8 +1676,11 @@
   function renderMonthlyReport() {
     const curMonth = state.selectedMonth;
     const prevMonth = getMonthShift(curMonth, -1);
-    const curTx = getMonthlyTransactions(curMonth);
-    const prevTx = getMonthlyTransactions(prevMonth);
+    const curTxAll = getMonthlyTransactions(curMonth);
+    const prevTxAll = getMonthlyTransactions(prevMonth);
+    // Cash-basis report: exclude credit-card purchases from core KPIs (same as dashboard/summary email).
+    const curTx = curTxAll.filter((t) => t.method !== "credito");
+    const prevTx = prevTxAll.filter((t) => t.method !== "credito");
 
     const curIncome = sumByType(curTx, "receita");
     const prevIncome = sumByType(prevTx, "receita");
@@ -1685,6 +1688,8 @@
     const prevExpense = sumByType(prevTx, "despesa");
     const curInvest = sumByType(curTx, "investimento");
     const prevInvest = sumByType(prevTx, "investimento");
+    const curCreditCard = curTxAll.filter((t) => t.method === "credito" && t.type === "despesa").reduce((s, t) => s + t.amount, 0);
+    const prevCreditCard = prevTxAll.filter((t) => t.method === "credito" && t.type === "despesa").reduce((s, t) => s + t.amount, 0);
     const curBalance = curIncome - curExpense - curInvest;
     const prevBalance = prevIncome - prevExpense - prevInvest;
 
@@ -1697,6 +1702,7 @@
     const incChange = changeInfo(curIncome, prevIncome);
     const expChange = changeInfo(curExpense, prevExpense);
     const invChange = changeInfo(curInvest, prevInvest);
+    const ccChange = changeInfo(curCreditCard, prevCreditCard);
     const balChange = changeInfo(curBalance, prevBalance);
 
     const arrow = (cls) => cls === "up" ? "↑" : cls === "down" ? "↓" : "→";
@@ -1744,6 +1750,11 @@
           <p>Saldo Líquido</p>
           <div class="report-value">${formatCurrency(curBalance)}</div>
           <div class="report-change ${balChange.cls}">${arrow(balChange.cls)} ${Math.abs(balChange.pct).toFixed(1)}%</div>
+        </div>
+        <div class="report-card">
+          <p>Cartão de Crédito</p>
+          <div class="report-value warning">${formatCurrency(curCreditCard)}</div>
+          <div class="report-change ${ccChange.cls === "up" ? "down" : ccChange.cls === "down" ? "up" : "neutral"}">${arrow(ccChange.cls)} ${Math.abs(ccChange.pct).toFixed(1)}%</div>
         </div>
       </div>
       ${catHtml}
@@ -1857,10 +1868,14 @@
       return;
     }
     const current = state.selectedMonth;
-    const txCur = getMonthlyTransactions(current);
-    const txCmp = getMonthlyTransactions(compare);
-    const sumCur = { income: sumByType(txCur, "receita"), expense: sumByType(txCur, "despesa"), investment: sumByType(txCur, "investimento") };
-    const sumCmp = { income: sumByType(txCmp, "receita"), expense: sumByType(txCmp, "despesa"), investment: sumByType(txCmp, "investimento") };
+    const txCurAll = getMonthlyTransactions(current);
+    const txCmpAll = getMonthlyTransactions(compare);
+    const txCur = txCurAll.filter((t) => t.method !== "credito");
+    const txCmp = txCmpAll.filter((t) => t.method !== "credito");
+    const ccCur = txCurAll.filter((t) => t.method === "credito" && t.type === "despesa").reduce((s, t) => s + t.amount, 0);
+    const ccCmp = txCmpAll.filter((t) => t.method === "credito" && t.type === "despesa").reduce((s, t) => s + t.amount, 0);
+    const sumCur = { income: sumByType(txCur, "receita"), expense: sumByType(txCur, "despesa"), investment: sumByType(txCur, "investimento"), creditCard: ccCur };
+    const sumCmp = { income: sumByType(txCmp, "receita"), expense: sumByType(txCmp, "despesa"), investment: sumByType(txCmp, "investimento"), creditCard: ccCmp };
 
     function diffBadge(a, b) {
       if (b === 0) return "";
@@ -1869,27 +1884,29 @@
       return `<span class="report-change ${cls}">${Number(pct) > 0 ? "+" : ""}${pct}%</span>`;
     }
 
-    function colHtml(label, sum, tx) {
+    function colHtml(label, sum, tx, txAll) {
       return `<div class="compare-col"><h4>${escapeHtml(label)}</h4>
         <div class="report-grid">
           <div class="report-card"><p>Receitas</p><div class="report-value positive">${formatCurrency(sum.income)}</div></div>
           <div class="report-card"><p>Despesas</p><div class="report-value negative">${formatCurrency(sum.expense)}</div></div>
           <div class="report-card"><p>Investimentos</p><div class="report-value warning">${formatCurrency(sum.investment)}</div></div>
           <div class="report-card"><p>Saldo</p><div class="report-value">${formatCurrency(sum.income - sum.expense - sum.investment)}</div></div>
+          <div class="report-card"><p>Cartão de Crédito</p><div class="report-value warning">${formatCurrency(sum.creditCard)}</div></div>
         </div>
-        <p style="margin-top:.5rem;font-size:.82rem;color:var(--text-muted)">${tx.length} transações</p>
+        <p style="margin-top:.5rem;font-size:.82rem;color:var(--text-muted)">${txAll.length} transações totais (${tx.length} em caixa)</p>
       </div>`;
     }
 
     el.compareContent.innerHTML = `
       <div class="compare-grid">
-        ${colHtml(formatMonthLabel(current), sumCur, txCur)}
-        ${colHtml(formatMonthLabel(compare), sumCmp, txCmp)}
+        ${colHtml(formatMonthLabel(current), sumCur, txCur, txCurAll)}
+        ${colHtml(formatMonthLabel(compare), sumCmp, txCmp, txCmpAll)}
       </div>
       <div class="report-grid" style="margin-top:1rem">
         <div class="report-card"><p>Δ Receitas</p><div class="report-value">${formatCurrency(sumCur.income - sumCmp.income)}</div>${diffBadge(sumCur.income, sumCmp.income)}</div>
         <div class="report-card"><p>Δ Despesas</p><div class="report-value">${formatCurrency(sumCur.expense - sumCmp.expense)}</div>${diffBadge(sumCur.expense, sumCmp.expense)}</div>
         <div class="report-card"><p>Δ Investimentos</p><div class="report-value">${formatCurrency(sumCur.investment - sumCmp.investment)}</div>${diffBadge(sumCur.investment, sumCmp.investment)}</div>
+        <div class="report-card"><p>Δ Cartão de Crédito</p><div class="report-value">${formatCurrency(sumCur.creditCard - sumCmp.creditCard)}</div>${diffBadge(sumCur.creditCard, sumCmp.creditCard)}</div>
       </div>`;
   }
 
