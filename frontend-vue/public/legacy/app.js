@@ -857,7 +857,7 @@
       const sign = t.type === "receita" ? "+" : "-";
       const isCC = t.method === "credito";
       let badges = `<span class="tag ${t.type}">${t.type === "transferencia" ? "transferência" : t.type}</span>`;
-      if (isCC) badges += ` <span class="tag credito-badge">💳 próx. fatura</span>`;
+      if (isCC) badges += ` <span class="tag credito-badge"><i class="fa-solid fa-credit-card"></i> próx. fatura</span>`;
       if (t.recurrence === "monthly") badges += ` <span class="tag recurrence">mensal</span>`;
       if (t.installments > 1) badges += ` <span class="tag recurrence">${t.installmentNumber || 1}/${t.installments}</span>`;
       const actions = t.isVirtual
@@ -885,7 +885,7 @@
            <button class="btn ghost" data-action="delete-transaction" data-id="${t.id}" type="button">Excluir</button>`;
 
       let badges = `<span class="tag ${t.type}">${t.type === "transferencia" ? "transferência" : t.type}</span>`;
-      if (isCC) badges += ` <span class="tag credito-badge">💳 próx. fatura</span>`;
+      if (isCC) badges += ` <span class="tag credito-badge"><i class="fa-solid fa-credit-card"></i> próx. fatura</span>`;
       if (t.recurrence === "monthly") badges += ` <span class="tag recurrence">mensal</span>`;
       if (t.installments > 1) badges += ` <span class="tag recurrence">${t.installmentNumber || 1}/${t.installments}</span>`;
 
@@ -1042,7 +1042,7 @@
   /* ── Budgets ─────────────────────────────────────────────── */
   function renderBudgets() {
     if (!state.budgets.length) {
-      el.budgetsList.innerHTML = '<div class="info-banner"><p><strong>💰 Orçamentos</strong></p><p>Defina limites de gastos por categoria para controlar suas despesas. O sistema alertará quando você ultrapassar os limites.</p></div><p class="empty-state">Nenhum orçamento definido. Use o formulário acima para criar seu primeiro orçamento.</p>';
+      el.budgetsList.innerHTML = '<div class="info-banner"><p><strong><i class="fa-solid fa-sack-dollar"></i> Orçamentos</strong></p><p>Defina limites de gastos por categoria para controlar suas despesas. O sistema alertará quando você ultrapassar os limites.</p></div><p class="empty-state">Nenhum orçamento definido. Use o formulário acima para criar seu primeiro orçamento.</p>';
       return;
     }
     const expenses = {};
@@ -1297,7 +1297,7 @@
     if (!Object.keys(groups).length) {
       el.investmentsList.innerHTML = `
         <div class="info-banner" style="margin-bottom: 1.5rem;">
-          <p><strong>📊 Como usar a Carteira de Investimentos</strong></p>
+          <p><strong><i class="fa-solid fa-chart-pie"></i> Como usar a Carteira de Investimentos</strong></p>
           <p>Esta seção acompanha automaticamente seus investimentos registrados como movimentações do tipo "Investimento".</p>
           <p><strong>Para começar:</strong> Crie uma movimentação do tipo "Investimento" na aba Movimentações.</p>
           <p><strong>Defina taxas de rendimento:</strong> Para ver projeções futuras, informe a taxa mensal esperada de cada categoria.</p>
@@ -1313,7 +1313,7 @@
 
     el.investmentsList.innerHTML = `
       <div class="info-banner" style="margin-bottom: 1.5rem;">
-        <p><strong>📊 Dica:</strong> Informe a taxa de rendimento mensal esperada de cada categoria para ver projeções futuras do seu patrimônio.</p>
+        <p><strong><i class="fa-solid fa-chart-pie"></i> Dica:</strong> Informe a taxa de rendimento mensal esperada de cada categoria para ver projeções futuras do seu patrimônio.</p>
       </div>
       <article class="item-card" style="border-color: var(--border-accent);">
         <h4>Referências de Mercado</h4>
@@ -1377,7 +1377,7 @@
 
   function renderGoals() {
     if (!state.goals.length) {
-      el.goalsList.innerHTML = '<div class="info-banner"><p><strong>🎯 Metas Financeiras</strong></p><p>Crie metas de economia com valor alvo e prazo. Faça aportes regulares e acompanhe o progresso visual.</p></div><p class="empty-state">Nenhuma meta cadastrada. Defina objetivos financeiros acima para começar a poupar.</p>';
+      el.goalsList.innerHTML = '<div class="info-banner"><p><strong><i class="fa-solid fa-bullseye"></i> Metas Financeiras</strong></p><p>Crie metas de economia com valor alvo e prazo. Faça aportes regulares e acompanhe o progresso visual.</p></div><p class="empty-state">Nenhuma meta cadastrada. Defina objetivos financeiros acima para começar a poupar.</p>';
       return;
     }
     const today = new Date(`${getTodayDate()}T00:00:00`);
@@ -1443,9 +1443,9 @@
     state.budgets.forEach((b) => {
       const used = expenses[b.category.toLowerCase()] || 0;
       if (used > b.limit) {
-        alerts.push({ type: "danger", icon: "🔴", text: `Orçamento de "${b.category}" excedido: ${formatCurrency(used)} / ${formatCurrency(b.limit)} (${((used / b.limit) * 100).toFixed(0)}%)` });
+        alerts.push({ type: "danger", icon: '<i class="fa-solid fa-circle-exclamation"></i>', text: `Orçamento de "${b.category}" excedido: ${formatCurrency(used)} / ${formatCurrency(b.limit)} (${((used / b.limit) * 100).toFixed(0)}%)` });
       } else if (used > b.limit * 0.85) {
-        alerts.push({ type: "warning", icon: "⚠️", text: `"${b.category}" atingiu ${((used / b.limit) * 100).toFixed(0)}% do orçamento (${formatCurrency(used)} / ${formatCurrency(b.limit)})` });
+        alerts.push({ type: "warning", icon: '<i class="fa-solid fa-triangle-exclamation"></i>', text: `"${b.category}" atingiu ${((used / b.limit) * 100).toFixed(0)}% do orçamento (${formatCurrency(used)} / ${formatCurrency(b.limit)})` });
       }
     });
 
@@ -1456,9 +1456,9 @@
       const due = new Date(`${g.dueDate}T00:00:00`);
       const diff = Math.ceil((due - today) / 86400000);
       if (diff < 0) {
-        alerts.push({ type: "danger", icon: "🎯", text: `Meta "${g.name}" venceu há ${Math.abs(diff)} dias — faltam ${formatCurrency(g.target - g.current)}` });
+        alerts.push({ type: "danger", icon: '<i class="fa-solid fa-bullseye"></i>', text: `Meta "${g.name}" venceu há ${Math.abs(diff)} dias — faltam ${formatCurrency(g.target - g.current)}` });
       } else if (diff <= 15) {
-        alerts.push({ type: "warning", icon: "🎯", text: `Meta "${g.name}" vence em ${diff} dias — faltam ${formatCurrency(g.target - g.current)}` });
+        alerts.push({ type: "warning", icon: '<i class="fa-solid fa-bullseye"></i>', text: `Meta "${g.name}" vence em ${diff} dias — faltam ${formatCurrency(g.target - g.current)}` });
       }
     });
 
@@ -1473,11 +1473,11 @@
     const recurringIncome = upcomingRecurring.filter((t) => t.type === "receita");
     if (recurringExpenses.length > 0) {
       const total = recurringExpenses.reduce((s, t) => s + t.amount, 0);
-      alerts.push({ type: "info", icon: "🔁", text: `${recurringExpenses.length} despesas recorrentes este mês (${formatCurrency(total)})` });
+      alerts.push({ type: "info", icon: '<i class="fa-solid fa-rotate"></i>', text: `${recurringExpenses.length} despesas recorrentes este mês (${formatCurrency(total)})` });
     }
     if (recurringIncome.length > 0) {
       const total = recurringIncome.reduce((s, t) => s + t.amount, 0);
-      alerts.push({ type: "success", icon: "🔁", text: `${recurringIncome.length} receitas recorrentes este mês (${formatCurrency(total)})` });
+      alerts.push({ type: "success", icon: '<i class="fa-solid fa-rotate"></i>', text: `${recurringIncome.length} receitas recorrentes este mês (${formatCurrency(total)})` });
     }
 
     el.alertsBar.innerHTML = alerts.map((a) => `
@@ -1509,21 +1509,44 @@
   }
 
   function renderCategories() {
-    if (!state.categories.length) {
-      el.categoriesList.innerHTML = '<div class="info-banner"><p><strong>🏷️ Categorias Personalizadas</strong></p><p>Crie categorias personalizadas para organizar suas movimentações. O sistema já possui categorias padrão, mas você pode adicionar as suas.</p></div><p class="empty-state">Nenhuma categoria personalizada. Use o formulário acima para criar novas categorias.</p>';
+    // Merge user-defined categories + categories used in transactions
+    const catMap = new Map();
+    state.categories.forEach((c) => {
+      catMap.set(c.name.toLowerCase(), { ...c, isCustom: true });
+    });
+    // Add categories found in transactions but not yet user-defined
+    const usedCats = new Set(state.transactions.map((t) => t.category).filter(Boolean));
+    usedCats.forEach((name) => {
+      const key = name.toLowerCase();
+      if (!catMap.has(key)) {
+        catMap.set(key, { id: null, name, type: defaultCategoryTypes[key] || "todas", icon: "", isCustom: false });
+      }
+    });
+
+    const allCats = [...catMap.values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+
+    if (!allCats.length) {
+      el.categoriesList.innerHTML = '<div class="info-banner"><p><strong><i class="fa-solid fa-tags"></i> Categorias Personalizadas</strong></p><p>Crie categorias personalizadas para organizar suas movimentações. O sistema já possui categorias padrão, mas você pode adicionar as suas.</p></div><p class="empty-state">Nenhuma categoria personalizada. Use o formulário acima para criar novas categorias.</p>';
       return;
     }
     const typeLabels = { receita: "Receita", despesa: "Despesa", investimento: "Investimento", todas: "Todas" };
-    el.categoriesList.innerHTML = state.categories
-      .slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
-      .map((c) => `<article class="item-card">
-        <h4>${escapeHtml(c.icon || "📁")} ${escapeHtml(c.name)}</h4>
-        <p>Tipo: ${typeLabels[c.type] || c.type}</p>
-        <div class="mini-actions">
-          <button class="mini-btn" data-action="edit-category" data-id="${c.id}" type="button">Editar</button>
-          <button class="mini-btn" data-action="delete-category" data-id="${c.id}" type="button">Excluir</button>
-        </div>
-      </article>`).join("");
+    el.categoriesList.innerHTML = `<div class="categories-grid">` + allCats
+      .map((c) => {
+        const readonlyClass = c.isCustom ? "" : " cat-readonly";
+        const actions = c.isCustom ? `
+          <div class="cat-actions">
+            <button class="mini-btn" data-action="edit-category" data-id="${c.id}" type="button">Editar</button>
+            <button class="mini-btn" data-action="delete-category" data-id="${c.id}" type="button">Excluir</button>
+          </div>` : "";
+        return `<div class="category-chip${readonlyClass}">
+          <span class="cat-icon">${escapeHtml(c.icon || "")}</span>
+          <div class="cat-info">
+            <div class="cat-name">${escapeHtml(c.name)}</div>
+            <div class="cat-type">${typeLabels[c.type] || c.type}</div>
+          </div>
+          ${actions}
+        </div>`;
+      }).join("") + `</div>`;
   }
 
   async function handleCategorySubmit(event) {
@@ -1629,7 +1652,7 @@
 
   function renderAccounts() {
     if (!state.accounts.length) {
-      el.accountsList.innerHTML = '<div class="info-banner"><p><strong>🏦 Contas e Cartões</strong></p><p>Cadastre suas contas bancárias e cartões para separar transações entre diferentes origens. Você pode acompanhar o saldo de cada conta individualmente.</p></div><p class="empty-state">Nenhuma conta cadastrada. Adicione suas contas acima para organizar melhor suas finanças.</p>';
+      el.accountsList.innerHTML = '<div class="info-banner"><p><strong><i class="fa-solid fa-building-columns"></i> Contas e Cartões</strong></p><p>Cadastre suas contas bancárias e cartões para separar transações entre diferentes origens. Você pode acompanhar o saldo de cada conta individualmente.</p></div><p class="empty-state">Nenhuma conta cadastrada. Adicione suas contas acima para organizar melhor suas finanças.</p>';
       return;
     }
     const typeLabels = { corrente: "Conta Corrente", poupanca: "Poupança", carteira: "Carteira", investimento: "Investimento", credito: "Cartão de Crédito" };
@@ -2307,7 +2330,7 @@
     } catch (error) {
       showMessage("app", getErrorMessage(error, "Falha ao enviar resumo."), "error");
     } finally {
-      setBtnLoading(el.sendSummaryBtn, false, "📊 Resumo");
+      setBtnLoading(el.sendSummaryBtn, false, '<i class="fa-solid fa-chart-pie"></i> Resumo');
     }
   }
 
@@ -2454,7 +2477,7 @@
           newFields.style.display = "none";
           const acct = accounts.find((a) => a.id === val);
           if (acct && (acct.initialBalance || 0) > 0) {
-            existingText.innerHTML = `⚠️ Esta conta tem saldo inicial de <strong>${formatCurrency(acct.initialBalance)}</strong>. Se o extrato já contém todo o histórico, considere zerar o saldo inicial na seção de Contas para evitar duplicidade.`;
+            existingText.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Esta conta tem saldo inicial de <strong>${formatCurrency(acct.initialBalance)}</strong>. Se o extrato já contém todo o histórico, considere zerar o saldo inicial na seção de Contas para evitar duplicidade.`;
             existingInfo.style.display = "block";
           } else {
             existingInfo.style.display = "none";

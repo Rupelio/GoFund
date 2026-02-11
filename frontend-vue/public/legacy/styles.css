@@ -714,6 +714,27 @@ tr.credit-card-row:hover td { opacity: 1; }
 
 /* -- Stack List / Item Cards ------------------------------- */
 .stack-list { display: grid; gap: 0.75rem; }
+.categories-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.5rem;
+}
+.category-chip {
+  display: flex; align-items: center; gap: 0.5rem;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: rgba(255,255,255,0.015); padding: 0.55rem 0.75rem;
+  transition: all var(--duration) var(--ease);
+  font-size: 0.85rem;
+}
+.category-chip:hover { border-color: var(--border-hover); background: rgba(255,255,255,0.03); }
+.category-chip .cat-icon { font-size: 1rem; flex-shrink: 0; }
+.category-chip .cat-info { flex: 1; min-width: 0; }
+.category-chip .cat-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.category-chip .cat-type { font-size: 0.72rem; color: var(--text-secondary); }
+.category-chip .cat-actions { display: flex; gap: 0.25rem; flex-shrink: 0; }
+.category-chip .cat-actions .mini-btn { font-size: 0.72rem; padding: 0.15rem 0.4rem; }
+.category-chip.cat-readonly { opacity: 0.6; }
+.category-chip.cat-readonly .cat-actions { display: none; }
 .item-card {
   border: 1px solid var(--border); border-radius: var(--radius-md);
   background: rgba(255,255,255,0.015); padding: 1rem 1.15rem;

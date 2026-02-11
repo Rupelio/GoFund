@@ -11,11 +11,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=22" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="styles.css?v=23" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
-    <script src="app.js?v=22" defer></script>
+    <script src="app.js?v=23" defer></script>
   </head>
   <body data-theme="dark">
     <div class="app-bg"></div>
@@ -96,7 +97,7 @@
             <button class="icon-btn" id="nextMonthBtn" type="button">&gt;</button>
           </div>
           <div class="topbar-actions">
-            <button class="btn ghost tiny" id="sendSummaryBtn" type="button" title="Enviar resumo do mês por email">📊 Resumo</button>
+            <button class="btn ghost tiny" id="sendSummaryBtn" type="button" title="Enviar resumo do mês por email"><i class="fa-solid fa-chart-pie"></i> Resumo</button>
             <button class="btn ghost tiny" id="exportCsvBtn" type="button">Exportar CSV</button>
             <button class="btn ghost tiny" id="importCsvBtn" type="button">Importar</button>
             <input type="file" id="csvInput" accept=".csv" hidden/>
@@ -150,7 +151,7 @@
               <div id="tablePagination" class="table-pagination"></div>
               <div id="transactionsEmptyState" style="display:none">
                 <div class="info-banner">
-                  <p><strong>💰 Bem-vindo às Movimentações!</strong></p>
+                  <p><strong><i class="fa-solid fa-wallet"></i> Bem-vindo às Movimentações!</strong></p>
                   <p>Aqui você registra todas as suas receitas, despesas e investimentos para acompanhar suas finanças.</p>
                   <p><strong>Para começar:</strong> Preencha o formulário acima com sua primeira movimentação.</p>
                   <p><strong>Dica:</strong> Use o atalho <kbd>N</kbd> para focar no formulário rapidamente.</p>
@@ -211,7 +212,7 @@
           <section class="panel-grid"><article class="panel panel-large">
             <header class="panel-head"><h2>Projeção Financeira</h2></header>
             <div class="info-banner" style="margin-bottom: 1rem;">
-              <p><strong>📈 Projeção de Patrimônio</strong></p>
+              <p><strong><i class="fa-solid fa-chart-line"></i> Projeção de Patrimônio</strong></p>
               <p>Simule seu patrimônio futuro com base nas suas médias de receitas, despesas e investimentos.</p>
               <p><strong>Valores "auto":</strong> O sistema calcula automaticamente as médias dos últimos 3 meses.</p>
               <p><strong>Valores personalizados:</strong> Informe valores manualmente para cenários específicos.</p>
