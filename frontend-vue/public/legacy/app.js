@@ -32,6 +32,13 @@
     "nordvpn", "expressvpn", "surfshark", "kaspersky", "avast", "mcafee",
     "strava", "myfitnesspal", "headspace", "calm", "linkedin\\s*premium", "x\\s*premium", "patreon",
     "substack", "meta\\s*verified", "discord\\s*nitro", "telegram\\s*premium",
+    // Operadoras / telecomunicações brasileiras
+    "\\btim\\b", "tim\\*", "tim\\s*celular", "tim\\s*fibra", "tim\\s*live", "tim\\s*controle", "tim\\s*black",
+    "\\bclaro\\b", "claro\\*", "claro\\s*celular", "claro\\s*fibra", "claro\\s*flex", "claro\\s*net", "\\bnet\\s*claro\\b",
+    "\\bvivo\\b", "vivo\\*", "vivo\\s*celular", "vivo\\s*fibra", "vivo\\s*easy", "vivo\\s*controle",
+    "\\boi\\s*(fibra|m[oó]vel|velox|total|celular)\\b", "oi\\*",
+    "\\bnextel\\b", "\\balgar\\b", "algar\\s*(telecom|fibra)", "\\bbrisanet\\b", "\\bdesktop\\s*fibra\\b",
+    "\\bconsig(net|a)\\b", "\\bhughesnet\\b", "\\bstarlink\\b",
   ];
   const SUBSCRIPTION_REGEX = new RegExp(SUBSCRIPTION_KEYWORDS.join("|"), "i");
 
