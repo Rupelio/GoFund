@@ -1,10 +1,10 @@
-const CACHE_NAME = "gofund-v22";
+const CACHE_NAME = "gofund-v23";
 const ASSETS = [
   "/",
   "/index.html",
   "/legacy/index.html",
-  "/legacy/styles.css?v=23",
-  "/legacy/app.js?v=23",
+  "/legacy/styles.css?v=24",
+  "/legacy/app.js?v=24",
   "/manifest.json",
   "/legacy/manifest.json"
 ];

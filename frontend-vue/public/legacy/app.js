@@ -226,6 +226,23 @@
   let dialogEscHandler = null;
   let dialogLastFocused = null;
 
+  /* ── Global Loader ─────────────────────────────────────── */
+  let loaderStack = 0;
+  function showLoader(msg) {
+    loaderStack++;
+    if (el.loaderText) el.loaderText.textContent = msg || "Carregando…";
+    if (el.globalLoader) el.globalLoader.classList.remove("hidden");
+  }
+  function hideLoader() {
+    loaderStack = Math.max(0, loaderStack - 1);
+    if (loaderStack === 0 && el.globalLoader) el.globalLoader.classList.add("hidden");
+  }
+  function setBtnLoading(btn, loading, originalText) {
+    if (!btn) return;
+    if (loading) { btn.dataset.origText = btn.textContent; btn.disabled = true; btn.classList.add("is-loading"); btn.textContent = originalText || "Aguarde…"; }
+    else { btn.disabled = false; btn.classList.remove("is-loading"); btn.textContent = btn.dataset.origText || originalText || btn.textContent; }
+  }
+
   // Default category type mapping
   const defaultCategoryTypes = {
     // Receitas
@@ -3326,22 +3343,7 @@
     });
   }
 
-  /* ── Global Loader ─────────────────────────────────────── */
-  let loaderStack = 0;
-  function showLoader(msg) {
-    loaderStack++;
-    if (el.loaderText) el.loaderText.textContent = msg || "Carregando…";
-    if (el.globalLoader) el.globalLoader.classList.remove("hidden");
-  }
-  function hideLoader() {
-    loaderStack = Math.max(0, loaderStack - 1);
-    if (loaderStack === 0 && el.globalLoader) el.globalLoader.classList.add("hidden");
-  }
-  function setBtnLoading(btn, loading, originalText) {
-    if (!btn) return;
-    if (loading) { btn.dataset.origText = btn.textContent; btn.disabled = true; btn.classList.add("is-loading"); btn.textContent = originalText || "Aguarde…"; }
-    else { btn.disabled = false; btn.classList.remove("is-loading"); btn.textContent = btn.dataset.origText || originalText || btn.textContent; }
-  }
+  /* ── Global Loader (hoisted – see top) ──────────────── */
 
   function getErrorMessage(error, fallback) {
     const text = normalizeString(String(error?.message || ""));
