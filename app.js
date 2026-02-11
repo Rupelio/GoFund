@@ -127,6 +127,7 @@
     csvInput: document.getElementById("csvInput"),
 
     kpiNetWorth: document.getElementById("kpiNetWorth"),
+    kpiCreditCard: document.getElementById("kpiCreditCard"),
     alertsBar: document.getElementById("alertsBar"),
 
     transactionAccount: document.getElementById("transactionAccount"),
@@ -649,14 +650,18 @@
 
   function renderKpis() {
     const monthly = getMonthlyTransactions(state.selectedMonth);
-    const income = sumByType(monthly, "receita");
-    const expense = sumByType(monthly, "despesa");
-    const investment = sumByType(monthly, "investimento");
-    const transfer = sumByType(monthly, "transferencia");
+    // Excluir compras no cartão de crédito dos KPIs — o gasto real é a fatura
+    const cashItems = monthly.filter((t) => t.method !== "credito");
+    const income = sumByType(cashItems, "receita");
+    const expense = sumByType(cashItems, "despesa");
+    const investment = sumByType(cashItems, "investimento");
     el.kpiBalance.textContent = formatCurrency(income - expense - investment);
     el.kpiIncome.textContent = formatCurrency(income);
     el.kpiExpense.textContent = formatCurrency(expense);
     el.kpiInvestment.textContent = formatCurrency(investment);
+    // KPI informativo: gastos no cartão de crédito este mês
+    const creditSpend = monthly.filter((t) => t.method === "credito" && t.type === "despesa").reduce((s, t) => s + t.amount, 0);
+    if (el.kpiCreditCard) el.kpiCreditCard.textContent = formatCurrency(creditSpend);
   }
 
   function sumByType(items, type) {
@@ -755,14 +760,16 @@
     el.transactionsTableBody.innerHTML = pageItems.map((t) => {
       const cls = t.type === "receita" ? "value-income" : t.type === "despesa" ? "value-expense" : t.type === "transferencia" ? "value-transfer" : "value-investment";
       const sign = t.type === "receita" ? "+" : "-";
+      const isCC = t.method === "credito";
       let badges = `<span class="tag ${t.type}">${t.type === "transferencia" ? "transferência" : t.type}</span>`;
+      if (isCC) badges += ` <span class="tag credito-badge">💳 próx. fatura</span>`;
       if (t.recurrence === "monthly") badges += ` <span class="tag recurrence">mensal</span>`;
       if (t.installments > 1) badges += ` <span class="tag recurrence">${t.installmentNumber || 1}/${t.installments}</span>`;
       const actions = t.isVirtual
         ? `<button class="mini-btn" data-action="edit-transaction" data-id="${t.originalId || t.id}" type="button">Ver original</button>`
         : `<button class="mini-btn" data-action="edit-transaction" data-id="${t.id}" type="button">Editar</button>
            <button class="mini-btn" data-action="delete-transaction" data-id="${t.id}" type="button">Excluir</button>`;
-      return `<tr>
+      return `<tr class="${isCC ? "credit-card-row" : ""}">
         <td>${escapeHtml(t.description)}</td>
         <td>${escapeHtml(t.category)}</td>
         <td>${escapeHtml(getMethodLabel(t.method))}</td>
@@ -776,16 +783,18 @@
     el.transactionsCardsContainer.innerHTML = pageItems.map((t) => {
       const cls = t.type === "receita" ? "value-income" : t.type === "despesa" ? "value-expense" : t.type === "transferencia" ? "value-transfer" : "value-investment";
       const sign = t.type === "receita" ? "+" : "-";
+      const isCC = t.method === "credito";
       const actions = t.isVirtual
         ? `<button class="btn ghost" data-action="edit-transaction" data-id="${t.originalId || t.id}" type="button">Ver original</button>`
         : `<button class="btn ghost" data-action="edit-transaction" data-id="${t.id}" type="button">Editar</button>
            <button class="btn ghost" data-action="delete-transaction" data-id="${t.id}" type="button">Excluir</button>`;
 
       let badges = `<span class="tag ${t.type}">${t.type === "transferencia" ? "transferência" : t.type}</span>`;
+      if (isCC) badges += ` <span class="tag credito-badge">💳 próx. fatura</span>`;
       if (t.recurrence === "monthly") badges += ` <span class="tag recurrence">mensal</span>`;
       if (t.installments > 1) badges += ` <span class="tag recurrence">${t.installmentNumber || 1}/${t.installments}</span>`;
 
-      return `<div class="transaction-card">
+      return `<div class="transaction-card ${isCC ? "credit-card-row" : ""}">
         <div class="transaction-card-header">
           <div class="transaction-card-title">${escapeHtml(t.description)}</div>
           <div class="transaction-card-amount ${cls}">${sign}${formatCurrency(t.amount)}</div>
@@ -1284,10 +1293,12 @@
 
   /* ── Net Worth KPI ───────────────────────────────────────── */
   function renderNetWorthKpi() {
-    const totalIncome = state.transactions.filter((t) => t.type === "receita").reduce((s, t) => s + t.amount, 0);
-    const totalExpense = state.transactions.filter((t) => t.type === "despesa").reduce((s, t) => s + t.amount, 0);
-    const totalInvestment = state.transactions.filter((t) => t.type === "investimento").reduce((s, t) => s + t.amount, 0);
-    // Transferências não afetam patrimônio líquido (movimentação entre contas)
+    // Compras no cartão não afetam patrimônio — o gasto real é a fatura paga
+    const real = state.transactions.filter((t) => t.method !== "credito");
+    const totalIncome = real.filter((t) => t.type === "receita").reduce((s, t) => s + t.amount, 0);
+    const totalExpense = real.filter((t) => t.type === "despesa").reduce((s, t) => s + t.amount, 0);
+    const totalInvestment = real.filter((t) => t.type === "investimento").reduce((s, t) => s + t.amount, 0);
+    // Transferências e compras cartão não afetam patrimônio líquido
     const cash = totalIncome - totalExpense - totalInvestment;
     const goalsSaved = state.goals.reduce((s, g) => s + g.current, 0);
     const investStats = getInvestmentStats();
@@ -1302,7 +1313,7 @@
     const month = state.selectedMonth;
     const monthly = getMonthlyTransactions(month);
     const expenses = {};
-    monthly.filter((t) => t.type === "despesa" || t.type === "investimento")
+    monthly.filter((t) => (t.type === "despesa" || t.type === "investimento") && t.method !== "credito")
       .forEach((t) => { expenses[t.category.toLowerCase()] = (expenses[t.category.toLowerCase()] || 0) + t.amount; });
 
     state.budgets.forEach((b) => {
@@ -1466,6 +1477,7 @@
     let balance = account.initialBalance || 0;
     state.transactions.filter((t) => t.accountId === accountId).forEach((t) => {
       if (t.type === "transferencia") return; // Transferências entre contas: ignorar no saldo individual
+      if (t.method === "credito") return; // Compras no cartão não saem do saldo real
       balance += t.type === "receita" ? t.amount : -t.amount;
     });
     return round2(balance);
@@ -2030,6 +2042,7 @@
       const d = Number(t.date.slice(8, 10)) - 1;
       if (d >= 0 && d < days) {
         if (t.type === "transferencia") return; // Transferências não afetam fluxo de caixa
+        if (t.method === "credito") return; // Compras cartão são informativas — fatura é o gasto real
         daily[d] += (t.type === "receita" ? 1 : -1) * t.amount;
         // Patrimônio: investimento é transferência (não saída), despesa é saída
         if (t.type === "receita") dailyPatri[d] += t.amount;
@@ -2115,7 +2128,7 @@
   function renderExpenseChart(transactions) {
     if (typeof Chart === "undefined") return;
     const totals = {};
-    transactions.filter((t) => t.type === "despesa").forEach((t) => { totals[t.category] = (totals[t.category] || 0) + t.amount; });
+    transactions.filter((t) => t.type === "despesa" && t.method !== "credito").forEach((t) => { totals[t.category] = (totals[t.category] || 0) + t.amount; });
     let labels = Object.keys(totals), values = labels.map((l) => totals[l]);
     const hasData = values.length > 0;
     if (!hasData) { labels = ["Sem despesas"]; values = [1]; }
@@ -2229,10 +2242,9 @@
         if (!inferredCategory) inferredCategory = inferCategoryFromDescription(desc);
       } else if (isBankCsv) {
         const desc = rawDesc.toLowerCase();
-        // Type: positive = receita, negative = despesa, fatura = transferencia
+        // Type: positive = receita, negative = despesa
         if (!inferredType) {
-          if (desc.includes("fatura") || desc.includes("pagamento de fatura") || desc.includes("pgto cartao") || desc.includes("pgto cartão")) inferredType = "transferencia";
-          else if (rawAmount > 0) inferredType = "receita";
+          if (rawAmount > 0) inferredType = "receita";
           else if (desc.includes("aplicação") || desc.includes("aplicacao") || desc.includes("rdb") || desc.includes("investimento")) inferredType = "investimento";
           else inferredType = "despesa";
         }
@@ -2251,10 +2263,11 @@
         }
       }
 
-      // Auto-correct: descriptions referring to credit card payments should always be transferencia
+      // Credit card payment from bank statement stays as despesa (real cash outflow)
+      // Category hint for fatura payments
       const descLower = rawDesc.toLowerCase();
       if (inferredType === "despesa" && /cart(ão|ao|ões|oes)\s*de\s*cr[eé]dito|pagamento\s*(de\s*)?fatura|pgto\s*cart[aã]o/.test(descLower)) {
-        inferredType = "transferencia";
+        if (!inferredCategory || inferredCategory === "Outros") inferredCategory = "Fatura";
       }
 
       const item = normalizeTransaction({
@@ -2479,6 +2492,7 @@
       const expanded = getMonthlyTransactions(m);
       expanded.forEach((t) => {
         if (t.type === "transferencia") return; // Transferências não contam no resumo mensal
+        if (t.method === "credito") return; // Compras cartão = informativo
         const c = map.get(m) || { income: 0, expense: 0, investment: 0 };
         if (t.type === "receita") c.income += t.amount;
         else if (t.type === "despesa") c.expense += t.amount;
@@ -2520,6 +2534,7 @@
       const expanded = getMonthlyTransactions(m);
       expanded.forEach((t) => {
         if (t.type === "transferencia") return; // Transferências não afetam caixa
+        if (t.method === "credito") return; // Compras cartão = informativo, fatura paga = despesa real
         cash += t.type === "receita" ? t.amount : -t.amount;
       });
     });
