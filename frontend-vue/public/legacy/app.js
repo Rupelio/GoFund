@@ -711,7 +711,7 @@
     const income = sumByType(cashItems, "receita");
     const expense = sumByType(cashItems, "despesa");
     const investment = sumByType(cashItems, "investimento");
-    el.kpiBalance.textContent = formatCurrency(income - expense - investment);
+    el.kpiBalance.textContent = formatCurrency(getClosingCash(state.selectedMonth));
     el.kpiIncome.textContent = formatCurrency(income);
     el.kpiExpense.textContent = formatCurrency(expense);
     el.kpiInvestment.textContent = formatCurrency(investment);
@@ -731,6 +731,10 @@
       const tMonth = t.date.slice(0, 7);
 
       if (t.recurrence === "monthly") {
+        if (shouldSkipMonthlyExpansionForTransfer(t)) {
+          if (tMonth === month) effective.push(t);
+          continue;
+        }
         if (tMonth > month) continue;
         if (t.recurrenceEnd && t.recurrenceEnd.slice(0, 7) < month) continue;
         if (tMonth === month) {
@@ -763,6 +767,15 @@
       if (tMonth === month) effective.push(t);
     }
     return effective;
+  }
+
+  function shouldSkipMonthlyExpansionForTransfer(t) {
+    if (!t || t.recurrence !== "monthly") return false;
+    if (t.type !== "despesa") return false;
+    if (t.method !== "pix" && t.method !== "transferencia") return false;
+    const desc = String(t.description || "").toLowerCase();
+    if (!/\bagencia:\b|\bconta:\b/.test(desc)) return false;
+    return /\btransfer\w*\b|\bpix\b/.test(desc);
   }
 
   function getFilteredTransactions() {
@@ -2430,14 +2443,8 @@
       const rawDate = String(cols[idx.date] || "");
       if (!Number.isFinite(rawAmount) || rawAmount === 0) { skipped++; return; }
 
-      // Parse date: support DD/MM/YYYY → YYYY-MM-DD
-      let parsedDate = rawDate;
-      const brDate = rawDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-      if (brDate) parsedDate = `${brDate[3]}-${brDate[2]}-${brDate[1]}`;
-      const brDateDash = rawDate.match(/^(\d{2})-(\d{2})-(\d{4})$/);
-      if (brDateDash) parsedDate = `${brDateDash[3]}-${brDateDash[2]}-${brDateDash[1]}`;
-      const isoSlashDate = rawDate.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
-      if (isoSlashDate) parsedDate = `${isoSlashDate[1]}-${isoSlashDate[2]}-${isoSlashDate[3]}`;
+      // Parse date with broad CSV support (DD/MM/YYYY, DD-MM-YYYY, YYYY/MM/DD, ISO datetime)
+      let parsedDate = normalizeCsvDate(rawDate);
 
       // For bank CSVs, infer type/category/method from description and amount sign
       let inferredType = idx.type >= 0 ? String(cols[idx.type] || "") : "";
@@ -2487,23 +2494,20 @@
         if (inferredMethod === "credito") inferredMethod = "transferencia";
       }
 
-      // Detect installments from description: "Parcela X/Y" or "X/Y"
+      // Detect installments from description:
+      // - "Parcela X/Y"
+      // - "Parcelamento de Fatura ... X/Y"
+      // - "Parcelamento ... Nx"
       let inferredInstallments = idx.installments >= 0 ? Number(cols[idx.installments]) || 0 : 0;
       let inferredRecurrence = idx.recurrence >= 0 ? String(cols[idx.recurrence] || "none") : "none";
       let inferredRecurrenceEnd = idx.recurrenceEnd >= 0 ? String(cols[idx.recurrenceEnd] || "") : "";
-      const parcelaMatch = rawDesc.match(/[Pp]arcela\s*(\d+)\s*\/\s*(\d+)/);
-      if (parcelaMatch && inferredInstallments <= 0) {
-        const curInst = parseInt(parcelaMatch[1]);
-        const totalInst = parseInt(parcelaMatch[2]);
-        if (totalInst > 1 && curInst >= 1 && curInst <= totalInst) {
-          inferredInstallments = totalInst;
-          // Adjust date to installment 1 start date
-          if (curInst > 1 && parsedDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            const [py, pm, pd] = parsedDate.split("-").map(Number);
-            const startDate = new Date(py, pm - 1 - (curInst - 1), pd);
-            parsedDate = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}-${String(Math.min(pd, new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0).getDate())).padStart(2, "0")}`;
-          }
+      const installmentInfo = extractInstallmentInfo(rawDesc);
+      if (installmentInfo) {
+        if (inferredInstallments <= 0) {
+          inferredInstallments = installmentInfo.total;
         }
+        // Adjust date to installment 1 start date when description indicates current installment > 1.
+        parsedDate = adjustToInstallmentStartDate(parsedDate, installmentInfo);
       }
 
       // Detect monthly subscriptions from credit card CSV
@@ -2515,7 +2519,7 @@
 
       // Also detect subscriptions from bank CSV (Tim, internet providers, etc.)
       if (isBankCsv && inferredInstallments <= 0 && inferredRecurrence === "none") {
-        if (isSubscriptionDescription(rawDesc) || /copel|sanepar|compagas|enel|cemig|celesc|claro\b|vivo\b|tim\*|tim\b|oi\b|net\b|sky\b|aluguel|condom[ií]nio|seguro\s*(auto|vida|resid)/i.test(rawDesc.toLowerCase())) {
+        if (shouldInferMonthlyBankRecurrence(rawDesc, inferredMethod, inferredType, inferredCategory, Math.abs(rawAmount))) {
           inferredRecurrence = "monthly";
         }
       }
@@ -2540,9 +2544,134 @@
     return SUBSCRIPTION_REGEX.test(String(desc || ""));
   }
 
+  function normalizeCsvDate(rawDate) {
+    const text = normalizeString(String(rawDate || ""));
+    if (!text) return "";
+
+    // ISO date and ISO datetime
+    let match = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/);
+    if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+
+    // YYYY/MM/DD
+    match = text.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s.*)?$/);
+    if (match) return `${match[1]}-${String(Number(match[2])).padStart(2, "0")}-${String(Number(match[3])).padStart(2, "0")}`;
+
+    // DD/MM/YYYY or DD-MM-YYYY (with optional time suffix)
+    match = text.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:\s.*)?$/);
+    if (match) {
+      const d = String(Number(match[1])).padStart(2, "0");
+      const m = String(Number(match[2])).padStart(2, "0");
+      return `${match[3]}-${m}-${d}`;
+    }
+
+    return text;
+  }
+
+  function extractInstallmentInfo(desc) {
+    const text = String(desc || "");
+
+    const directPatterns = [
+      /(?:parcela|parc\.?)\s*(\d{1,2})\s*\/\s*(\d{1,2})/i,
+      /(?:parcelamento(?:\s+de\s+fatura)?|fatura\s+parcelada)[^\d]{0,12}(\d{1,2})\s*\/\s*(\d{1,2})/i,
+    ];
+    for (const pattern of directPatterns) {
+      const match = text.match(pattern);
+      if (!match) continue;
+      const info = buildInstallmentInfo(match[1], match[2]);
+      if (info) return info;
+    }
+
+    // Generic X/Y only when the description clearly talks about installments/bill refinancing.
+    const genericFraction = text.match(/(\d{1,2})\s*\/\s*(\d{1,2})/);
+    if (genericFraction && /(parcela|parcelamento|fatura)/i.test(text)) {
+      const info = buildInstallmentInfo(genericFraction[1], genericFraction[2]);
+      if (info) return info;
+    }
+
+    // "Parcelamento ... 12x" -> assume 1st installment if no current/total index exists.
+    const timesMatch = text.match(/(?:parcelamento(?:\s+de\s+fatura)?|fatura\s+parcelada)[^\d]{0,12}(\d{1,2})\s*x\b/i);
+    if (timesMatch) {
+      const info = buildInstallmentInfo(1, timesMatch[1]);
+      if (info) return info;
+    }
+
+    return null;
+  }
+
+  function buildInstallmentInfo(current, total) {
+    const cur = Number(current);
+    const tot = Number(total);
+    if (!Number.isInteger(cur) || !Number.isInteger(tot)) return null;
+    if (tot <= 1 || tot > 96) return null;
+    if (cur < 1 || cur > tot) return null;
+    return { current: cur, total: tot };
+  }
+
+  function adjustToInstallmentStartDate(dateValue, installmentInfo) {
+    if (!installmentInfo || installmentInfo.current <= 1) return dateValue;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateValue || ""))) return dateValue;
+    const [py, pm, pd] = String(dateValue).split("-").map(Number);
+    const startDate = new Date(py, pm - 1 - (installmentInfo.current - 1), pd);
+    const monthLastDay = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0).getDate();
+    return `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}-${String(Math.min(pd, monthLastDay)).padStart(2, "0")}`;
+  }
+
+  function shouldInferMonthlyBankRecurrence(desc, method, type, category, amount) {
+    const normalizedDesc = String(desc || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    const normalizedMethod = normalizeString(String(method || "")).toLowerCase();
+    const normalizedType = normalizeString(String(type || "")).toLowerCase();
+    const normalizedCategory = normalizeCategory(String(category || ""))
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    const numericAmount = Number(amount) || 0;
+
+    if (isLikelySalaryIncome(normalizedDesc, normalizedType, normalizedMethod, normalizedCategory, numericAmount)) {
+      return true;
+    }
+
+    // Keep auto-recurrence for subscriptions and tuition (including boleto/transfer methods).
+    if (isLikelyTuitionExpense(normalizedDesc, normalizedCategory)) {
+      return true;
+    }
+    if (isSubscriptionDescription(normalizedDesc) || normalizedCategory === "assinaturas") {
+      return true;
+    }
+
+    if (normalizedType && normalizedType !== "despesa") return false;
+
+    // Do not auto-create recurring entries for generic transfer-like rows.
+    if (normalizedMethod === "pix" || normalizedMethod === "transferencia") return false;
+    if (/\btransfer\w*\b|\bpix\b|\bted\b|\bdoc\b|\bagencia:\b|\bconta:\b|\brecebida\b|\benviada\b/.test(normalizedDesc)) return false;
+
+    return false;
+  }
+
+  function isLikelyTuitionExpense(normalizedDesc, normalizedCategory) {
+    if (normalizedCategory === "educacao") return true;
+    return /\bfaculdade\b|\buniversidade\b|\bmensalidade\b|\bcolegio\b|\bescola\b|\bapc\b|associacao\s+paranaense\s+de\s+cultura/.test(normalizedDesc);
+  }
+
+  function isLikelySalaryIncome(normalizedDesc, normalizedType, normalizedMethod, normalizedCategory, numericAmount) {
+    if (normalizedType !== "receita") return false;
+    if (normalizedCategory === "salario") return true;
+    if (/\bsalario\b|\bfolha\b|\bpro\s*labore\b|\bholerite\b|\bpagamento\s+de\s+salario\b|\badiantamento\s+salarial\b/.test(normalizedDesc)) {
+      return true;
+    }
+    // Heuristic for payroll-like PIX transfers from CNPJ.
+    const isPixOrTransfer = normalizedMethod === "pix" || normalizedMethod === "transferencia";
+    const isReceived = /\btransfer\w*\s+recebida\b|\bpix\b/.test(normalizedDesc);
+    const hasCnpj = /\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/.test(normalizedDesc);
+    return isPixOrTransfer && isReceived && hasCnpj && numericAmount >= 1000;
+  }
+
   function inferCategoryFromDescription(desc, context = {}) {
     const normalizedDesc = String(desc || "").toLowerCase();
     const method = normalizeString(context.method || "").toLowerCase();
+
     const type = normalizeString(context.type || "").toLowerCase();
 
     if (type === "despesa" && CARD_BILL_REGEX.test(normalizedDesc)) return "Fatura";
@@ -2825,15 +2954,35 @@
   }
 
   function normalizeTransaction(t) {
+    const description = normalizeString(String(t?.description || ""));
+    const installmentInfo = extractInstallmentInfo(description);
+    let installments = Number(t?.installments) || 0;
+    if (installments <= 0 && installmentInfo) {
+      installments = installmentInfo.total;
+    }
+    const dateValue = adjustToInstallmentStartDate(normalizeString(String(t?.date || "")), installmentInfo);
+    const type = normalizeString(String(t?.type || "")).toLowerCase();
+    const category = normalizeCategory(String(t?.category || ""));
+    const method = normalizeString(String(t?.method || "")).toLowerCase();
+    const amount = Number(t?.amount);
+    let recurrence = normalizeString(String(t?.recurrence || "none")).toLowerCase();
+    if ((recurrence === "" || recurrence === "none") && installments <= 1) {
+      if (shouldInferMonthlyBankRecurrence(description, method, type, category, Math.abs(amount))) {
+        recurrence = "monthly";
+      } else {
+        recurrence = "none";
+      }
+    }
+
     return {
-      id: normalizeString(String(t?.id || createId())), date: normalizeString(String(t?.date || "")),
-      type: normalizeString(String(t?.type || "")).toLowerCase(), category: normalizeCategory(String(t?.category || "")),
-      method: normalizeString(String(t?.method || "")).toLowerCase(), description: normalizeString(String(t?.description || "")),
-      amount: Number(t?.amount), createdAt: normalizeString(String(t?.createdAt || t?.created_at || new Date().toISOString())),
+      id: normalizeString(String(t?.id || createId())), date: dateValue,
+      type, category,
+      method, description,
+      amount, createdAt: normalizeString(String(t?.createdAt || t?.created_at || new Date().toISOString())),
       updatedAt: normalizeString(String(t?.updatedAt || t?.updated_at || new Date().toISOString())),
-      recurrence: normalizeString(String(t?.recurrence || "none")),
+      recurrence,
       recurrenceEnd: normalizeString(String(t?.recurrenceEnd || t?.recurrence_end || "")),
-      installments: Number(t?.installments) || 0,
+      installments,
       accountId: normalizeString(String(t?.accountId || t?.account_id || "")),
     };
   }
