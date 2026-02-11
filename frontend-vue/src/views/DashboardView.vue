@@ -56,13 +56,33 @@ const cashFlowCanvas = ref(null)
 const expenseByCategoryCanvas = ref(null)
 let cashFlowChart = null
 let expenseChart = null
-const dismissedAlerts = ref(new Set())
+// Persistent dismissed alerts scoped by month
+function loadDismissed() {
+  try {
+    const raw = localStorage.getItem('gofund_dismissed_alerts')
+    if (raw) {
+      const obj = JSON.parse(raw)
+      if (obj.month === app.currentMonth) return new Set(obj.ids)
+    }
+  } catch {}
+  return new Set()
+}
+function saveDismissed(s) {
+  localStorage.setItem('gofund_dismissed_alerts', JSON.stringify({ month: app.currentMonth, ids: [...s] }))
+}
+const dismissedAlerts = ref(loadDismissed())
 
 const dd = computed(() => data.dashboardData)
+
+// Reset dismissed set when month changes
+watch(() => app.currentMonth, () => {
+  dismissedAlerts.value = loadDismissed()
+})
 
 function dismissAlert(id) {
   dismissedAlerts.value.add(id)
   dismissedAlerts.value = new Set(dismissedAlerts.value) // trigger reactivity
+  saveDismissed(dismissedAlerts.value)
 }
 
 // Full alerts (exact legacy logic)
