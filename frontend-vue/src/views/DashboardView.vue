@@ -18,10 +18,10 @@
 
     <!-- Alerts -->
     <section class="alerts-bar">
-      <div v-for="(alert, idx) in allAlerts" :key="idx" class="alert-item" :class="'alert-' + alert.type">
+      <div v-for="alert in allAlerts" :key="alert.id" class="alert-item" :class="'alert-' + alert.type">
         <span class="alert-icon" v-html="alert.icon"></span>
         <span class="alert-text">{{ alert.text }}</span>
-        <button class="alert-dismiss" type="button" @click="dismissAlert(idx)">&times;</button>
+        <button class="alert-dismiss" type="button" @click="dismissAlert(alert.id)">&times;</button>
       </div>
     </section>
 
@@ -60,8 +60,8 @@ const dismissedAlerts = ref(new Set())
 
 const dd = computed(() => data.dashboardData)
 
-function dismissAlert(idx) {
-  dismissedAlerts.value.add(idx)
+function dismissAlert(id) {
+  dismissedAlerts.value.add(id)
   dismissedAlerts.value = new Set(dismissedAlerts.value) // trigger reactivity
 }
 
@@ -78,9 +78,9 @@ const allAlerts = computed(() => {
   data.budgets.forEach(b => {
     const used = expenses[b.category.toLowerCase()] || 0
     if (used > b.limit) {
-      alerts.push({ type: 'danger', icon: '<i class="fa-solid fa-circle-exclamation"></i>', text: `Orçamento de "${b.category}" excedido: ${formatCurrency(used)} / ${formatCurrency(b.limit)} (${((used / b.limit) * 100).toFixed(0)}%)` })
+      alerts.push({ id: `budget-over-${b.id || b.category}`, type: 'danger', icon: '<i class="fa-solid fa-circle-exclamation"></i>', text: `Orçamento de "${b.category}" excedido: ${formatCurrency(used)} / ${formatCurrency(b.limit)} (${((used / b.limit) * 100).toFixed(0)}%)` })
     } else if (used > b.limit * 0.85) {
-      alerts.push({ type: 'warning', icon: '<i class="fa-solid fa-triangle-exclamation"></i>', text: `"${b.category}" atingiu ${((used / b.limit) * 100).toFixed(0)}% do orçamento (${formatCurrency(used)} / ${formatCurrency(b.limit)})` })
+      alerts.push({ id: `budget-warn-${b.id || b.category}`, type: 'warning', icon: '<i class="fa-solid fa-triangle-exclamation"></i>', text: `"${b.category}" atingiu ${((used / b.limit) * 100).toFixed(0)}% do orçamento (${formatCurrency(used)} / ${formatCurrency(b.limit)})` })
     }
   })
 
@@ -92,9 +92,9 @@ const allAlerts = computed(() => {
     const due = new Date(`${g.dueDate}T00:00:00`)
     const diff = Math.ceil((due - today) / 86400000)
     if (diff < 0) {
-      alerts.push({ type: 'danger', icon: '<i class="fa-solid fa-bullseye"></i>', text: `Meta "${g.name}" venceu há ${Math.abs(diff)} dias — faltam ${formatCurrency(g.target - g.current)}` })
+      alerts.push({ id: `goal-over-${g.id || g.name}`, type: 'danger', icon: '<i class="fa-solid fa-bullseye"></i>', text: `Meta "${g.name}" venceu há ${Math.abs(diff)} dias — faltam ${formatCurrency(g.target - g.current)}` })
     } else if (diff <= 15) {
-      alerts.push({ type: 'warning', icon: '<i class="fa-solid fa-bullseye"></i>', text: `Meta "${g.name}" vence em ${diff} dias — faltam ${formatCurrency(g.target - g.current)}` })
+      alerts.push({ id: `goal-warn-${g.id || g.name}`, type: 'warning', icon: '<i class="fa-solid fa-bullseye"></i>', text: `Meta "${g.name}" vence em ${diff} dias — faltam ${formatCurrency(g.target - g.current)}` })
     }
   })
 
@@ -110,14 +110,14 @@ const allAlerts = computed(() => {
   const recurringIncome = upcomingRecurring.filter(t => t.type === 'receita')
   if (recurringExpenses.length > 0) {
     const total = recurringExpenses.reduce((s, t) => s + t.amount, 0)
-    alerts.push({ type: 'info', icon: '<i class="fa-solid fa-rotate"></i>', text: `${recurringExpenses.length} despesas recorrentes este mês (${formatCurrency(total)})` })
+    alerts.push({ id: 'recurring-expenses', type: 'info', icon: '<i class="fa-solid fa-rotate"></i>', text: `${recurringExpenses.length} despesas recorrentes este mês (${formatCurrency(total)})` })
   }
   if (recurringIncome.length > 0) {
     const total = recurringIncome.reduce((s, t) => s + t.amount, 0)
-    alerts.push({ type: 'success', icon: '<i class="fa-solid fa-rotate"></i>', text: `${recurringIncome.length} receitas recorrentes este mês (${formatCurrency(total)})` })
+    alerts.push({ id: 'recurring-income', type: 'success', icon: '<i class="fa-solid fa-rotate"></i>', text: `${recurringIncome.length} receitas recorrentes este mês (${formatCurrency(total)})` })
   }
 
-  return alerts.filter((_, i) => !dismissedAlerts.value.has(i))
+  return alerts.filter(a => !dismissedAlerts.value.has(a.id))
 })
 
 function renderCashFlowChart() {
