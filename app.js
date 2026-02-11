@@ -16,6 +16,22 @@
   };
 
   /* ── DOM Cache ───────────────────────────────────────────── */
+  // CSV inference dictionaries (kept centralized to avoid future rule drift).
+  const CARD_BILL_REGEX = /\b(?:pag(?:amento|to)?\s*(?:de\s*)?fatura|fatura\s*(?:do|de)?\s*cart(?:a|ã)o|pgto\s*cart(?:a|ã)o|pag(?:amento)?\s*cart(?:a|ã)o|cart(?:a|ã)o\s*de\s*cr[eé]dito)\b/i;
+  const PIX_TRANSFER_HINT_REGEX = /\b(?:enviado|enviada|recebido|recebida|devolu(?:c|ç)ao|transfer(?:encia)?|ted|doc|cpf|cnpj|chave|favorecido)\b/i;
+  const SUBSCRIPTION_KEYWORDS = [
+    "dl\\*google", "google\\s*(one|play|storage|premium|workspace)", "youtube\\s*(prem|premium|music)",
+    "amazonprimebr", "amazon\\s*prime", "prime\\s*video", "netflix", "spotify", "deezer", "tidal",
+    "disney\\+?", "star\\+?", "hbo\\s*(max)?", "\\bmax\\b", "paramount\\+?", "globoplay", "crunchyroll",
+    "apple\\s*(music|tv|one|arcade|icloud)", "apple\\.com\\/bill", "icloud", "dropbox", "onedrive",
+    "chatgpt", "openai", "perplexity", "notion", "canva", "adobe", "figma", "grammarly", "midjourney",
+    "microsoft\\s*365", "office\\s*365", "github\\s*(copilot)?", "vercel", "fly\\.io", "cloudflare",
+    "railway", "render", "heroku", "digitalocean", "linode", "\\baws\\b", "google\\s*cloud", "\\bgcp\\b",
+    "\\bazure\\b", "supabase", "nordvpn", "expressvpn", "surfshark", "kaspersky", "avast", "mcafee",
+    "strava", "myfitnesspal", "headspace", "calm",
+  ];
+  const SUBSCRIPTION_REGEX = new RegExp(SUBSCRIPTION_KEYWORDS.join("|"), "i");
+
   const el = {
     globalLoader: document.getElementById("globalLoader"),
     loaderText: document.getElementById("loaderText"),
@@ -200,8 +216,8 @@
     "saúde": "despesa", "saude": "despesa", "educação": "despesa", "educacao": "despesa",
     "lazer": "despesa", "vestuário": "despesa", "vestuario": "despesa", "moradia": "despesa",
     "contas": "despesa", "água": "despesa", "agua": "despesa", "luz": "despesa", "internet": "despesa",
-    "telefone": "despesa", "gás": "despesa", "gas": "despesa", "assinaturas": "despesa",
-    "supermercado": "despesa", "restaurante": "despesa", "farmácia": "despesa", "farmacia": "despesa",
+    "telefone": "despesa", "gás": "despesa", "gas": "despesa", "assinaturas": "despesa", "fatura": "despesa",
+    "supermercado": "despesa", "restaurante": "despesa", "farmácia": "despesa", "farmacia": "despesa", "transferência": "despesa", "transferencia": "despesa",
     // Investimentos
     "ações": "investimento", "acoes": "investimento", "fundos": "investimento", "cdb": "investimento",
     "tesouro": "investimento", "poupança": "investimento", "poupanca": "investimento", "criptomoedas": "investimento"
@@ -1882,6 +1898,7 @@
       const text = await readFileAsText(file);
       const parsed = parseTransactionsFromCsv(text);
       if (!parsed.items.length) { showMessage("app", "Nenhuma transação encontrada no CSV.", "error"); return; }
+      await refreshTransactionsSnapshotForImport();
       const existing = buildExistingFingerprints();
       let imported = 0, failed = 0, duplicates = 0;
       for (const item of parsed.items) {
@@ -1892,7 +1909,10 @@
           state.transactions.push(created);
           existing.add(fp);
           imported++;
-        } catch { failed++; }
+        } catch (error) {
+          if (isDuplicateTransactionError(error)) { duplicates++; existing.add(fp); continue; }
+          failed++;
+        }
       }
       renderAll();
       const ignored = parsed.skipped + failed;
@@ -2231,6 +2251,7 @@
       const text = await readFileAsText(file);
       const parsed = parseTransactionsFromCsv(text);
       if (!parsed.items.length) { showMessage("app", "Nenhuma movimentação válida no CSV.", "error"); return; }
+      await refreshTransactionsSnapshotForImport();
       const existing = buildExistingFingerprints();
       let imported = 0, failed = 0, duplicates = 0;
       for (const item of parsed.items) {
@@ -2241,7 +2262,10 @@
           state.transactions.push(created);
           existing.add(fp);
           imported++;
-        } catch { failed++; }
+        } catch (error) {
+          if (isDuplicateTransactionError(error)) { duplicates++; existing.add(fp); continue; }
+          failed++;
+        }
       }
       renderAll();
       const ignored = parsed.skipped + failed;
@@ -2266,22 +2290,35 @@
       method: findHeaderIdx(headers, ["method", "metodo", "metododepagamento", "pagamento"]),
       description: findHeaderIdx(headers, ["description", "descricao", "title", "titulo"]),
       amount: findHeaderIdx(headers, ["amount", "valor"]),
+      debit: findHeaderIdx(headers, ["debit", "debito", "saida", "saidas", "withdrawal", "valor_saida"]),
+      credit: findHeaderIdx(headers, ["credit", "credito", "entrada", "entradas", "deposit", "valor_entrada"]),
       recurrence: findHeaderIdx(headers, ["recurrence", "recorrencia"]),
       recurrenceEnd: findHeaderIdx(headers, ["recurrenceend", "recurrence_end", "fimrecorrencia"]),
       installments: findHeaderIdx(headers, ["installments", "parcelas"]),
       createdAt: findHeaderIdx(headers, ["createdat", "created_at"]),
     };
-    // Minimum: date, description, amount
-    if ([idx.date, idx.description, idx.amount].some((i) => i < 0)) throw new Error("Cabeçalho CSV inválido. Mínimo: Data, Descrição, Valor.");
+    // Minimum: date, description, and either amount or split debit/credit columns
+    const hasAmountColumn = idx.amount >= 0;
+    const hasSplitAmountColumns = idx.debit >= 0 || idx.credit >= 0;
+    if (idx.date < 0 || idx.description < 0 || (!hasAmountColumn && !hasSplitAmountColumns)) {
+      throw new Error("Cabeçalho CSV inválido. Mínimo: Data, Descrição e Valor (ou Débito/Crédito).");
+    }
     const isBankCsv = idx.type < 0 || idx.category < 0 || idx.method < 0;
     // Detect credit card CSV: header uses "title" (Nubank credit card format)
     const isCreditCardCsv = isBankCsv && headers.includes("title");
     const items = []; let skipped = 0;
     lines.slice(1).forEach((line) => {
       const cols = parseCsvLine(line);
-      const rawAmount = parseFlexibleNumber(cols[idx.amount]);
+      let rawAmount = idx.amount >= 0 ? parseFlexibleNumber(cols[idx.amount]) : NaN;
+      if (!Number.isFinite(rawAmount) && (idx.debit >= 0 || idx.credit >= 0)) {
+        const creditAmount = idx.credit >= 0 ? parseFlexibleNumber(cols[idx.credit]) : NaN;
+        const debitAmount = idx.debit >= 0 ? parseFlexibleNumber(cols[idx.debit]) : NaN;
+        if (Number.isFinite(creditAmount) && Math.abs(creditAmount) > 0) rawAmount = Math.abs(creditAmount);
+        else if (Number.isFinite(debitAmount) && Math.abs(debitAmount) > 0) rawAmount = -Math.abs(debitAmount);
+      }
       const rawDesc = String(cols[idx.description] || "");
       const rawDate = String(cols[idx.date] || "");
+      if (!Number.isFinite(rawAmount) || rawAmount === 0) { skipped++; return; }
 
       // Parse date: support DD/MM/YYYY → YYYY-MM-DD
       let parsedDate = rawDate;
@@ -2303,7 +2340,7 @@
           inferredType = rawAmount >= 0 ? "despesa" : "receita";
         }
         if (!inferredMethod) inferredMethod = "credito";
-        if (!inferredCategory) inferredCategory = inferCategoryFromDescription(desc);
+        if (!inferredCategory) inferredCategory = inferCategoryFromDescription(desc, { method: inferredMethod, type: inferredType });
       } else if (isBankCsv) {
         const desc = rawDesc.toLowerCase();
         // Type: positive = receita, negative = despesa
@@ -2314,7 +2351,8 @@
         }
         // Method
         if (!inferredMethod) {
-          if (desc.includes("pix")) inferredMethod = "pix";
+          if (CARD_BILL_REGEX.test(desc)) inferredMethod = "transferencia";
+          else if (desc.includes("pix")) inferredMethod = "pix";
           else if (desc.includes("débito") || desc.includes("debito")) inferredMethod = "debito";
           else if (desc.includes("crédito") || desc.includes("credito")) inferredMethod = "credito";
           else if (desc.includes("boleto")) inferredMethod = "transferencia";
@@ -2323,15 +2361,16 @@
         }
         // Category
         if (!inferredCategory) {
-          inferredCategory = inferCategoryFromDescription(desc);
+          inferredCategory = inferCategoryFromDescription(desc, { method: inferredMethod, type: inferredType });
         }
       }
 
       // Credit card payment from bank statement stays as despesa (real cash outflow)
       // Category hint for fatura payments
       const descLower = rawDesc.toLowerCase();
-      if (inferredType === "despesa" && /cart(ão|ao|ões|oes)\s*de\s*cr[eé]dito|pagamento\s*(de\s*)?fatura|pgto\s*cart[aã]o/.test(descLower)) {
-        if (!inferredCategory || inferredCategory === "Outros") inferredCategory = "Fatura";
+      if (inferredType === "despesa" && CARD_BILL_REGEX.test(descLower)) {
+        inferredCategory = "Fatura";
+        if (inferredMethod === "credito") inferredMethod = "transferencia";
       }
 
       // Detect installments from description: "Parcela X/Y" or "X/Y"
@@ -2355,14 +2394,14 @@
 
       // Detect monthly subscriptions from credit card CSV
       if (isCreditCardCsv && inferredInstallments <= 0 && inferredRecurrence === "none") {
-        if (/dl\*google|google\s*(one|play|storage|premium)|amazonprimebr|amazon\s*prime\b|netflix|spotify|disney|hbo|paramount|dazn|youtube\s*prem|apple\s*(music|tv|one|arcade)|icloud|crunchyroll|globoplay|twitch|chatgpt|openai|notion|canva|adobe|figma|microsoft\s*365|office\s*365|dropbox/i.test(rawDesc)) {
+        if (isSubscriptionDescription(rawDesc)) {
           inferredRecurrence = "monthly";
         }
       }
 
       // Also detect subscriptions from bank CSV (Tim, internet providers, etc.)
       if (isBankCsv && inferredInstallments <= 0 && inferredRecurrence === "none") {
-        if (/copel|sanepar|compagas|enel|cemig|celesc|claro\b|vivo\b|tim\*|tim\b|oi\b|net\b|sky\b|aluguel|condom[ií]nio|seguro\s*(auto|vida|resid)/i.test(rawDesc.toLowerCase())) {
+        if (isSubscriptionDescription(rawDesc) || /copel|sanepar|compagas|enel|cemig|celesc|claro\b|vivo\b|tim\*|tim\b|oi\b|net\b|sky\b|aluguel|condom[ií]nio|seguro\s*(auto|vida|resid)/i.test(rawDesc.toLowerCase())) {
           inferredRecurrence = "monthly";
         }
       }
@@ -2383,7 +2422,18 @@
     return { items, skipped };
   }
 
-  function inferCategoryFromDescription(desc) {
+  function isSubscriptionDescription(desc) {
+    return SUBSCRIPTION_REGEX.test(String(desc || ""));
+  }
+
+  function inferCategoryFromDescription(desc, context = {}) {
+    const normalizedDesc = String(desc || "").toLowerCase();
+    const method = normalizeString(context.method || "").toLowerCase();
+    const type = normalizeString(context.type || "").toLowerCase();
+
+    if (type === "despesa" && CARD_BILL_REGEX.test(normalizedDesc)) return "Fatura";
+    if (isSubscriptionDescription(normalizedDesc)) return "Assinaturas";
+
     const rules = [
       // ── Supermercado / Mercado ──
       [/supermercado|condor|angeloni|festval|carrefour|atacad[ãa]o|big\b|assa[ií]|walmart|p[ãa]o de a[çc][úu]car|extra\s*hiper|zaffari|nacional|koch|bistek|giassi|fort\s*atacadista|sams?\s*club|makro|maxxi|mini\s*mercado|mini\s*pre[çc]o|dia\s*supermercado/, "Supermercado"],
@@ -2408,7 +2458,7 @@
       [/universidade|faculdade|escola|curso|cultura|livraria|associa[çc][ãa]o.*cultura|apc|saraiva|amazon\s*kindle/, "Educação"],
       [/udemy|coursera|alura|rocketseat|origamid|domestika|duolingo/, "Educação"],
       // ── Lazer / Entretenimento ──
-      [/cinema|teatro|spotify|netflix|disney|amazon\s*prime|steam|playstation|xbox|game|nuuvem|sharkcraft|twitch|crunchyroll|hbo|paramount|dazn|apple\s*tv|globoplay|ingresso/, "Lazer"],
+      [/cinema|teatro|steam|playstation|xbox|game|nuuvem|sharkcraft|ingresso/, "Lazer"],
       [/bar\b|pub\b|cerveja|balada|boate|show|festival|parque|praia|hotel|hostel|airbnb|booking/, "Lazer"],
       // ── Assinaturas digitais ──
       [/dl\*google|google\s*(one|play|storage|premium)|amazonprimebr|youtube\s*prem|icloud|dropbox|adobe|chatgpt|openai|canva|notion|figma|github|heroku|vercel|fly\.io|microsoft\s*365|office\s*365/, "Assinaturas"],
@@ -2435,8 +2485,12 @@
       [/transfer[êe]ncia\s*recebida/, "Transferência"],
     ];
     for (const [regex, cat] of rules) {
-      if (regex.test(desc)) return cat;
+      if (regex.test(normalizedDesc)) return cat;
     }
+
+    const isPix = method === "pix" || /\bpix\b/.test(normalizedDesc);
+    if (isPix && PIX_TRANSFER_HINT_REGEX.test(normalizedDesc)) return "Transferência";
+    if (isPix) return "Transferência";
     return "Outros";
   }
 
@@ -2529,9 +2583,36 @@
     return p;
   }
 
-  /** Create a fingerprint for deduplication: date + normalized description + amount */
+  async function refreshTransactionsSnapshotForImport() {
+    try {
+      const data = await apiRequest("/api/bootstrap");
+      if (Array.isArray(data.transactions)) {
+        state.transactions = data.transactions.map(normalizeTransaction).filter(isValidTransaction);
+      }
+    } catch (_) { /* fallback: keep current in-memory snapshot */ }
+  }
+
+  function isDuplicateTransactionError(error) {
+    const msg = normalizeString(String(error?.message || "")).toLowerCase();
+    return msg.includes("transaction already exists")
+      || msg.includes("transacao ja existe")
+      || msg.includes("duplicate")
+      || msg.includes("duplicat");
+  }
+
+  function normalizeDescriptionForFingerprint(description) {
+    return normalizeString(String(description))
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  /** Create a fingerprint for deduplication: date + canonical description + amount */
   function txnFingerprint(date, description, amount) {
-    const d = normalizeString(String(description)).toLowerCase().replace(/\s+/g, " ").trim();
+    const d = normalizeDescriptionForFingerprint(description);
     return `${date}|${d}|${Math.abs(Number(amount)).toFixed(2)}`;
   }
 
