@@ -191,7 +191,7 @@ function renderPatrimonioChart() {
     data: {
       labels,
       datasets: [{
-        label: 'Patrimonio Liquido',
+        label: 'Patrimônio Líquido',
         data: chartData,
         borderColor: theme.actualColor,
         backgroundColor: withAlpha(theme.actualColor, 0.12),
@@ -267,11 +267,6 @@ async function exportPdf() {
     const purple = [158, 139, 255]
     const blue = [94, 127, 255]
 
-    // Helper: strip accents for jsPDF (Helvetica doesn't support them)
-    function stripAccents(str) {
-      return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    }
-
     // Helper: check page overflow
     function checkPage(needed) {
       if (y + needed > H - margin) {
@@ -296,7 +291,7 @@ async function exportPdf() {
     pdf.setFont('helvetica', 'normal')
     pdf.setTextColor(...textMuted)
     const monthLabel = formatMonthLabel(app.currentMonth)
-    pdf.text(`Relatorio Financeiro - ${monthLabel}`, margin + 30, y + 6)
+    pdf.text(`Relatório Financeiro - ${monthLabel}`, margin + 30, y + 6)
     y += 14
 
     // Separator line
@@ -310,8 +305,8 @@ async function exportPdf() {
       { label: 'Receitas', value: formatCurrency(cur.value.income), color: green, change: incChange.value },
       { label: 'Despesas', value: formatCurrency(cur.value.expense), color: red, change: expChange.value },
       { label: 'Investimentos', value: formatCurrency(cur.value.investment), color: orange, change: invChange.value },
-      { label: 'Cartao de Credito', value: formatCurrency(cur.value.creditCard), color: purple, change: ccChange.value },
-      { label: 'Saldo Liquido', value: formatCurrency(cur.value.balance), color: cur.value.balance >= 0 ? green : red, change: balChange.value },
+      { label: 'Cartão de Crédito', value: formatCurrency(cur.value.creditCard), color: purple, change: ccChange.value },
+      { label: 'Saldo Líquido', value: formatCurrency(cur.value.balance), color: cur.value.balance >= 0 ? green : red, change: balChange.value },
     ]
 
     const cardW = (contentW - 8) / 3
@@ -348,7 +343,7 @@ async function exportPdf() {
       pdf.setFontSize(7)
       pdf.setFont('helvetica', 'normal')
       pdf.setTextColor(...chColor)
-      pdf.text(`${chSign} ${Math.abs(kpi.change.pct).toFixed(1)}% vs mes anterior`, cx + 4, cy + 19)
+      pdf.text(`${chSign} ${Math.abs(kpi.change.pct).toFixed(1)}% vs mês anterior`, cx + 4, cy + 19)
     })
     y += cardH + 10
 
@@ -375,8 +370,8 @@ async function exportPdf() {
       pdf.setTextColor(...textMuted)
       pdf.text('CATEGORIA', colCat + 3, y + 1)
       pdf.text('VALOR', colVal, y + 1)
-      pdf.text('VARIACAO', colChg, y + 1)
-      pdf.text('MES ANT.', colPrev, y + 1)
+      pdf.text('VARIAÇÃO', colChg, y + 1)
+      pdf.text('MÊS ANT.', colPrev, y + 1)
       y += 7
 
       sortedCats.value.forEach(([cat, amount]) => {
@@ -389,10 +384,10 @@ async function exportPdf() {
         pdf.setFontSize(8.5)
         pdf.setFont('helvetica', 'normal')
         pdf.setTextColor(...textPrimary)
-        pdf.text(stripAccents(cat), colCat + 3, y + 2)
+        pdf.text(cat, colCat + 3, y + 2)
 
         pdf.setTextColor(...red)
-        pdf.text(stripAccents(formatCurrency(amount)), colVal, y + 2)
+        pdf.text(formatCurrency(amount), colVal, y + 2)
 
         const ch = catChange(cat)
         const chSign = ch.cls === 'up' ? '+' : ch.cls === 'down' ? '-' : '='
@@ -402,7 +397,7 @@ async function exportPdf() {
         pdf.text(`${chSign} ${Math.abs(ch.pct).toFixed(0)}%`, colChg, y + 2)
 
         pdf.setTextColor(...textMuted)
-        pdf.text(stripAccents(formatCurrency(prevCats.value[cat] || 0)), colPrev, y + 2)
+        pdf.text(formatCurrency(prevCats.value[cat] || 0), colPrev, y + 2)
         y += 7
       })
       y += 6
@@ -413,7 +408,7 @@ async function exportPdf() {
     pdf.setFontSize(12)
     pdf.setFont('helvetica', 'bold')
     pdf.setTextColor(...textPrimary)
-    pdf.text('Movimentacoes Detalhadas', margin, y)
+    pdf.text('Movimentações Detalhadas', margin, y)
     y += 3
 
     // Summary count
@@ -422,7 +417,7 @@ async function exportPdf() {
     pdf.setFontSize(8)
     pdf.setFont('helvetica', 'normal')
     pdf.setTextColor(...textMuted)
-    pdf.text(`${txAll.length} transacoes no mes (${txCash.length} em caixa, ${txAll.length - txCash.length} no credito)`, margin, y + 4)
+    pdf.text(`${txAll.length} transações no mês (${txCash.length} em caixa, ${txAll.length - txCash.length} no crédito)`, margin, y + 4)
     y += 9
 
     // Transaction table header
@@ -439,9 +434,9 @@ async function exportPdf() {
     pdf.setFont('helvetica', 'bold')
     pdf.setTextColor(...textMuted)
     pdf.text('DATA', tColDate + 2, y + 1)
-    pdf.text('DESCRICAO', tColDesc, y + 1)
+    pdf.text('DESCRIÇÃO', tColDesc, y + 1)
     pdf.text('CATEGORIA', tColCat, y + 1)
-    pdf.text('METODO', tColMethod, y + 1)
+    pdf.text('MÉTODO', tColMethod, y + 1)
     pdf.text('VALOR', tColAmount, y + 1)
     y += 7
 
@@ -449,7 +444,7 @@ async function exportPdf() {
     const sortedTx = [...txAll].sort((a, b) => a.date.localeCompare(b.date))
 
     // Method labels
-    const methodLabels = { pix: 'Pix', debito: 'Debito', credito: 'Credito', boleto: 'Boleto', dinheiro: 'Dinheiro', transferencia: 'TED/DOC' }
+    const methodLabels = { pix: 'Pix', debito: 'Débito', credito: 'Crédito', boleto: 'Boleto', dinheiro: 'Dinheiro', transferencia: 'TED/DOC' }
 
     // Type colors
     const typeColors = { receita: green, despesa: red, investimento: orange, transferencia: blue }
@@ -475,7 +470,6 @@ async function exportPdf() {
       // Add installment info
       if (t.installments > 1) desc += ` (parc.)`
       if (t.recurrence === 'monthly') desc += ' (rec)'
-      desc = stripAccents(desc)
       const maxDescW = tColCat - tColDesc - 3
       pdf.setFontSize(7.5)
       while (pdf.getTextWidth(desc) > maxDescW && desc.length > 5) {
@@ -486,7 +480,7 @@ async function exportPdf() {
       // Category
       pdf.setFontSize(7)
       pdf.setTextColor(...textMuted)
-      let catText = stripAccents(t.category || '-')
+      let catText = t.category || '-'
       const maxCatW = tColMethod - tColCat - 2
       while (pdf.getTextWidth(catText) > maxCatW && catText.length > 3) {
         catText = catText.slice(0, -4) + '...'
@@ -494,7 +488,7 @@ async function exportPdf() {
       pdf.text(catText, tColCat, y + 1)
 
       // Method
-      pdf.text(stripAccents(methodLabels[t.method] || t.method || '-'), tColMethod, y + 1)
+      pdf.text(methodLabels[t.method] || t.method || '-', tColMethod, y + 1)
 
       // Amount
       const color = typeColors[t.type] || textPrimary
@@ -526,9 +520,9 @@ async function exportPdf() {
       { label: 'Total Receitas', value: formatCurrency(cur.value.income), color: green },
       { label: 'Total Despesas', value: formatCurrency(cur.value.expense), color: red },
       { label: 'Total Investimentos', value: formatCurrency(cur.value.investment), color: orange },
-      { label: 'Total Cartao de Credito', value: formatCurrency(cur.value.creditCard), color: purple },
-      { label: 'Saldo Liquido', value: formatCurrency(cur.value.balance), color: cur.value.balance >= 0 ? green : red },
-      { label: 'Patrimonio Liquido', value: formatCurrency(data.netWorth), color: data.netWorth >= 0 ? green : red },
+      { label: 'Total Cartão de Crédito', value: formatCurrency(cur.value.creditCard), color: purple },
+      { label: 'Saldo Líquido', value: formatCurrency(cur.value.balance), color: cur.value.balance >= 0 ? green : red },
+      { label: 'Patrimônio Líquido', value: formatCurrency(data.netWorth), color: data.netWorth >= 0 ? green : red },
     ]
 
     summaryItems.forEach(item => {
@@ -555,8 +549,8 @@ async function exportPdf() {
     pdf.setFontSize(7)
     pdf.setFont('helvetica', 'normal')
     pdf.setTextColor(...textMuted)
-    pdf.text('GoFund - Gestao Financeira Profissional', margin, y)
-    pdf.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} as ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`, W - margin, y, { align: 'right' })
+    pdf.text('GoFund - Gestão Financeira Profissional', margin, y)
+    pdf.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`, W - margin, y, { align: 'right' })
 
     pdf.save(`relatorio-${app.currentMonth}.pdf`)
     app.showMessage(`PDF salvo como relatorio-${app.currentMonth}.pdf`, 'success')
