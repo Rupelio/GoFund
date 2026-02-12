@@ -77,6 +77,27 @@ func (h *SummaryHandler) SendMonthlySummary(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
+	// Calculate net worth from ALL transactions (not just this month)
+	var totalIncome, totalExpense, totalInvestment float64
+	allReal := make([]domain.TransactionDTO, 0, len(allItems))
+	for _, t := range allItems {
+		if t.Method == "credito" {
+			continue
+		}
+		allReal = append(allReal, t)
+	}
+	for _, t := range allReal {
+		switch t.Type {
+		case "receita":
+			totalIncome += t.Amount
+		case "despesa":
+			totalExpense += t.Amount
+		case "investimento":
+			totalInvestment += t.Amount
+		}
+	}
+	netWorth := totalIncome - totalExpense
+
 	// Sort categories by amount descending, keep top 5
 	type catEntry struct {
 		name   string
@@ -106,6 +127,7 @@ func (h *SummaryHandler) SendMonthlySummary(w http.ResponseWriter, r *http.Reque
 		Investment:    investment,
 		CreditCard:    creditCard,
 		Balance:       income - expenses - investment,
+		NetWorth:      netWorth,
 		TopCategories: topCats,
 	}
 

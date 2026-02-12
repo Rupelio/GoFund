@@ -120,8 +120,8 @@ func (s *Sender) SendReminderEmail(to, userName string, items []ReminderItem) er
       <tr>
         <td style="padding:8px 12px; border-bottom:1px solid #30363d;">%s</td>
         <td style="padding:8px 12px; border-bottom:1px solid #30363d;">%s</td>
-        <td style="padding:8px 12px; border-bottom:1px solid #30363d; color:#f85149;">R$ %.2f</td>
-      </tr>`, item.Description, item.DueDate, item.Amount))
+        <td style="padding:8px 12px; border-bottom:1px solid #30363d; color:#f85149;">%s</td>
+      </tr>`, item.Description, item.DueDate, formatBRL(item.Amount)))
 	}
 
 	body := fmt.Sprintf(`
@@ -165,6 +165,7 @@ type MonthlySummary struct {
 	Investment    float64
 	CreditCard    float64
 	Balance       float64
+	NetWorth      float64
 	TopCategories []CategorySummary
 }
 
@@ -185,74 +186,113 @@ func (s *Sender) SendMonthlySummaryEmail(to, userName, monthLabel string, data M
 	for _, c := range data.TopCategories {
 		catRows.WriteString(fmt.Sprintf(`
       <tr>
-        <td style="padding:8px 12px; border-bottom:1px solid #30363d;">%s</td>
-        <td style="padding:8px 12px; border-bottom:1px solid #30363d; text-align:right; color:#f85149;">R$ %.2f</td>
-      </tr>`, c.Name, c.Amount))
+        <td style="padding:10px 16px; border-bottom:1px solid #30363d; font-size:0.9rem;">%s</td>
+        <td style="padding:10px 16px; border-bottom:1px solid #30363d; text-align:right; color:#f85149; font-size:0.9rem; font-weight:500;">%s</td>
+      </tr>`, c.Name, formatBRL(c.Amount)))
 	}
 
 	balanceColor := "#10d884"
-	balanceSign := "+"
+	balancePrefix := "+"
 	if data.Balance < 0 {
 		balanceColor = "#f85149"
-		balanceSign = ""
+		balancePrefix = ""
 	}
+	balanceStr := balancePrefix + formatBRL(data.Balance)
+
+	netWorthColor := "#10d884"
+	netWorthPrefix := ""
+	if data.NetWorth < 0 {
+		netWorthColor = "#f85149"
+	}
+	if data.NetWorth >= 0 {
+		netWorthPrefix = "+"
+	}
+	netWorthStr := netWorthPrefix + formatBRL(data.NetWorth)
 
 	body := fmt.Sprintf(`
 <!DOCTYPE html>
 <html>
-<body style="font-family: 'Segoe UI', Tahoma, sans-serif; color:#e6edf3; padding:0; margin:0;">
-  <div style="max-width:520px; margin:0 auto; background:#161b22; border-radius:12px; padding:2rem; border:1px solid #30363d;">
-    <h2 style="color:#9e8bff; margin-top:0;">📊 GoFund — Resumo de %s</h2>
-    <p>Olá <strong>%s</strong>, aqui está seu resumo financeiro:</p>
+<body style="font-family: 'Segoe UI', Tahoma, sans-serif; color:#e6edf3; padding:0; margin:0; background:#0d1117;">
+  <div style="max-width:560px; margin:0 auto; background:#161b22; border-radius:16px; padding:32px; border:1px solid #30363d;">
+    <h2 style="color:#9e8bff; margin:0 0 4px 0; font-size:1.3rem;">📊 GoFund — Resumo de %s</h2>
+    <p style="color:#8b949e; margin:0 0 24px 0; font-size:0.9rem;">Olá <strong style="color:#e6edf3;">%s</strong>, aqui está seu resumo financeiro:</p>
 
-    <div style="display:flex; gap:12px; margin:1rem 0; flex-wrap:wrap;">
-      <div style="flex:1; min-width:120px; background:#21262d; border-radius:8px; padding:12px; text-align:center;">
-        <div style="color:#8b949e; font-size:0.75rem;">Receitas</div>
-        <div style="color:#10d884; font-size:1.2rem; font-weight:600;">R$ %.2f</div>
-      </div>
-      <div style="flex:1; min-width:120px; background:#21262d; border-radius:8px; padding:12px; text-align:center;">
-        <div style="color:#8b949e; font-size:0.75rem;">Despesas</div>
-        <div style="color:#f85149; font-size:1.2rem; font-weight:600;">R$ %.2f</div>
-      </div>
-      <div style="flex:1; min-width:120px; background:#21262d; border-radius:8px; padding:12px; text-align:center;">
-        <div style="color:#8b949e; font-size:0.75rem;">Investimentos</div>
-        <div style="color:#ffa657; font-size:1.2rem; font-weight:600;">R$ %.2f</div>
-      </div>
-    </div>
-    <div style="display:flex; gap:12px; margin:0 0 1rem 0; flex-wrap:wrap;">
-      <div style="flex:1; min-width:120px; background:#21262d; border-radius:8px; padding:12px; text-align:center;">
-        <div style="color:#8b949e; font-size:0.75rem;">Cartão de Crédito</div>
-        <div style="color:#9e8bff; font-size:1.2rem; font-weight:600;">R$ %.2f</div>
-      </div>
-      <div style="flex:1; min-width:120px; background:#21262d; border-radius:8px; padding:12px; text-align:center;">
-        <div style="color:#8b949e; font-size:0.75rem;">Saldo</div>
-        <div style="color:%s; font-size:1.2rem; font-weight:600;">%sR$ %.2f</div>
-      </div>
-    </div>
+    <!-- KPI Cards Row 1: 3 cards -->
+    <table cellpadding="0" cellspacing="0" border="0" width="100%%%%" style="margin-bottom:12px;">
+      <tr>
+        <td width="33%%%%" style="padding:0 6px 0 0;">
+          <div style="background:#21262d; border-radius:10px; padding:16px 12px; text-align:center; border:1px solid #30363d;">
+            <div style="color:#8b949e; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Saldo do Mês</div>
+            <div style="color:%s; font-size:1.15rem; font-weight:700;">%s</div>
+          </div>
+        </td>
+        <td width="33%%%%" style="padding:0 3px;">
+          <div style="background:#21262d; border-radius:10px; padding:16px 12px; text-align:center; border:1px solid #30363d;">
+            <div style="color:#8b949e; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Receitas</div>
+            <div style="color:#10d884; font-size:1.15rem; font-weight:700;">%s</div>
+          </div>
+        </td>
+        <td width="33%%%%" style="padding:0 0 0 6px;">
+          <div style="background:#21262d; border-radius:10px; padding:16px 12px; text-align:center; border:1px solid #30363d;">
+            <div style="color:#8b949e; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Despesas</div>
+            <div style="color:#f85149; font-size:1.15rem; font-weight:700;">%s</div>
+          </div>
+        </td>
+      </tr>
+    </table>
 
-    <h3 style="color:#e6edf3; font-size:0.95rem; margin-top:1.5rem;">Top Categorias de Gastos</h3>
-    <table style="width:100%%; border-collapse:collapse; margin:0.5rem 0;">
+    <!-- KPI Cards Row 2: 3 cards -->
+    <table cellpadding="0" cellspacing="0" border="0" width="100%%%%" style="margin-bottom:24px;">
+      <tr>
+        <td width="33%%%%" style="padding:0 6px 0 0;">
+          <div style="background:#21262d; border-radius:10px; padding:16px 12px; text-align:center; border:1px solid #30363d;">
+            <div style="color:#8b949e; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Investimentos</div>
+            <div style="color:#ffa657; font-size:1.15rem; font-weight:700;">%s</div>
+          </div>
+        </td>
+        <td width="33%%%%" style="padding:0 3px;">
+          <div style="background:#21262d; border-radius:10px; padding:16px 12px; text-align:center; border:1px solid #30363d;">
+            <div style="color:#8b949e; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Cartão de Crédito</div>
+            <div style="color:#a78bfa; font-size:1.15rem; font-weight:700;">%s</div>
+          </div>
+        </td>
+        <td width="33%%%%" style="padding:0 0 0 6px;">
+          <div style="background:#21262d; border-radius:10px; padding:16px 12px; text-align:center; border:1px solid #30363d;">
+            <div style="color:#8b949e; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Patrimônio</div>
+            <div style="color:%s; font-size:1.15rem; font-weight:700;">%s</div>
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <h3 style="color:#e6edf3; font-size:1rem; margin:0 0 12px 0; font-weight:600;">Top Categorias de Gastos</h3>
+    <table cellpadding="0" cellspacing="0" border="0" width="100%%%%" style="margin-bottom:24px; border-radius:10px; overflow:hidden; border:1px solid #30363d;">
       <thead>
         <tr style="background:#21262d;">
-          <th style="padding:8px 12px; text-align:left; color:#8b949e;">Categoria</th>
-          <th style="padding:8px 12px; text-align:right; color:#8b949e;">Valor</th>
+          <th style="padding:10px 16px; text-align:left; color:#8b949e; font-size:0.8rem; font-weight:500; text-transform:uppercase; letter-spacing:0.5px;">Categoria</th>
+          <th style="padding:10px 16px; text-align:right; color:#8b949e; font-size:0.8rem; font-weight:500; text-transform:uppercase; letter-spacing:0.5px;">Valor</th>
         </tr>
       </thead>
       <tbody>%s</tbody>
     </table>
 
-    <a href="%s" style="display:inline-block; background:linear-gradient(135deg,#7b59ff,#5e7fff); color:#fff; padding:12px 28px; border-radius:8px; text-decoration:none; font-weight:600; margin:1rem 0;">
-      Ver Dashboard Completo
-    </a>
-    <hr style="border-color:#30363d; margin:1.5rem 0;">
-    <p style="color:#8b949e; font-size:0.75rem;">GoFund — Gestão Financeira Profissional</p>
+    <div style="text-align:center; margin:8px 0 0 0;">
+      <a href="%s" style="display:inline-block; background:linear-gradient(135deg,#7b59ff,#5e7fff); color:#fff; padding:14px 36px; border-radius:10px; text-decoration:none; font-weight:600; font-size:0.95rem;">
+        Ver Dashboard Completo
+      </a>
+    </div>
+    <hr style="border:none; border-top:1px solid #30363d; margin:24px 0 16px 0;">
+    <p style="color:#8b949e; font-size:0.75rem; margin:0; text-align:center;">GoFund — Gestão Financeira Profissional</p>
   </div>
 </body>
 </html>`,
 		monthLabel, userName,
-		data.Income, data.Expenses, data.Investment,
-		data.CreditCard,
-		balanceColor, balanceSign, absFloat(data.Balance),
+		balanceColor, balanceStr,
+		formatBRL(data.Income),
+		formatBRL(data.Expenses),
+		formatBRL(data.Investment),
+		formatBRL(data.CreditCard),
+		netWorthColor, netWorthStr,
 		catRows.String(),
 		s.cfg.AppURL)
 
@@ -264,4 +304,31 @@ func absFloat(v float64) float64 {
 		return -v
 	}
 	return v
+}
+
+// formatBRL formats a float as Brazilian currency: R$ 1.234,56
+func formatBRL(v float64) string {
+	neg := v < 0
+	if neg {
+		v = -v
+	}
+	// Format with 2 decimal places
+	raw := fmt.Sprintf("%.2f", v)
+	parts := strings.Split(raw, ".")
+	intPart := parts[0]
+	decPart := parts[1]
+
+	// Add thousand separators (dots)
+	var result []byte
+	for i, c := range intPart {
+		if i > 0 && (len(intPart)-i)%3 == 0 {
+			result = append(result, '.')
+		}
+		result = append(result, byte(c))
+	}
+
+	if neg {
+		return "-R$ " + string(result) + "," + decPart
+	}
+	return "R$ " + string(result) + "," + decPart
 }
