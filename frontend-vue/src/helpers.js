@@ -646,14 +646,14 @@ export function inferCategoryFromDescription(desc, context = {}) {
     [/supermercado|condor|angeloni|festval|carrefour|atacad[ãa]o|big\b|assa[ií]|walmart|p[ãa]o de a[çc][úu]car|extra\s*hiper|zaffari|nacional|koch|bistek|giassi|fort\s*atacadista|sams?\s*club|makro|maxxi|mini\s*mercado|mini\s*pre[çc]o|dia\s*supermercado/, 'Supermercado'],
     [/restaurante|lanchonete|churrascaria|sorveteria|burger|mcdonald|mc\s*donald|subway|pizza|sushi|shawarma|shawarm|ifood|rappi|99\s*food|madeinchina|habib|bobs?\b|kfc|outback|spoleto|giraffas|coco\s*bambu|cantina|bistr[oô]|a\s*baiana|temakeria|acai|a[çc]a[ií]/, 'Alimentação'],
     [/padaria|confeitaria|cafe\b|café|padariae|starbucks|cafeteria|doceria|bolo|torta/, 'Alimentação'],
-    [/posto|combustivel|combust[ií]vel|shell\b|ipiranga|petrobras|auto\s*posto|ale\b|br\s*distribuidora|gasolina|etanol|diesel|gnv/, 'Transporte'],
-    [/uber|99\b|cabify|estacionamento|estapar|zona\s*azul|park|vaga\s*livre/, 'Transporte'],
+    [/posto|combustivel|combust[ií]vel|shell\b|ipiranga|petrobras|auto\s*posto|\bale\b|br\s*distribuidora|gasolina|etanol|diesel|gnv/, 'Transporte'],
+    [/uber|\b99\s*(?:pop|taxi|moto|app)\b|\b99app\b|cabify|estacionamento|estapar|zona\s*azul|park|vaga\s*livre/, 'Transporte'],
     [/ped[áa]gio|sem\s*parar|veloe|move\s*mais|conect\s*car|auto\s*pista/, 'Transporte'],
     [/mec[âa]nica|oficina|borracharia|pneu|auto\s*el[eé]trica|auto\s*pe[çc]as|funilaria|lava\s*(r[áa]pido|jato|car)/, 'Transporte'],
     [/farm[áa]cia|panvel|drogaria|droga\s*raia|drogasil|pague\s*menos|ultrafarm|rede\s*d['']or|farma/, 'Saúde'],
     [/hospital|cl[ií]nica|m[ée]dico|lab(orat[óo]rio)?|consult(a|[oó]rio)|dentista|odonto|fisio(terapia)?|psic[oó]logo|exame|unimed|amil|sulam[ée]rica|hapvida|prevent\s*senior|bradesco\s*sa[úu]de/, 'Saúde'],
     [/[óo]tica|[óo]culos|lentes|vision/, 'Saúde'],
-    [/copel|sanepar|compagas|energi[as]|eletri|[áa]gua\b|enel|cemig|ceee|celesc|coelba|equatorial|neoenergia|light\b|celpe|cosern/, 'Contas'],
+    [/\bcopel\b|\bcopel\s*dis\b|\bsanepar\b|\bcompagas\b|\bcomgas\b|\bnaturgy\b|\bgasmig\b|\bbahiagas\b|\bsulgas\b|\bceg\b|\bceg\s*rio\b|\benel\b|\bedp\b|\bcpfl\b|\bcemig\b|\bceee\b|\bcelesc\b|\bcoelba\b|\bequatorial\b|\bneoenergia\b|\blight\b|\bcelpe\b|\bcosern\b|\benergisa\b|\brge\b|\belektro\b|\beletropaulo\b|\bampla\b|\bsabesp\b|\bsaneago\b|\bcopasa\b|\bcaesb\b|\bcedae\b|\bcorsan\b|\bcagece\b|\bcompesa\b|\bembasa\b|\bsanasa\b|\bsaneatins\b|\bigu[aá]\s*saneamento\b|\bbrk\s*ambiental\b|\b[aá]guas?\s*do\s*rio\b|\b[aá]guas?\s*de\s*manaus\b|\benergia\b|\beletric[ai]\b|\b[aá]gua\b|\bg[aá]s\b|\bsaneamento\b|\bconta\s*de\s*(?:luz|energia|[aá]gua|g[aá]s)\b|\bfatura\s*de\s*(?:energia|[aá]gua|g[aá]s)\b/, 'Contas'],
     [/aluguel|condom[ií]nio|iptu|seguro\s*resid/, 'Moradia'],
     [/internet|telefone|claro\b|vivo\b|tim\*|tim\b|oi\b|net\b|sky\b|brisanet|desktop\b|algar|sercomtel/, 'Internet'],
     [/universidade|faculdade|escola|curso|cultura|livraria|associa[çã]o.*cultura|apc|saraiva|amazon\s*kindle/, 'Educação'],
@@ -770,4 +770,3 @@ export function getProjectionBasis(proj, avg) {
   const v = proj.investment !== null ? `Invest.: ${formatCurrency(proj.investment)}` : `Invest. médio: ${formatCurrency(avg.investment)}`
   return `${i} / ${e} / ${v}`
 }
-
