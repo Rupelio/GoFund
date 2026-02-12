@@ -111,7 +111,6 @@ import {
   formatCurrency, round2, getMonthShift, getMonthSequence,
   getMonthlyTransactions, sumByType, formatMonthLabel, getChartTheme,
   withAlpha, getYAxisConfig, formatAxisValue, getClosingCash, getInvestmentStats,
-  getInvestmentCategories, isInvestmentRedemption,
 } from '../helpers.js'
 
 const data = useDataStore()
@@ -135,24 +134,21 @@ const prevTxAll = computed(() => getMonthlyTransactions(data.transactions, getMo
 const curTx = computed(() => curTxAll.value.filter(t => t.method !== 'credito'))
 const prevTx = computed(() => prevTxAll.value.filter(t => t.method !== 'credito'))
 
-const invCats = computed(() => getInvestmentCategories(data.transactions))
-
-function calcKpi(txCash, txAll, month) {
-  const cats = invCats.value
-  const income = txCash.filter(t => t.type === 'receita' && !isInvestmentRedemption(t, cats)).reduce((s, t) => s + t.amount, 0)
-  const expense = sumByType(txCash, 'despesa')
-  const applied = sumByType(txCash, 'investimento')
-  const redeemed = txCash.filter(t => isInvestmentRedemption(t, cats)).reduce((s, t) => s + t.amount, 0)
-  const investment = round2(applied - redeemed)
-  const creditCard = txAll.filter(t => t.method === 'credito' && t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
-  return { income, expense, investment, creditCard, balance: getClosingCash(data.transactions, month) }
-}
-
-const cur = computed(() => calcKpi(curTx.value, curTxAll.value, app.currentMonth))
+const cur = computed(() => {
+  const income = sumByType(curTx.value, 'receita')
+  const expense = sumByType(curTx.value, 'despesa')
+  const investment = sumByType(curTx.value, 'investimento')
+  const creditCard = curTxAll.value.filter(t => t.method === 'credito' && t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
+  return { income, expense, investment, creditCard, balance: getClosingCash(data.transactions, app.currentMonth) }
+})
 
 const prev = computed(() => {
+  const income = sumByType(prevTx.value, 'receita')
+  const expense = sumByType(prevTx.value, 'despesa')
+  const investment = sumByType(prevTx.value, 'investimento')
   const prevMonth = getMonthShift(app.currentMonth, -1)
-  return calcKpi(prevTx.value, prevTxAll.value, prevMonth)
+  const creditCard = prevTxAll.value.filter(t => t.method === 'credito' && t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
+  return { income, expense, investment, creditCard, balance: getClosingCash(data.transactions, prevMonth) }
 })
 
 const incChange = computed(() => changeInfo(cur.value.income, prev.value.income))
@@ -218,12 +214,9 @@ function renderPatrimonioChart() {
 function buildSums(month) {
   const all = getMonthlyTransactions(data.transactions, month)
   const cash = all.filter(t => t.method !== 'credito')
-  const cats = invCats.value
-  const income = cash.filter(t => t.type === 'receita' && !isInvestmentRedemption(t, cats)).reduce((s, t) => s + t.amount, 0)
+  const income = sumByType(cash, 'receita')
   const expense = sumByType(cash, 'despesa')
-  const applied = sumByType(cash, 'investimento')
-  const redeemed = cash.filter(t => isInvestmentRedemption(t, cats)).reduce((s, t) => s + t.amount, 0)
-  const investment = round2(applied - redeemed)
+  const investment = sumByType(cash, 'investimento')
   const creditCard = all.filter(t => t.method === 'credito' && t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
   const balance = getClosingCash(data.transactions, month)
   return { income, expense, investment, creditCard, balance, all, cash }

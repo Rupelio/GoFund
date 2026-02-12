@@ -9,7 +9,7 @@ import {
   normalizeTransaction, normalizeBudget, normalizeGoal, normalizeProjection,
   isValidTransaction, isValidBudget, isValidGoal,
   getMonthlyTransactions, getInvestmentStats, getInvestmentYields, setInvestmentYield as setYield,
-  getClosingCash, getMonthlySummaryMap, getAverageMonthlyFlow, getInvestmentCategories, isInvestmentRedemption,
+  getClosingCash, getMonthlySummaryMap, getAverageMonthlyFlow, getInvestmentCategories,
   getMonthSequence, getMonthShift, round2, formatMonthLabel, formatCurrency,
   normalizeString, normalizeCategory, normalizeHeader, findHeaderIdx,
   parseFlexibleNumber, detectCsvDelimiter, parseCsvLine, csvEscape,
@@ -103,12 +103,9 @@ export const useDataStore = defineStore('data', () => {
   const dashboardData = computed(() => {
     const monthly = monthlyTransactions(app.currentMonth)
     const cashBasis = monthly.filter(t => t.method !== 'credito')
-    const invCats = investCategories.value
-    const income = cashBasis.filter(t => t.type === 'receita' && !isInvestmentRedemption(t, invCats)).reduce((s, t) => s + t.amount, 0)
+    const income = cashBasis.filter(t => t.type === 'receita').reduce((s, t) => s + t.amount, 0)
     const expense = cashBasis.filter(t => t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
-    const applied = cashBasis.filter(t => t.type === 'investimento').reduce((s, t) => s + t.amount, 0)
-    const redeemed = cashBasis.filter(t => isInvestmentRedemption(t, invCats)).reduce((s, t) => s + t.amount, 0)
-    const investment = round2(applied - redeemed)
+    const investment = cashBasis.filter(t => t.type === 'investimento').reduce((s, t) => s + t.amount, 0)
     const creditCard = monthly.filter(t => t.method === 'credito' && t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
     const balance = getClosingCash(transactions.value, app.currentMonth)
     return { income, expense, investment, creditCard, balance, monthly }
