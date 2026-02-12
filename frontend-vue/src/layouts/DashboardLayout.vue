@@ -16,6 +16,7 @@ const router = useRouter()
 const route = useRoute()
 const { visible: confirmVisible, title: confirmTitle, message: confirmMessage, tone: confirmTone, confirm: showConfirm, accept: confirmAccept, cancel: confirmCancel } = useConfirm()
 provide('confirm', showConfirm)
+provide('triggerCsvImport', () => triggerCsvImport())
 
 const csvInput = ref(null)
 const showCsvImport = ref(false)

@@ -1125,6 +1125,130 @@ tr.credit-card-row:hover td {
     border-color: rgba(0, 0, 0, 0.15);
 }
 
+/* -- Dismissible Banners ---------------------------------- */
+.dashboard-banners {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+
+.dismissible-banner {
+    position: relative;
+    padding-right: 2.5rem;
+    animation: bannerSlideIn 0.3s ease-out;
+}
+
+@keyframes bannerSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.banner-close {
+    position: absolute;
+    top: 0.65rem;
+    right: 0.65rem;
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-sm, 6px);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.banner-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: var(--text);
+}
+
+.banner-dont-show {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.65rem;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.15s ease;
+}
+
+.banner-dont-show:hover {
+    color: var(--text-secondary);
+}
+
+.banner-dont-show input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    accent-color: var(--primary);
+    cursor: pointer;
+}
+
+/* CSV Hint Banner */
+.csv-hint-banner {
+    border-style: dashed;
+}
+
+.csv-hint-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.csv-hint-separator {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.csv-hint-drag {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.75rem;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-md, 8px);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.csv-hint-drag i {
+    color: var(--primary);
+}
+
+/* Light mode overrides for dismissible banners */
+[data-theme="light"] .banner-close {
+    border-color: rgba(0, 0, 0, 0.1);
+    background: rgba(0, 0, 0, 0.03);
+}
+
+[data-theme="light"] .banner-close:hover {
+    background: rgba(0, 0, 0, 0.08);
+    border-color: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .csv-hint-drag {
+    background: rgba(0, 0, 0, 0.02);
+}
+
 /* -- Filter Summary & Pagination --------------------------- */
 .table-filter-summary {
     padding: 0.65rem 1rem;

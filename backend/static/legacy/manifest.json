@@ -1,0 +1,16 @@
+{
+  "name": "GoFund",
+  "short_name": "GoFund",
+  "description": "Gestao financeira pessoal",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#060a14",
+  "theme_color": "#060a14",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

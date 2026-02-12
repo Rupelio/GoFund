@@ -26,6 +26,11 @@
           <div class="report-change" :class="invChange.cls">{{ arrow(invChange.cls) }} {{ Math.abs(invChange.pct).toFixed(1) }}%</div>
         </div>
         <div class="report-card">
+          <p>Total de Saídas</p>
+          <div class="report-value negative">{{ formatCurrency(cur.totalOut) }}</div>
+          <div class="report-change" :class="totOutChangeInverted">{{ arrow(totOutChange.cls) }} {{ Math.abs(totOutChange.pct).toFixed(1) }}%</div>
+        </div>
+        <div class="report-card">
           <p>Saldo Líquido</p>
           <div class="report-value">{{ formatCurrency(cur.balance) }}</div>
           <div class="report-change" :class="balChange.cls">{{ arrow(balChange.cls) }} {{ Math.abs(balChange.pct).toFixed(1) }}%</div>
@@ -73,6 +78,7 @@
               <div class="report-card"><p>Receitas</p><div class="report-value positive">{{ formatCurrency(cmpCur.income) }}</div></div>
               <div class="report-card"><p>Despesas</p><div class="report-value negative">{{ formatCurrency(cmpCur.expense) }}</div></div>
               <div class="report-card"><p>Investimentos</p><div class="report-value warning">{{ formatCurrency(cmpCur.investment) }}</div></div>
+              <div class="report-card"><p>Total Saídas</p><div class="report-value negative">{{ formatCurrency(cmpCur.totalOut) }}</div></div>
               <div class="report-card"><p>Saldo</p><div class="report-value">{{ formatCurrency(cmpCur.balance) }}</div></div>
               <div class="report-card"><p>Cartão de Crédito</p><div class="report-value warning">{{ formatCurrency(cmpCur.creditCard) }}</div></div>
             </div>
@@ -84,6 +90,7 @@
               <div class="report-card"><p>Receitas</p><div class="report-value positive">{{ formatCurrency(cmpOther.income) }}</div></div>
               <div class="report-card"><p>Despesas</p><div class="report-value negative">{{ formatCurrency(cmpOther.expense) }}</div></div>
               <div class="report-card"><p>Investimentos</p><div class="report-value warning">{{ formatCurrency(cmpOther.investment) }}</div></div>
+              <div class="report-card"><p>Total Saídas</p><div class="report-value negative">{{ formatCurrency(cmpOther.totalOut) }}</div></div>
               <div class="report-card"><p>Saldo</p><div class="report-value">{{ formatCurrency(cmpOther.balance) }}</div></div>
               <div class="report-card"><p>Cartão de Crédito</p><div class="report-value warning">{{ formatCurrency(cmpOther.creditCard) }}</div></div>
             </div>
@@ -95,6 +102,7 @@
           <div class="report-card"><p>Δ Receitas</p><div class="report-value">{{ formatCurrency(cmpCur.income - cmpOther.income) }}</div><span class="report-change" :class="diffCls(cmpCur.income, cmpOther.income)" v-html="diffBadge(cmpCur.income, cmpOther.income)"></span></div>
           <div class="report-card"><p>Δ Despesas</p><div class="report-value">{{ formatCurrency(cmpCur.expense - cmpOther.expense) }}</div><span class="report-change" :class="diffCls(cmpCur.expense, cmpOther.expense)" v-html="diffBadge(cmpCur.expense, cmpOther.expense)"></span></div>
           <div class="report-card"><p>Δ Investimentos</p><div class="report-value">{{ formatCurrency(cmpCur.investment - cmpOther.investment) }}</div><span class="report-change" :class="diffCls(cmpCur.investment, cmpOther.investment)" v-html="diffBadge(cmpCur.investment, cmpOther.investment)"></span></div>
+          <div class="report-card"><p>Δ Total Saídas</p><div class="report-value">{{ formatCurrency(cmpCur.totalOut - cmpOther.totalOut) }}</div><span class="report-change" :class="diffCls(cmpCur.totalOut, cmpOther.totalOut)" v-html="diffBadge(cmpCur.totalOut, cmpOther.totalOut)"></span></div>
           <div class="report-card"><p>Δ Cartão de Crédito</p><div class="report-value">{{ formatCurrency(cmpCur.creditCard - cmpOther.creditCard) }}</div><span class="report-change" :class="diffCls(cmpCur.creditCard, cmpOther.creditCard)" v-html="diffBadge(cmpCur.creditCard, cmpOther.creditCard)"></span></div>
         </div>
       </template>
@@ -138,28 +146,32 @@ const cur = computed(() => {
   const income = sumByType(curTx.value, 'receita')
   const expense = sumByType(curTx.value, 'despesa')
   const investment = sumByType(curTx.value, 'investimento')
+  const totalOut = round2(expense + investment)
   const creditCard = curTxAll.value.filter(t => t.method === 'credito' && t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
-  return { income, expense, investment, creditCard, balance: getClosingCash(data.transactions, app.currentMonth) }
+  return { income, expense, investment, totalOut, creditCard, balance: getClosingCash(data.transactions, app.currentMonth) }
 })
 
 const prev = computed(() => {
   const income = sumByType(prevTx.value, 'receita')
   const expense = sumByType(prevTx.value, 'despesa')
   const investment = sumByType(prevTx.value, 'investimento')
+  const totalOut = round2(expense + investment)
   const prevMonth = getMonthShift(app.currentMonth, -1)
   const creditCard = prevTxAll.value.filter(t => t.method === 'credito' && t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
-  return { income, expense, investment, creditCard, balance: getClosingCash(data.transactions, prevMonth) }
+  return { income, expense, investment, totalOut, creditCard, balance: getClosingCash(data.transactions, prevMonth) }
 })
 
 const incChange = computed(() => changeInfo(cur.value.income, prev.value.income))
 const expChange = computed(() => changeInfo(cur.value.expense, prev.value.expense))
 const invChange = computed(() => changeInfo(cur.value.investment, prev.value.investment))
 const ccChange = computed(() => changeInfo(cur.value.creditCard, prev.value.creditCard))
+const totOutChange = computed(() => changeInfo(cur.value.totalOut, prev.value.totalOut))
 const balChange = computed(() => changeInfo(cur.value.balance, prev.value.balance))
 
-// Invert for expense/credit (increase is bad)
+// Invert for expense/credit/totalOut (increase is bad)
 const expChangeInverted = computed(() => expChange.value.cls === 'up' ? 'down' : expChange.value.cls === 'down' ? 'up' : 'neutral')
 const ccChangeInverted = computed(() => ccChange.value.cls === 'up' ? 'down' : ccChange.value.cls === 'down' ? 'up' : 'neutral')
+const totOutChangeInverted = computed(() => totOutChange.value.cls === 'up' ? 'down' : totOutChange.value.cls === 'down' ? 'up' : 'neutral')
 
 // Category breakdown
 const curCats = computed(() => {
@@ -217,15 +229,16 @@ function buildSums(month) {
   const income = sumByType(cash, 'receita')
   const expense = sumByType(cash, 'despesa')
   const investment = sumByType(cash, 'investimento')
+  const totalOut = round2(expense + investment)
   const creditCard = all.filter(t => t.method === 'credito' && t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
   const balance = getClosingCash(data.transactions, month)
-  return { income, expense, investment, creditCard, balance, all, cash }
+  return { income, expense, investment, totalOut, creditCard, balance, all, cash }
 }
 
 const cmpCurData = computed(() => buildSums(app.currentMonth))
 const cmpOtherData = computed(() => compareMonth.value ? buildSums(compareMonth.value) : { income: 0, expense: 0, investment: 0, creditCard: 0, balance: 0, all: [], cash: [] })
-const cmpCur = computed(() => ({ income: cmpCurData.value.income, expense: cmpCurData.value.expense, investment: cmpCurData.value.investment, creditCard: cmpCurData.value.creditCard, balance: cmpCurData.value.balance }))
-const cmpOther = computed(() => ({ income: cmpOtherData.value.income, expense: cmpOtherData.value.expense, investment: cmpOtherData.value.investment, creditCard: cmpOtherData.value.creditCard, balance: cmpOtherData.value.balance }))
+const cmpCur = computed(() => ({ income: cmpCurData.value.income, expense: cmpCurData.value.expense, investment: cmpCurData.value.investment, totalOut: cmpCurData.value.totalOut, creditCard: cmpCurData.value.creditCard, balance: cmpCurData.value.balance }))
+const cmpOther = computed(() => ({ income: cmpOtherData.value.income, expense: cmpOtherData.value.expense, investment: cmpOtherData.value.investment, totalOut: cmpOtherData.value.totalOut, creditCard: cmpOtherData.value.creditCard, balance: cmpOtherData.value.balance }))
 const cmpCurAll = computed(() => cmpCurData.value.all)
 const cmpCurCash = computed(() => cmpCurData.value.cash)
 const cmpOtherAll = computed(() => cmpOtherData.value.all)
@@ -307,6 +320,7 @@ async function exportPdf() {
       { label: 'Receitas', value: formatCurrency(cur.value.income), color: green, change: incChange.value },
       { label: 'Despesas', value: formatCurrency(cur.value.expense), color: red, change: expChange.value },
       { label: 'Investimentos', value: formatCurrency(cur.value.investment), color: orange, change: invChange.value },
+      { label: 'Total de Saídas', value: formatCurrency(cur.value.totalOut), color: red, change: totOutChange.value },
       { label: 'Cartão de Crédito', value: formatCurrency(cur.value.creditCard), color: purple, change: ccChange.value },
       { label: 'Saldo Líquido', value: formatCurrency(cur.value.balance), color: cur.value.balance >= 0 ? green : red, change: balChange.value },
     ]

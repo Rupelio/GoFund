@@ -6,15 +6,42 @@
       <article class="kpi-card"><p>Receitas</p><strong class="positive">{{ formatCurrency(dd.income) }}</strong></article>
       <article class="kpi-card"><p>Despesas</p><strong class="negative">{{ formatCurrency(dd.expense) }}</strong></article>
       <article class="kpi-card"><p>Investimentos</p><strong class="warning">{{ formatCurrency(dd.investment) }}</strong></article>
+      <article class="kpi-card"><p>Total de Saídas</p><strong class="negative">{{ formatCurrency(dd.totalOut) }}</strong></article>
       <article class="kpi-card"><p>Cartão de Crédito</p><strong style="color:#a78bfa">{{ formatCurrency(dd.creditCard) }}</strong></article>
       <article class="kpi-card"><p>Patrimônio Líquido</p><strong :class="data.netWorth >= 0 ? 'positive' : 'negative'">{{ formatCurrency(data.netWorth) }}</strong></article>
     </section>
 
-    <!-- Info Banner -->
-    <div class="info-banner" style="margin: 1rem 0;">
-      <p><strong>👋 Bem-vindo ao GoFund!</strong></p>
-      <p>Use os atalhos de teclado para navegar: <kbd>1-9</kbd> para páginas, <kbd>N</kbd> para nova movimentação, <kbd>←→</kbd> para mudar de mês.</p>
-    </div>
+    <!-- Dismissible Banners -->
+    <section class="dashboard-banners">
+      <!-- Welcome Banner -->
+      <div v-if="showBanner('welcome')" class="info-banner dismissible-banner">
+        <button class="banner-close" type="button" title="Fechar" @click="closeBanner('welcome')">×</button>
+        <p><strong>👋 Bem-vindo ao GoFund!</strong></p>
+        <p>Use os atalhos de teclado para navegar: <kbd>1-9</kbd> para páginas, <kbd>N</kbd> para nova movimentação, <kbd>←→</kbd> para mudar de mês.</p>
+        <label class="banner-dont-show">
+          <input type="checkbox" v-model="dontShowAgain.welcome" />
+          Não mostrar novamente
+        </label>
+      </div>
+
+      <!-- CSV Import Hint Banner -->
+      <div v-if="showBanner('csv-hint')" class="info-banner dismissible-banner csv-hint-banner">
+        <button class="banner-close" type="button" title="Fechar" @click="closeBanner('csv-hint')">×</button>
+        <p><i class="fa-solid fa-file-csv" style="color:var(--primary);margin-right:6px"></i> <strong>Importe o extrato do seu cartão!</strong></p>
+        <p>Você pode importar seu extrato CSV de duas formas:</p>
+        <div class="csv-hint-actions">
+          <button class="btn ghost tiny" type="button" @click="triggerCsvImport">
+            <i class="fa-solid fa-upload"></i> Clique para importar
+          </button>
+          <span class="csv-hint-separator">ou</span>
+          <span class="csv-hint-drag"><i class="fa-solid fa-hand-pointer"></i> Arraste o arquivo .csv para qualquer lugar da tela</span>
+        </div>
+        <label class="banner-dont-show">
+          <input type="checkbox" v-model="dontShowAgain['csv-hint']" />
+          Não mostrar novamente
+        </label>
+      </div>
+    </section>
 
     <!-- Alerts -->
     <section class="alerts-bar">
@@ -40,7 +67,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, watch, onMounted, nextTick, inject } from 'vue'
 import { useDataStore } from '../stores/data.js'
 import { useAppStore } from '../stores/app.js'
 import {
@@ -52,6 +79,38 @@ import {
 
 const data = useDataStore()
 const app = useAppStore()
+const triggerCsvImport = inject('triggerCsvImport', () => {})
+
+// ── Dismissible Banners ───────────────────────────────
+const BANNERS_STORAGE_KEY = 'gofund_hidden_banners'
+
+function loadHiddenBanners() {
+  try {
+    const raw = localStorage.getItem(BANNERS_STORAGE_KEY)
+    return raw ? new Set(JSON.parse(raw)) : new Set()
+  } catch { return new Set() }
+}
+function saveHiddenBanners(s) {
+  localStorage.setItem(BANNERS_STORAGE_KEY, JSON.stringify([...s]))
+}
+
+const permanentlyHidden = ref(loadHiddenBanners())
+const closedBanners = ref(new Set())
+const dontShowAgain = reactive({})
+
+function showBanner(id) {
+  return !permanentlyHidden.value.has(id) && !closedBanners.value.has(id)
+}
+
+function closeBanner(id) {
+  if (dontShowAgain[id]) {
+    permanentlyHidden.value.add(id)
+    permanentlyHidden.value = new Set(permanentlyHidden.value)
+    saveHiddenBanners(permanentlyHidden.value)
+  }
+  closedBanners.value.add(id)
+  closedBanners.value = new Set(closedBanners.value)
+}
 
 const cashFlowCanvas = ref(null)
 const expenseByCategoryCanvas = ref(null)
