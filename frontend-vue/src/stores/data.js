@@ -481,7 +481,8 @@ export const useDataStore = defineStore('data', () => {
 
       if (isCreditCardCsv) {
         const desc = rawDesc.toLowerCase()
-        if (rawAmount <= 0 && (desc.includes('pagamento recebido') || desc.includes('parcelamento de fatura'))) { skipped++; return }
+        if (desc.includes('parcelamento de fatura')) { skipped++; return }
+        if (rawAmount <= 0 && desc.includes('pagamento recebido')) { skipped++; return }
         if (!inferredType) inferredType = rawAmount >= 0 ? 'despesa' : 'receita'
         if (!inferredMethod) inferredMethod = 'credito'
         if (!inferredCategory) inferredCategory = inferCategoryFromDescription(desc, { method: inferredMethod, type: inferredType })
