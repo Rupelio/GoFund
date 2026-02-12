@@ -12,10 +12,10 @@ import (
 
 // insecureJWTSecrets lists default/placeholder secrets that must never be used in production.
 var insecureJWTSecrets = map[string]struct{}{
-	"change-me-in-production":    {},
-	"super-secret-change-me":     {},
-	"secret":                     {},
-	"changeme":                   {},
+	"change-me-in-production": {},
+	"super-secret-change-me":  {},
+	"secret":                  {},
+	"changeme":                {},
 }
 
 // Config holds all application configuration loaded from environment variables.
@@ -103,7 +103,7 @@ func Load() Config {
 		Environment:         envOrDefault("APP_ENV", "development"),
 
 		ResendAPIKey: envOrDefault("RESEND_API_KEY", ""),
-		ResendFrom:   envOrDefault("RESEND_FROM", "GoFund <noreply@gofund.com.br>"),
+		ResendFrom:   envOrDefault("RESEND_FROM", "GoFund <contato@gofund.com.br>"),
 		AppURL:       envOrDefault("APP_URL", "http://localhost:5500"),
 		AppVersion:   envOrDefault("APP_VERSION", "dev"),
 	}

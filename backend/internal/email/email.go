@@ -15,7 +15,7 @@ const resendAPI = "https://api.resend.com/emails"
 // Config holds email settings loaded from environment.
 type Config struct {
 	ResendAPIKey string // Resend API key (re_...)
-	FromAddress  string // Sender address (e.g. "GoFund <noreply@gofund.com.br>")
+	FromAddress  string // Sender address (e.g. "GoFund <contato@gofund.com.br>")
 	AppURL       string // Frontend URL for reset links
 }
 

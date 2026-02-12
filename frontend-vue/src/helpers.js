@@ -655,11 +655,11 @@ export function inferCategoryFromDescription(desc, context = {}) {
     [/[óo]tica|[óo]culos|lentes|vision/, 'Saúde'],
     [/\bcopel\b|\bcopel\s*dis\b|\bsanepar\b|\bcompagas\b|\bcomgas\b|\bnaturgy\b|\bgasmig\b|\bbahiagas\b|\bsulgas\b|\bceg\b|\bceg\s*rio\b|\benel\b|\bedp\b|\bcpfl\b|\bcemig\b|\bceee\b|\bcelesc\b|\bcoelba\b|\bequatorial\b|\bneoenergia\b|\blight\b|\bcelpe\b|\bcosern\b|\benergisa\b|\brge\b|\belektro\b|\beletropaulo\b|\bampla\b|\bsabesp\b|\bsaneago\b|\bcopasa\b|\bcaesb\b|\bcedae\b|\bcorsan\b|\bcagece\b|\bcompesa\b|\bembasa\b|\bsanasa\b|\bsaneatins\b|\bigu[aá]\s*saneamento\b|\bbrk\s*ambiental\b|\b[aá]guas?\s*do\s*rio\b|\b[aá]guas?\s*de\s*manaus\b|\benergia\b|\beletric[ai]\b|\b[aá]gua\b|\bg[aá]s\b|\bsaneamento\b|\bconta\s*de\s*(?:luz|energia|[aá]gua|g[aá]s)\b|\bfatura\s*de\s*(?:energia|[aá]gua|g[aá]s)\b/, 'Contas'],
     [/aluguel|condom[ií]nio|iptu|seguro\s*resid/, 'Moradia'],
-    [/internet|telefone|claro\b|vivo\b|tim\*|tim\b|oi\b|net\b|sky\b|brisanet|desktop\b|algar|sercomtel/, 'Internet'],
-    [/universidade|faculdade|escola|curso|cultura|livraria|associa[çã]o.*cultura|apc|saraiva|amazon\s*kindle/, 'Educação'],
+    [/internet|telefone|\bclaro\b|\bvivo\b|\btim(?:\*|\b)|\boi\b|\bnet\b|\bsky\b|brisanet|\bdesktop\b|\balgar\b|sercomtel/, 'Internet'],
+    [/universidade|faculdade|escola|\bcurso\b|\bcultura\b|livraria|associa[çã]o.*cultura|apc|saraiva|amazon\s*kindle/, 'Educação'],
     [/udemy|coursera|alura|rocketseat|origamid|domestika|duolingo/, 'Educação'],
-    [/cinema|teatro|steam|playstation|xbox|game|nuuvem|sharkcraft|ingresso/, 'Lazer'],
-    [/bar\b|pub\b|cerveja|balada|boate|show|festival|parque|praia|hotel|hostel|airbnb|booking/, 'Lazer'],
+    [/cinema|teatro|steam|playstation|xbox|\bgame\b|nuuvem|sharkcraft|ingresso/, 'Lazer'],
+    [/\bbar\b|\bpub\b|cerveja|balada|boate|\bshow\b|festival|parque|praia|hotel|hostel|airbnb|booking/, 'Lazer'],
     [/dl\*google|google\s*(one|play|storage|premium)|amazonprimebr|youtube\s*prem|icloud|dropbox|adobe|chatgpt|openai|canva|notion|figma|github|heroku|vercel|fly\.io|microsoft\s*365|office\s*365/, 'Assinaturas'],
     [/apple\.com|apple\s*music|apple\s*one|apple\s*arcade/, 'Assinaturas'],
     [/amazon|mercadolivre|mercado\s*livre|shopee|aliexpress|shein|magalu|magazine|americanas|casas\s*bahia|submarino|kabum|pichau|terabyte/, 'Compras Online'],
@@ -671,7 +671,7 @@ export function inferCategoryFromDescription(desc, context = {}) {
     [/receita\s*federal|imposto|darf|gps|inss|irpf|irpj|icms|iss\b|simples\s*nacional|das\b|gru\b|detran|dpvat|ipva|licenciamento/, 'Impostos'],
     [/registrobr|registro\.br|hostgator|locaweb|godaddy|cloudflare|namecheap/, 'Internet'],
     [/seguro\s*(auto|vida|viagem)|porto\s*seguro|liberty|mapfre|zurich|tokio\s*marine|sulam[ée]rica\s*segur/, 'Seguros'],
-    [/transfer[êe]ncia\s*recebida/, 'Transferência'],
+    [/\b(?:transfer[êe]ncia|pix)\s*(?:recebid[ao]|enviad[ao])\b|\bdevolu(?:c|ç)[aã]o\s*(?:de\s*)?pix\b|\b(?:ted|doc)\b|\bchave\s*pix\b|\bag[eê]ncia:\b|\bconta:\b|\bnu\s*pagamentos\b|\binstitui[cç][aã]o\s*de\s*pagamento\b|\bip\s*\(\d{4}\)\b/, 'Transferência'],
   ]
   for (const [regex, cat] of rules) {
     if (regex.test(normalizedDesc)) return cat
