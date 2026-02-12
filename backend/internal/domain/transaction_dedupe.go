@@ -15,15 +15,34 @@ var fingerprintSpaces = regexp.MustCompile(`\s+`)
 
 // TransactionDedupeKey returns a stable hash used for idempotent CSV imports.
 // The key intentionally ignores accents, punctuation and sign-only amount differences.
-func TransactionDedupeKey(dateValue time.Time, description string, amount float64) string {
-	base := fmt.Sprintf(
-		"%s|%s|%d",
-		dateValue.Format("2006-01-02"),
-		normalizeDescriptionForDedupe(description),
-		amountToCents(amount),
-	)
+// For recurring (monthly) or installment transactions, the date is excluded from the
+// key so that the same subscription/salary/installment imported from a different
+// month's statement is recognized as a duplicate.
+func TransactionDedupeKey(dateValue time.Time, description string, amount float64, recurrence string, installments int) string {
+	normDesc := normalizeDescriptionForDedupe(description)
+	var base string
+	if recurrence == "monthly" || installments > 1 {
+		// Strip trailing installment markers (e.g. "parcela 2 3") so that
+		// different installment numbers of the same purchase share the same key.
+		clean := stripInstallmentSuffix(normDesc)
+		base = fmt.Sprintf("recurring|%s|%d", clean, amountToCents(amount))
+	} else {
+		base = fmt.Sprintf("%s|%s|%d", dateValue.Format("2006-01-02"), normDesc, amountToCents(amount))
+	}
 	sum := sha256.Sum256([]byte(base))
 	return hex.EncodeToString(sum[:])
+}
+
+var installmentSuffixRe = regexp.MustCompile(`\s+parcela\s+\d+\s+\d+\s*$`)
+var trailingFractionRe = regexp.MustCompile(`\s+\d+\s+\d+\s*$`)
+
+func stripInstallmentSuffix(desc string) string {
+	d := installmentSuffixRe.ReplaceAllString(desc, "")
+	if d != desc {
+		return strings.TrimSpace(d)
+	}
+	d = trailingFractionRe.ReplaceAllString(desc, "")
+	return strings.TrimSpace(d)
 }
 
 func normalizeDescriptionForDedupe(value string) string {

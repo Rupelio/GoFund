@@ -695,6 +695,16 @@ export function txnFingerprint(date, description, amount) {
   return `${date}|${d}|${Math.abs(Number(amount)).toFixed(2)}`
 }
 
+// Dateless fingerprint for recurring/installment transactions.
+// Strips the installment suffix (e.g. " parcela 2/3") so that
+// different installment numbers of the same purchase match.
+export function txnDatelessFingerprint(description, amount) {
+  let d = normalizeDescriptionForFingerprint(description)
+  // Remove trailing installment markers like "parcela 2 3" (already normalized to no punctuation)
+  d = d.replace(/\s+parcela\s+\d+\s+\d+\s*$/i, '').replace(/\s+\d+\s+\d+\s*$/, '').trim()
+  return `recurring|${d}|${Math.abs(Number(amount)).toFixed(2)}`
+}
+
 export function toPayload(t, preserveId) {
   const p = {
     date: t.date, type: t.type, category: t.category,

@@ -266,7 +266,7 @@ func (h *TransactionHandler) Import(w http.ResponseWriter, r *http.Request) {
 		}
 
 		result.Valid++
-		dedupeKey := domain.TransactionDedupeKey(dateValue, normalized.Description, normalized.Amount)
+		dedupeKey := domain.TransactionDedupeKey(dateValue, normalized.Description, normalized.Amount, normalized.Recurrence, normalized.Installments)
 		imported, err := h.transactions.CreateImported(ctx, user.ID, dateValue, recurrenceEnd, normalized, dedupeKey)
 		if err != nil {
 			var validationErr *domain.ValidationError

@@ -16,7 +16,7 @@ import {
   readFileAsText, normalizeCsvDate, extractInstallmentInfo, adjustToInstallmentStartDate,
   isSubscriptionDescription, shouldInferMonthlyBankRecurrence,
   inferCategoryFromDescription, CARD_BILL_REGEX, SUBSCRIPTION_REGEX,
-  txnFingerprint, normalizeDescriptionForFingerprint, toPayload, isValidDate,
+  txnFingerprint, txnDatelessFingerprint, normalizeDescriptionForFingerprint, toPayload, isValidDate,
   getProjectionBasis, getAccountBalance,
 } from '../helpers.js'
 
@@ -551,6 +551,15 @@ export const useDataStore = defineStore('data', () => {
       const fp = txnFingerprint(t.date, t.description, t.amount)
       const previous = map.get(fp)
       if (!previous || isTransactionMetadataRicher(t, previous)) map.set(fp, t)
+      // For recurring or installment transactions, also index by dateless fingerprint
+      // so that the same subscription/salary/installment from a different month is recognized
+      const rec = normalizeString(t.recurrence || 'none').toLowerCase() || 'none'
+      const inst = Number(t.installments) || 0
+      if (rec === 'monthly' || inst > 1) {
+        const datelessFp = txnDatelessFingerprint(t.description, t.amount)
+        const prev = map.get(datelessFp)
+        if (!prev || isTransactionMetadataRicher(t, prev)) map.set(datelessFp, t)
+      }
     }
     return map
   }
@@ -606,6 +615,13 @@ export const useDataStore = defineStore('data', () => {
     set.add(txnFingerprint(item.date, item.description, item.amount))
     const rawDate = normalizeString(String(item?._csvOriginalDate || ''))
     if (rawDate && isValidDate(rawDate)) set.add(txnFingerprint(rawDate, item.description, item.amount))
+    // For recurring or installment items, also try matching without date
+    // so that salary/subscriptions/installments from different months are detected as duplicates
+    const rec = normalizeString(item.recurrence || 'none').toLowerCase() || 'none'
+    const inst = Number(item.installments) || 0
+    if (rec === 'monthly' || inst > 1) {
+      set.add(txnDatelessFingerprint(item.description, item.amount))
+    }
     return set
   }
 
