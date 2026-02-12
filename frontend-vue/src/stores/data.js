@@ -32,6 +32,7 @@ export const useDataStore = defineStore('data', () => {
   const categories = ref([])
   const projection = ref(normalizeProjection({}))
   const importSnapshotTransactions = ref([])
+  const csvSourceMapVersion = ref(0)
   const loading = ref(false)
 
   // ── Editing state ──────────────────────────────────────
@@ -443,7 +444,244 @@ export const useDataStore = defineStore('data', () => {
   }
 
   // ── CSV Import ─────────────────────────────────────────
-  function parseTransactionsFromCsv(csvText) {
+  const IMPORT_CHUNK_SIZE = 500
+  const IMPORT_MIN_CHUNK_SIZE = 50
+  const IMPORT_RETRY_LIMIT = 2
+  const IMPORT_RECOVERY_PASSES = 4
+
+  function isTransientImportError(err) {
+    const status = Number(err?.status || 0)
+    if (status === 502 || status === 503 || status === 504) return true
+    // Network-level fetch errors usually have no status.
+    if (!status) return true
+    return false
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms))
+  }
+
+  function buildImportFailureError(err, partialResult, remaining) {
+    const wrapped = err instanceof Error ? err : new Error(String(err || 'Falha na importacao'))
+    wrapped.partialResult = {
+      imported: Number(partialResult?.imported || 0),
+      duplicates: Number(partialResult?.duplicates || 0),
+      invalid: Number(partialResult?.invalid || 0),
+    }
+    wrapped.remaining = Number(remaining || 0)
+    return wrapped
+  }
+
+  async function importChunkWithRetry(itemsPayload) {
+    let attempt = 0
+    while (true) {
+      try {
+        return await transactionsApi.import(auth.token, itemsPayload)
+      } catch (err) {
+        attempt++
+        if (attempt > IMPORT_RETRY_LIMIT || !isTransientImportError(err)) throw err
+        await sleep(350 * attempt)
+      }
+    }
+  }
+
+  async function importTransactionsInChunks(items, chunkSize = IMPORT_CHUNK_SIZE) {
+    const aggregate = { imported: 0, duplicates: 0, invalid: 0 }
+    for (let start = 0; start < items.length; start += chunkSize) {
+      const chunk = items.slice(start, start + chunkSize)
+      const payload = chunk.map(item => toPayload(item, false))
+      try {
+        const result = await importChunkWithRetry(payload)
+        aggregate.imported += Number(result?.imported || 0)
+        aggregate.duplicates += Number(result?.duplicates || 0)
+        aggregate.invalid += Number(result?.invalid || 0)
+      } catch (err) {
+        const remaining = items.length - start
+        throw buildImportFailureError(err, aggregate, remaining)
+      }
+    }
+    return aggregate
+  }
+
+  // ── CSV Import ─────────────────────────────────────────
+  const ACCOUNT_CSV_SOURCE_MAP_KEY = 'gofund_account_csv_source_map_v1'
+
+  function detectCsvSource(headers) {
+    const has = (...aliases) => aliases.some(a => headers.includes(a))
+    if (has('title') && has('amount') && has('date')) {
+      return { key: 'nubank_credit', label: 'Nubank Cartao', confidence: 'high' }
+    }
+    if (has('identificador') && has('data') && has('valor') && has('descricao', 'description')) {
+      return { key: 'nubank_account', label: 'Nubank Conta', confidence: 'high' }
+    }
+    if (has('debit', 'debito') && has('credit', 'credito') && has('date', 'data')) {
+      return { key: 'bank_split_amount', label: 'Extrato bancario (debito/credito)', confidence: 'medium' }
+    }
+    if (has('amount', 'valor') && has('date', 'data') && has('title', 'description', 'descricao', 'historico')) {
+      return { key: 'bank_single_amount', label: 'Extrato bancario', confidence: 'medium' }
+    }
+    return { key: 'unknown', label: 'Origem nao identificada', confidence: 'low' }
+  }
+
+  function readAccountCsvSourceMap() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(ACCOUNT_CSV_SOURCE_MAP_KEY) || '{}')
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch (_) {
+      return {}
+    }
+  }
+
+  function writeAccountCsvSourceMap(map) {
+    localStorage.setItem(ACCOUNT_CSV_SOURCE_MAP_KEY, JSON.stringify(map))
+    csvSourceMapVersion.value += 1
+  }
+
+  function getAccountCsvSource(accountId) {
+    // Makes source lookups reactive when map is changed.
+    void csvSourceMapVersion.value
+    if (!accountId) return null
+    const map = readAccountCsvSourceMap()
+    const row = map[accountId]
+    if (!row || typeof row !== 'object') return null
+    const key = normalizeString(String(row.key || ''))
+    if (!key) return null
+    return {
+      key,
+      label: normalizeString(String(row.label || key)),
+      confidence: normalizeString(String(row.confidence || '')),
+      updatedAt: normalizeString(String(row.updatedAt || '')),
+    }
+  }
+
+  function setAccountCsvSource(accountId, source) {
+    if (!accountId || !source?.key) return
+    const map = readAccountCsvSourceMap()
+    map[accountId] = {
+      key: source.key,
+      label: source.label || source.key,
+      confidence: source.confidence || '',
+      updatedAt: new Date().toISOString(),
+    }
+    writeAccountCsvSourceMap(map)
+  }
+
+  function clearAccountCsvSource(accountId) {
+    if (!accountId) return
+    const map = readAccountCsvSourceMap()
+    if (!Object.prototype.hasOwnProperty.call(map, accountId)) return
+    delete map[accountId]
+    writeAccountCsvSourceMap(map)
+  }
+
+  function findAccountsByCsvSource(sourceKey) {
+    void csvSourceMapVersion.value
+    const key = normalizeString(String(sourceKey || ''))
+    if (!key) return []
+    const map = readAccountCsvSourceMap()
+    const ids = Object.keys(map).filter(id => normalizeString(String(map[id]?.key || '')) === key)
+    const byId = new Map(accounts.value.map(acc => [acc.id, acc]))
+    return ids.map(id => byId.get(id)).filter(Boolean)
+  }
+
+  function suggestAccountForBatch(batchImport) {
+    const summary = batchImport?.sourceSummary || summarizeBatchSources(batchImport?.fileSummaries || [])
+    if (!summary || summary.mixedKnown || !summary.singleKnownKey) return null
+    const matches = findAccountsByCsvSource(summary.singleKnownKey)
+    if (matches.length !== 1) return null
+    const acc = matches[0]
+    return {
+      accountId: acc.id,
+      accountName: acc.name,
+      sourceKey: summary.singleKnownKey,
+      sourceLabel: getSourceLabelFromSummary(summary, summary.singleKnownKey),
+    }
+  }
+
+  function summarizeBatchSources(fileSummaries) {
+    const byKey = new Map()
+    for (const item of fileSummaries || []) {
+      const src = item?.source || { key: 'unknown', label: 'Origem nao identificada', confidence: 'low' }
+      const key = normalizeString(String(src.key || 'unknown')) || 'unknown'
+      const current = byKey.get(key) || {
+        key,
+        label: normalizeString(String(src.label || key)) || key,
+        confidence: normalizeString(String(src.confidence || '')),
+        count: 0,
+        files: [],
+      }
+      current.count += 1
+      current.files.push(normalizeString(String(item?.fileName || 'arquivo.csv')))
+      byKey.set(key, current)
+    }
+    const items = Array.from(byKey.values())
+    const knownKeys = items.filter(i => i.key !== 'unknown').map(i => i.key)
+    return {
+      items,
+      knownKeys,
+      mixedKnown: knownKeys.length > 1,
+      singleKnownKey: knownKeys.length === 1 ? knownKeys[0] : '',
+    }
+  }
+
+  function getSourceLabelFromSummary(summary, key) {
+    const row = summary?.items?.find(i => i.key === key)
+    return row?.label || key
+  }
+
+  function validateCsvBatchForAccount(batchImport, accountID) {
+    const summary = batchImport?.sourceSummary || summarizeBatchSources(batchImport?.fileSummaries || [])
+    const errors = []
+    const infos = []
+
+    if (summary.mixedKnown) {
+      const labels = summary.items.filter(i => i.key !== 'unknown').map(i => i.label).join(', ')
+      errors.push(`O lote possui origens diferentes (${labels}). Importe em lotes separados por conta.`)
+      return { ok: false, shouldBindSource: false, errors, infos }
+    }
+
+    if (!accountID) {
+      return { ok: true, shouldBindSource: false, errors, infos }
+    }
+
+    const selectedAccount = accounts.value.find(a => a.id === accountID)
+    const accountName = selectedAccount?.name || 'conta selecionada'
+    const accountSource = getAccountCsvSource(accountID)
+    const batchKey = summary.singleKnownKey
+    const batchLabel = batchKey ? getSourceLabelFromSummary(summary, batchKey) : ''
+    const hasUnknownInBatch = summary.items.some(i => i.key === 'unknown')
+
+    if (accountSource?.key && batchKey && accountSource.key !== batchKey) {
+      errors.push(
+        `A conta "${accountName}" esta vinculada a "${accountSource.label}", mas o lote parece ser "${batchLabel}".`
+      )
+      return { ok: false, shouldBindSource: false, errors, infos }
+    }
+
+    if (!accountSource?.key && batchKey) {
+      if (hasUnknownInBatch) {
+        infos.push('Parte do lote nao teve origem identificada. Revise os arquivos antes de confirmar.')
+      }
+      infos.push(`Conta "${accountName}" vinculada automaticamente a "${batchLabel}" para futuras validacoes.`)
+      return {
+        ok: true,
+        shouldBindSource: true,
+        sourceToBind: { key: batchKey, label: batchLabel, confidence: summary.items.find(i => i.key === batchKey)?.confidence || '' },
+        errors,
+        infos,
+      }
+    }
+
+    if (accountSource?.key && !batchKey) {
+      infos.push(`Origem do lote nao identificada. Conferir se os arquivos realmente pertencem a "${accountName}".`)
+    } else if (accountSource?.key && batchKey && hasUnknownInBatch) {
+      infos.push('Parte do lote nao teve origem identificada. Revise os arquivos antes de confirmar.')
+    }
+
+    return { ok: true, shouldBindSource: false, errors, infos }
+  }
+
+  function parseTransactionsFromCsv(csvText, fileName = '') {
     const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
     if (lines.length < 2) throw new Error('CSV vazio.')
     const delimiter = detectCsvDelimiter(lines[0])
@@ -468,6 +706,7 @@ export const useDataStore = defineStore('data', () => {
     if (idx.date < 0 || idx.description < 0 || (!hasAmountColumn && !hasSplitAmountColumns)) {
       throw new Error('Cabeçalho CSV inválido. Mínimo: Data, Descrição e Valor (ou Débito/Crédito).')
     }
+    const source = detectCsvSource(headers)
     const isBankCsv = idx.type < 0 || idx.category < 0 || idx.method < 0
     const isCreditCardCsv = isBankCsv && headers.includes('title')
     const items = []; let skipped = 0
@@ -559,7 +798,7 @@ export const useDataStore = defineStore('data', () => {
       if (isValidDate(originalParsedDate)) item._csvOriginalDate = originalParsedDate
       isValidTransaction(item) ? items.push(item) : skipped++
     })
-    return { items, skipped }
+    return { items, skipped, source, fileName: normalizeString(fileName) || 'arquivo.csv' }
   }
 
   function buildExistingFingerprints() {
@@ -728,25 +967,97 @@ export const useDataStore = defineStore('data', () => {
     } catch (_) { /* keep current */ }
   }
 
-  async function importCsvCore(file, accountId) {
-    const text = await readFileAsText(file)
-    const parsed = parseTransactionsFromCsv(text)
-    if (!parsed.items.length) throw new Error('Nenhuma movimentação válida no CSV.')
+  async function importCsvBatchCore(files, accountId) {
+    const list = Array.isArray(files) ? files : [files]
+    const csvFiles = list.filter(file =>
+      file && normalizeString(String(file?.name || '')).toLowerCase().endsWith('.csv')
+    )
+    if (!csvFiles.length) throw new Error('Selecione ao menos um arquivo CSV valido.')
 
-    if (accountId) parsed.items.forEach(item => { item.accountId = accountId })
+    const parsedByFile = []
+    for (const file of csvFiles) {
+      const fileName = normalizeString(String(file?.name || 'arquivo.csv')) || 'arquivo.csv'
+      const text = await readFileAsText(file)
+      let parsed
+      try {
+        parsed = parseTransactionsFromCsv(text, fileName)
+      } catch (e) {
+        throw new Error(`Falha ao processar ${fileName}. ${e?.message || ''}`.trim())
+      }
+      if (accountId) parsed.items.forEach(item => { item.accountId = accountId })
+      parsedByFile.push({ file, parsed })
+    }
+
+    const parsedItems = parsedByFile.flatMap(entry => entry.parsed.items)
+    if (!parsedItems.length) throw new Error('Nenhuma movimentacao valida nos arquivos selecionados.')
 
     await refreshSnapshot()
     const existing = buildExistingFingerprints()
-    const preview = buildImportPreview(parsed.items, existing)
+    const preview = buildImportPreview(parsedItems, existing)
 
-    return { parsed, preview, file }
+    const fileSummaries = parsedByFile.map(entry => ({
+      fileName: entry.parsed.fileName,
+      itemCount: entry.parsed.items.length,
+      skipped: entry.parsed.skipped || 0,
+      source: entry.parsed.source || { key: 'unknown', label: 'Origem nao identificada', confidence: 'low' },
+    }))
+    const sourceSummary = summarizeBatchSources(fileSummaries)
+    const skipped = fileSummaries.reduce((sum, item) => sum + (item.skipped || 0), 0)
+
+    return {
+      parsed: { items: parsedItems, skipped },
+      preview,
+      files: csvFiles,
+      fileSummaries,
+      sourceSummary,
+    }
+  }
+
+  async function importCsvCore(file, accountId) {
+    return importCsvBatchCore([file], accountId)
   }
 
   async function executeImport(preview, accountId) {
     let result = { imported: 0, duplicates: 0, invalid: 0 }
-    if (preview.toImport.length) {
-      result = await transactionsApi.import(auth.token, preview.toImport.map(item => toPayload(item, false)))
+    let pending = Array.isArray(preview?.toImport) ? preview.toImport.slice() : []
+    let chunkSize = IMPORT_CHUNK_SIZE
+    let recoveryPass = 0
+
+    while (pending.length) {
+      try {
+        const partial = await importTransactionsInChunks(pending, chunkSize)
+        result.imported += Number(partial?.imported || 0)
+        result.duplicates += Number(partial?.duplicates || 0)
+        result.invalid += Number(partial?.invalid || 0)
+        pending = []
+      } catch (err) {
+        result.imported += Number(err?.partialResult?.imported || 0)
+        result.duplicates += Number(err?.partialResult?.duplicates || 0)
+        result.invalid += Number(err?.partialResult?.invalid || 0)
+
+        if (!isTransientImportError(err) || recoveryPass >= IMPORT_RECOVERY_PASSES) {
+          await refreshSnapshot()
+          const existing = buildExistingFingerprints()
+          const pendingPreview = buildImportPreview(pending, existing)
+          result.duplicates += Number(pendingPreview?.duplicatesExisting || 0)
+          result.invalid += Number(pendingPreview?.invalid || 0)
+          pending = pendingPreview?.toImport || []
+          if (!pending.length) break
+          throw buildImportFailureError(err, result, pending.length)
+        }
+
+        recoveryPass += 1
+        await refreshSnapshot()
+        const existing = buildExistingFingerprints()
+        const pendingPreview = buildImportPreview(pending, existing)
+        result.duplicates += Number(pendingPreview?.duplicatesExisting || 0)
+        result.invalid += Number(pendingPreview?.invalid || 0)
+        pending = pendingPreview?.toImport || []
+        chunkSize = Math.max(IMPORT_MIN_CHUNK_SIZE, Math.floor(chunkSize / 2))
+        await sleep(300 * recoveryPass)
+      }
     }
+
     const upgradeResult = await applyImportMetadataUpgrades(preview.toUpgrade)
     await refreshSnapshot()
     return { result, upgradeResult }
@@ -793,7 +1104,9 @@ export const useDataStore = defineStore('data', () => {
     saveProjection, buildProjectionModel,
     sendMonthlySummary, exportCsv,
     parseTransactionsFromCsv, buildExistingFingerprints, buildImportPreview,
-    importCsvCore, executeImport, refreshSnapshot,
+    importCsvCore, importCsvBatchCore, executeImport, refreshSnapshot,
+    getAccountCsvSource, setAccountCsvSource, clearAccountCsvSource,
+    validateCsvBatchForAccount, suggestAccountForBatch,
     changePassword,
   }
 })

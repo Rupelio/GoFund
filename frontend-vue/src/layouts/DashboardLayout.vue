@@ -37,6 +37,7 @@ const csvNewAccountBalance = ref(0)
 const csvNewAccountColor = ref('#5e7fff')
 const csvEarliestDate = ref('')
 const csvPendingFile = ref(null)
+const csvSuggestedAccount = ref(null)
 
 const csvFormattedEarliestDate = computed(() => {
   if (!csvEarliestDate.value) return 'o extrato'
@@ -50,6 +51,16 @@ const csvSelectedAccountInfo = computed(() => {
 })
 
 const sortedAccounts = computed(() => data.accounts.slice().sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')))
+const csvPendingFilesSummary = computed(() => csvPendingFile.value?.fileSummaries || [])
+const csvPendingSourceSummary = computed(() => csvPendingFile.value?.sourceSummary || { items: [], mixedKnown: false })
+const csvSelectedAccountId = computed(() => (
+  csvAccountSelect.value && csvAccountSelect.value !== '__new__' ? csvAccountSelect.value : ''
+))
+const csvSelectedAccountSource = computed(() => (
+  csvSelectedAccountId.value ? data.getAccountCsvSource(csvSelectedAccountId.value) : null
+))
+const csvBatchGlobalValidation = computed(() => data.validateCsvBatchForAccount(csvPendingFile.value, ''))
+const csvBatchSelectedValidation = computed(() => data.validateCsvBatchForAccount(csvPendingFile.value, csvSelectedAccountId.value))
 
 async function handleDeleteAll() {
   const ok = await showConfirm({ title: 'Apagar todas as movimentações?', message: `Você tem ${data.transactions.length} movimentação(ões). Essa ação é irreversível.`, tone: 'danger' })
@@ -84,12 +95,13 @@ async function handleDrop(e) {
   e.preventDefault()
   dragCounter = 0
   showDropZone.value = false
-  const file = e.dataTransfer?.files?.[0]
-  if (!file || !file.name.toLowerCase().endsWith('.csv')) {
-    app.showMessage('Arraste um arquivo .csv para importar.', 'error')
+  const files = Array.from(e.dataTransfer?.files || [])
+    .filter(file => String(file?.name || '').toLowerCase().endsWith('.csv'))
+  if (!files.length) {
+    app.showMessage('Arraste um ou mais arquivos .csv para importar.', 'error')
     return
   }
-  startCsvImport(file)
+  startCsvImportBatch(files)
 }
 
 // ── Keyboard Shortcuts (exact legacy behavior) ──────────
@@ -147,27 +159,29 @@ function triggerCsvImport() {
 }
 
 function handleCsvFile(e) {
-  const file = e.target?.files?.[0]
-  if (!file) return
-  startCsvImport(file)
+  const files = Array.from(e.target?.files || [])
+    .filter(file => String(file?.name || '').toLowerCase().endsWith('.csv'))
+  if (!files.length) return
+  startCsvImportBatch(files)
   e.target.value = ''
 }
 
-async function startCsvImport(file) {
+async function startCsvImportBatch(files) {
   try {
-    // Read and parse CSV without account ID yet
-    const result = await data.importCsvCore(file, undefined)
+    // Read and parse CSV files without account ID yet
+    const result = await data.importCsvBatchCore(files, undefined)
     csvPendingFile.value = result
+    csvSuggestedAccount.value = data.suggestAccountForBatch(result)
     // Find earliest date for the account dialog label
     const items = result.parsed?.items || []
     csvEarliestDate.value = items.length ? items.reduce((min, t) => t.date < min ? t.date : min, items[0].date) : ''
     // Reset account dialog state
-    csvAccountSelect.value = '__new__'
+    csvAccountSelect.value = csvSuggestedAccount.value?.accountId || '__new__'
     csvNewAccountName.value = ''
     csvNewAccountType.value = 'corrente'
     csvNewAccountBalance.value = 0
     csvNewAccountColor.value = '#5e7fff'
-    csvAccountId.value = ''
+    csvAccountId.value = csvSuggestedAccount.value?.accountId || ''
     // Show Step 1: account dialog
     showCsvAccountDialog.value = true
   } catch (err) {
@@ -175,7 +189,34 @@ async function startCsvImport(file) {
   }
 }
 
+function useSuggestedAccount() {
+  if (!csvSuggestedAccount.value?.accountId) return
+  csvAccountSelect.value = csvSuggestedAccount.value.accountId
+}
+
+function applyAccountIdToPreview(preview) {
+  if (!preview) return preview
+  if (!csvAccountId.value) return preview
+  preview.toImport.forEach(t => { t.accountId = csvAccountId.value })
+  if (preview.toUpgrade) preview.toUpgrade.forEach(u => {
+    if (u?.incoming) u.incoming.accountId = csvAccountId.value
+  })
+  return preview
+}
+
+function unlinkSelectedAccountSource() {
+  if (!csvSelectedAccountId.value) return
+  data.clearAccountCsvSource(csvSelectedAccountId.value)
+  app.showMessage('Vinculo de origem removido para a conta selecionada.', 'success')
+}
+
 async function csvAccountContinue() {
+  const batchValidation = data.validateCsvBatchForAccount(csvPendingFile.value, '')
+  if (!batchValidation.ok) {
+    app.showMessage(batchValidation.errors?.[0] || 'Nao foi possivel validar o lote selecionado.', 'error')
+    return
+  }
+
   const val = csvAccountSelect.value
   if (val === '__new__') {
     if (!csvNewAccountName.value.trim()) return
@@ -196,15 +237,29 @@ async function csvAccountContinue() {
   } else {
     csvAccountId.value = ''
   }
+
+  const validation = data.validateCsvBatchForAccount(csvPendingFile.value, csvAccountId.value || '')
+  if (!validation.ok) {
+    if (csvSuggestedAccount.value?.accountId && csvAccountSelect.value !== csvSuggestedAccount.value.accountId) {
+      csvAccountSelect.value = csvSuggestedAccount.value.accountId
+      app.showMessage(`Conta sugerida "${csvSuggestedAccount.value.accountName}" selecionada automaticamente.`, 'info')
+      return
+    }
+    app.showMessage(validation.errors?.[0] || 'Nao foi possivel validar o lote selecionado.', 'error')
+    return
+  }
+  if (validation.shouldBindSource && csvAccountId.value && validation.sourceToBind) {
+    data.setAccountCsvSource(csvAccountId.value, validation.sourceToBind)
+  }
+  if (validation.infos?.length) {
+    app.showMessage(validation.infos[0], 'info')
+  }
+
   showCsvAccountDialog.value = false
   // Re-process with accountId attached
   if (csvPendingFile.value) {
     const preview = csvPendingFile.value.preview
-    if (csvAccountId.value) {
-      preview.toImport.forEach(t => { t.accountId = csvAccountId.value })
-      if (preview.toUpgrade) preview.toUpgrade.forEach(t => { t.accountId = csvAccountId.value })
-    }
-    csvPreview.value = preview
+    csvPreview.value = applyAccountIdToPreview(preview)
     showCsvImport.value = true
   }
 }
@@ -212,26 +267,55 @@ async function csvAccountContinue() {
 function csvAccountCancel() {
   showCsvAccountDialog.value = false
   csvPendingFile.value = null
+  csvSuggestedAccount.value = null
+}
+
+async function recomputeCsvPreviewFromParsed() {
+  if (!csvPendingFile.value?.parsed?.items?.length) return
+  await data.refreshSnapshot()
+  const existing = data.buildExistingFingerprints()
+  const preview = data.buildImportPreview(csvPendingFile.value.parsed.items, existing)
+  csvPreview.value = applyAccountIdToPreview(preview)
 }
 
 async function confirmImport() {
   if (!csvPreview.value) return
   csvImporting.value = true
+  let shouldResetImportState = false
   try {
     const { result, upgradeResult } = await data.executeImport(csvPreview.value, csvAccountId.value || undefined)
-    const imported = result?.imported || csvPreview.value.toImport.length
+    const imported = result?.imported ?? csvPreview.value.toImport.length
     const upgraded = upgradeResult?.updated || 0
-    let msg = `${imported} movimentação(ões) importada(s).`
+    let msg = imported > 0 ? `${imported} movimentacao(oes) importada(s).` : 'Nenhuma nova movimentacao foi adicionada.'
     if (upgraded > 0) msg += ` ${upgraded} atualizada(s).`
     if (csvPreview.value.duplicatesExisting > 0) msg += ` ${csvPreview.value.duplicatesExisting} duplicata(s) ignorada(s).`
-    app.showMessage(msg, 'success')
+    app.showMessage(msg, imported > 0 || upgraded > 0 ? 'success' : 'info')
+    shouldResetImportState = true
   } catch (err) {
-    app.showMessage(`Erro na importação: ${err.message}`, 'error')
+    await recomputeCsvPreviewFromParsed()
+    const partialImported = Number(err?.partialResult?.imported || 0)
+    const remaining = Number(csvPreview.value?.toImport?.length || 0)
+    if (remaining === 0) {
+      const msg = partialImported > 0
+        ? `Importacao concluida apos instabilidade de gateway. ${partialImported} movimentacao(oes) confirmada(s).`
+        : 'Importacao concluida apos instabilidade de gateway.'
+      app.showMessage(msg, 'success')
+      shouldResetImportState = true
+      return
+    }
+    if (partialImported > 0 || remaining > 0) {
+      app.showMessage(`Importacao interrompida por instabilidade (${err.message || 'gateway'}). Ja importadas: ${partialImported}. Pendentes: ${remaining}. Clique em Importar novamente para concluir.`, 'error')
+    } else {
+      app.showMessage(`Erro na importacao: ${err.message}`, 'error')
+    }
   } finally {
     csvImporting.value = false
-    showCsvImport.value = false
-    csvPreview.value = null
-    csvPendingFile.value = null
+    if (shouldResetImportState) {
+      showCsvImport.value = false
+      csvPreview.value = null
+      csvPendingFile.value = null
+      csvSuggestedAccount.value = null
+    }
   }
 }
 </script>
@@ -261,7 +345,7 @@ async function confirmImport() {
               </div>
             </div>
             <button class="btn ghost tiny" type="button" @click="triggerCsvImport">Importar</button>
-            <input ref="csvInput" type="file" accept=".csv" hidden @change="handleCsvFile" />
+            <input ref="csvInput" type="file" accept=".csv" multiple hidden @change="handleCsvFile" />
             <button class="btn ghost tiny danger-text" type="button" title="Apagar todas as movimentações" @click="handleDeleteAll">🗑️ Apagar Tudo</button>
             <button class="btn primary tiny" type="button" @click="router.push({ name: 'transactions' })">+ Nova (N)</button>
           </template>
@@ -274,7 +358,7 @@ async function confirmImport() {
     <div v-if="showDropZone" class="dialog-backdrop" style="display:flex;align-items:center;justify-content:center;pointer-events:none">
       <div style="background:var(--surface-alt);border:3px dashed var(--primary);border-radius:16px;padding:3rem 4rem;text-align:center">
         <i class="fa-solid fa-file-csv" style="font-size:3rem;color:var(--primary);margin-bottom:1rem;display:block"></i>
-        <p style="font-size:1.2rem;color:var(--text)">Solte o arquivo CSV aqui para importar</p>
+        <p style="font-size:1.2rem;color:var(--text)">Solte um ou mais arquivos CSV aqui para importar</p>
       </div>
     </div>
 
@@ -287,6 +371,32 @@ async function confirmImport() {
         </header>
         <div class="dialog-body" style="display:flex;flex-direction:column;gap:0.75rem">
           <p style="margin:0;font-size:0.88rem;color:var(--text-secondary)">Selecione ou crie uma conta para vincular as transações do extrato. Isso garante que o saldo da conta seja calculado corretamente.</p>
+          <div v-if="csvPendingFilesSummary.length" style="padding:0.6rem 0.75rem;border-radius:8px;background:var(--bg-card, var(--surface-alt));border:1px solid var(--border);display:flex;flex-direction:column;gap:0.4rem">
+            <p style="margin:0;font-size:0.85rem;font-weight:600;display:flex;align-items:center;gap:0.45rem">
+              <i class="fa-solid fa-file-csv" aria-hidden="true"></i>
+              {{ csvPendingFilesSummary.length }} arquivo(s) no lote
+            </p>
+            <p v-if="csvPendingSourceSummary.mixedKnown" style="margin:0;font-size:0.82rem;color:var(--danger)">
+              Origens diferentes detectadas. Esse lote nao podera ser importado em uma unica conta.
+            </p>
+            <div v-for="item in csvPendingFilesSummary" :key="item.fileName" style="display:flex;justify-content:space-between;gap:0.75rem;font-size:0.8rem;color:var(--text-secondary)">
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ item.fileName }}</span>
+              <span>{{ item.source?.label || 'Origem nao identificada' }} - {{ item.itemCount }}</span>
+            </div>
+          </div>
+          <div v-if="csvSuggestedAccount" style="padding:0.55rem 0.7rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-card, var(--surface-alt));display:flex;align-items:center;justify-content:space-between;gap:0.75rem">
+            <p style="margin:0;font-size:0.82rem;color:var(--text-secondary)">
+              <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+              Conta sugerida para este lote: <strong>{{ csvSuggestedAccount.accountName }}</strong>
+            </p>
+            <button v-if="csvAccountSelect !== csvSuggestedAccount.accountId" class="btn ghost tiny" type="button" @click="useSuggestedAccount">Usar sugestao</button>
+          </div>
+          <div v-if="!csvBatchGlobalValidation.ok" style="padding:0.55rem 0.7rem;border-radius:8px;border:1px solid var(--danger);background:rgba(220,53,69,0.08);color:var(--danger);font-size:0.82rem">
+            <p style="margin:0;display:flex;align-items:center;gap:0.4rem">
+              <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+              {{ csvBatchGlobalValidation.errors?.[0] || 'Lote invalido para importacao unica.' }}
+            </p>
+          </div>
           <label style="font-weight:600;font-size:0.85rem">Conta
             <select v-model="csvAccountSelect" style="margin-top:0.25rem;width:100%">
               <option value="__new__">➕ Criar nova conta</option>
@@ -294,6 +404,26 @@ async function confirmImport() {
               <option value="">Não vincular a nenhuma conta</option>
             </select>
           </label>
+          <div v-if="csvSelectedAccountSource" style="padding:0.55rem 0.7rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-card, var(--surface-alt));display:flex;align-items:center;justify-content:space-between;gap:0.75rem">
+            <p style="margin:0;font-size:0.82rem;color:var(--text-secondary)">
+              <i class="fa-solid fa-link" aria-hidden="true"></i>
+              Origem vinculada: <strong>{{ csvSelectedAccountSource.label }}</strong>
+            </p>
+            <button class="btn ghost tiny" type="button" @click="unlinkSelectedAccountSource">
+              <i class="fa-solid fa-link-slash" aria-hidden="true"></i> Desvincular
+            </button>
+          </div>
+          <div v-if="csvSelectedAccountId && !csvBatchSelectedValidation.ok" style="padding:0.55rem 0.7rem;border-radius:8px;border:1px solid var(--danger);background:rgba(220,53,69,0.08);color:var(--danger);font-size:0.82rem;display:flex;flex-direction:column;gap:0.45rem">
+            <p style="margin:0;display:flex;align-items:center;gap:0.4rem">
+              <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+              {{ csvBatchSelectedValidation.errors?.[0] || 'Conta selecionada incompativel com o lote.' }}
+            </p>
+            <div v-if="csvSuggestedAccount && csvAccountSelect !== csvSuggestedAccount.accountId">
+              <button class="btn ghost tiny" type="button" @click="useSuggestedAccount">
+                <i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Trocar para conta sugerida
+              </button>
+            </div>
+          </div>
           <!-- New account fields -->
           <div v-if="csvAccountSelect === '__new__'" style="display:flex;flex-direction:column;gap:0.5rem;padding:0.75rem;border-radius:8px;background:var(--bg-card, var(--surface-alt));border:1px solid var(--border)">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
@@ -338,15 +468,19 @@ async function confirmImport() {
           <button class="dialog-close-btn" type="button" @click="showCsvImport = false">&times;</button>
         </header>
         <div class="dialog-body">
+          <p v-if="csvPendingFilesSummary.length > 1"><strong>{{ csvPendingFilesSummary.length }}</strong> arquivos no lote.</p>
           <p v-if="csvAccountId"><strong>Conta:</strong> {{ (data.accounts.find(a => a.id === csvAccountId) || {}).name }}</p>
           <p><strong>{{ csvPreview.toImport.length }}</strong> novas movimentações para importar.</p>
           <p v-if="csvPreview.duplicatesExisting"><strong>{{ csvPreview.duplicatesExisting }}</strong> duplicatas encontradas (serão ignoradas).</p>
+          <p v-if="!csvPreview.toImport.length && csvPreview.duplicatesExisting" style="color:var(--text-secondary)">
+            Este arquivo já foi importado antes. Ao confirmar, nada novo será adicionado.
+          </p>
           <p v-if="csvPreview.toUpgrade && csvPreview.toUpgrade.length"><strong>{{ csvPreview.toUpgrade.length }}</strong> a atualizar (parcelamento/recorrência).</p>
           <p v-if="csvPreview.invalid"><strong>{{ csvPreview.invalid }}</strong> inválidas.</p>
         </div>
         <footer class="dialog-footer">
           <button class="btn ghost tiny" @click="showCsvImport = false">Cancelar</button>
-          <button class="btn primary tiny" :disabled="csvImporting || !csvPreview.toImport.length" @click="confirmImport">
+          <button class="btn primary tiny" :disabled="csvImporting" @click="confirmImport">
             {{ csvImporting ? 'Importando…' : 'Importar' }}
           </button>
         </footer>

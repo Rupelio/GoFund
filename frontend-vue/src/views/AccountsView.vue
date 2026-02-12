@@ -45,6 +45,10 @@
           <div class="account-info">
             <h4>{{ acc.name }}</h4>
             <p>{{ accountTypeLabel(acc.type) }}</p>
+            <p v-if="accountCsvSource(acc.id)" style="margin-top:0.25rem;font-size:0.78rem;color:var(--text-secondary)">
+              <i class="fa-solid fa-link" aria-hidden="true"></i>
+              Origem CSV: {{ accountCsvSource(acc.id)?.label }}
+            </p>
           </div>
           <div>
             <span class="account-balance" :class="getBalance(acc.id) >= 0 ? 'positive' : 'negative'">
@@ -52,6 +56,9 @@
             </span>
             <div class="mini-actions" style="margin-top:0.5rem">
               <button class="mini-btn" type="button" @click="editAccount(acc)">Editar</button>
+              <button v-if="accountCsvSource(acc.id)" class="mini-btn" type="button" @click="unlinkAccountSource(acc)">
+                <i class="fa-solid fa-link-slash" aria-hidden="true"></i> Desvincular
+              </button>
               <button class="mini-btn" type="button" @click="confirmDeleteAccount(acc)">Excluir</button>
             </div>
           </div>
@@ -64,9 +71,11 @@
 <script setup>
 import { ref, computed, inject } from 'vue'
 import { useDataStore } from '../stores/data.js'
+import { useAppStore } from '../stores/app.js'
 import { formatCurrency, getAccountBalance } from '../helpers.js'
 
 const data = useDataStore()
+const app = useAppStore()
 const confirm = inject('confirm')
 
 const form = ref({ name: '', type: 'corrente', initialBalance: 0, color: '#5e7fff' })
@@ -91,6 +100,10 @@ const sortedAccounts = computed(() => {
 
 function getBalance(id) {
   return getAccountBalance(id, data.accounts, data.transactions)
+}
+
+function accountCsvSource(accountId) {
+  return data.getAccountCsvSource(accountId)
 }
 
 function handleSubmit() {
@@ -123,5 +136,19 @@ async function confirmDeleteAccount(acc) {
   })
   if (!ok) return
   data.deleteAccount(acc.id)
+}
+
+async function unlinkAccountSource(acc) {
+  const source = accountCsvSource(acc.id)
+  if (!source) return
+  const ok = await confirm({
+    title: 'Desvincular origem CSV',
+    message: `Remover o vinculo "${source.label}" da conta "${acc.name}"?`,
+    confirmLabel: 'Desvincular',
+    tone: 'danger'
+  })
+  if (!ok) return
+  data.clearAccountCsvSource(acc.id)
+  app.showMessage(`Origem CSV desvinculada da conta "${acc.name}".`, 'success')
 }
 </script>
