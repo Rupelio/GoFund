@@ -695,14 +695,22 @@ export function txnFingerprint(date, description, amount) {
   return `${date}|${d}|${Math.abs(Number(amount)).toFixed(2)}`
 }
 
-// Dateless fingerprint for recurring/installment transactions.
-// Strips the installment suffix (e.g. " parcela 2/3") so that
+// Month-based fingerprint for recurring (monthly) transactions.
+// Same salary/subscription in the same month = duplicate,
+// but different months are allowed through.
+export function txnMonthlyFingerprint(date, description, amount) {
+  const d = normalizeDescriptionForFingerprint(description)
+  const month = String(date || '').substring(0, 7) // YYYY-MM
+  return `monthly|${month}|${d}|${Math.abs(Number(amount)).toFixed(2)}`
+}
+
+// Fully dateless fingerprint for installment transactions.
+// Strips the installment suffix (e.g. "parcela 2 3") so that
 // different installment numbers of the same purchase match.
-export function txnDatelessFingerprint(description, amount) {
+export function txnInstallmentFingerprint(description, amount) {
   let d = normalizeDescriptionForFingerprint(description)
-  // Remove trailing installment markers like "parcela 2 3" (already normalized to no punctuation)
   d = d.replace(/\s+parcela\s+\d+\s+\d+\s*$/i, '').replace(/\s+\d+\s+\d+\s*$/, '').trim()
-  return `recurring|${d}|${Math.abs(Number(amount)).toFixed(2)}`
+  return `installment|${d}|${Math.abs(Number(amount)).toFixed(2)}`
 }
 
 export function toPayload(t, preserveId) {

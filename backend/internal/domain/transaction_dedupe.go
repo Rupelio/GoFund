@@ -15,17 +15,24 @@ var fingerprintSpaces = regexp.MustCompile(`\s+`)
 
 // TransactionDedupeKey returns a stable hash used for idempotent CSV imports.
 // The key intentionally ignores accents, punctuation and sign-only amount differences.
-// For recurring (monthly) or installment transactions, the date is excluded from the
-// key so that the same subscription/salary/installment imported from a different
-// month's statement is recognized as a duplicate.
+//
+// Dedup strategy varies by transaction kind:
+//   - Installments (installments > 1): fully dateless key with installment suffix stripped.
+//     "Parcela 2/3" and "Parcela 3/3" of the same purchase share one key.
+//   - Recurring monthly: uses YYYY-MM (month) instead of full date.
+//     Salary Jan ≠ Salary Feb, but two imports of Salary Feb = duplicate.
+//   - One-time: uses full YYYY-MM-DD date.
 func TransactionDedupeKey(dateValue time.Time, description string, amount float64, recurrence string, installments int) string {
 	normDesc := normalizeDescriptionForDedupe(description)
 	var base string
-	if recurrence == "monthly" || installments > 1 {
-		// Strip trailing installment markers (e.g. "parcela 2 3") so that
-		// different installment numbers of the same purchase share the same key.
+	if installments > 1 {
+		// Fully dateless — all installments of the same purchase share one key.
 		clean := stripInstallmentSuffix(normDesc)
-		base = fmt.Sprintf("recurring|%s|%d", clean, amountToCents(amount))
+		base = fmt.Sprintf("installment|%s|%d", clean, amountToCents(amount))
+	} else if recurrence == "monthly" {
+		// Month-based — same subscription/salary in the same month = duplicate,
+		// but different months are allowed through.
+		base = fmt.Sprintf("monthly|%s|%s|%d", dateValue.Format("2006-01"), normDesc, amountToCents(amount))
 	} else {
 		base = fmt.Sprintf("%s|%s|%d", dateValue.Format("2006-01-02"), normDesc, amountToCents(amount))
 	}

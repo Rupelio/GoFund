@@ -16,7 +16,7 @@ import {
   readFileAsText, normalizeCsvDate, extractInstallmentInfo, adjustToInstallmentStartDate,
   isSubscriptionDescription, shouldInferMonthlyBankRecurrence,
   inferCategoryFromDescription, CARD_BILL_REGEX, SUBSCRIPTION_REGEX,
-  txnFingerprint, txnDatelessFingerprint, normalizeDescriptionForFingerprint, toPayload, isValidDate,
+  txnFingerprint, txnMonthlyFingerprint, txnInstallmentFingerprint, normalizeDescriptionForFingerprint, toPayload, isValidDate,
   getProjectionBasis, getAccountBalance,
 } from '../helpers.js'
 
@@ -551,14 +551,18 @@ export const useDataStore = defineStore('data', () => {
       const fp = txnFingerprint(t.date, t.description, t.amount)
       const previous = map.get(fp)
       if (!previous || isTransactionMetadataRicher(t, previous)) map.set(fp, t)
-      // For recurring or installment transactions, also index by dateless fingerprint
-      // so that the same subscription/salary/installment from a different month is recognized
+      // For installment transactions, index by dateless fingerprint (all installments share one key)
+      // For recurring monthly, index by month-based fingerprint (same month = dup, different month = ok)
       const rec = normalizeString(t.recurrence || 'none').toLowerCase() || 'none'
       const inst = Number(t.installments) || 0
-      if (rec === 'monthly' || inst > 1) {
-        const datelessFp = txnDatelessFingerprint(t.description, t.amount)
-        const prev = map.get(datelessFp)
-        if (!prev || isTransactionMetadataRicher(t, prev)) map.set(datelessFp, t)
+      if (inst > 1) {
+        const instFp = txnInstallmentFingerprint(t.description, t.amount)
+        const prev = map.get(instFp)
+        if (!prev || isTransactionMetadataRicher(t, prev)) map.set(instFp, t)
+      } else if (rec === 'monthly') {
+        const monthFp = txnMonthlyFingerprint(t.date, t.description, t.amount)
+        const prev = map.get(monthFp)
+        if (!prev || isTransactionMetadataRicher(t, prev)) map.set(monthFp, t)
       }
     }
     return map
@@ -615,12 +619,16 @@ export const useDataStore = defineStore('data', () => {
     set.add(txnFingerprint(item.date, item.description, item.amount))
     const rawDate = normalizeString(String(item?._csvOriginalDate || ''))
     if (rawDate && isValidDate(rawDate)) set.add(txnFingerprint(rawDate, item.description, item.amount))
-    // For recurring or installment items, also try matching without date
-    // so that salary/subscriptions/installments from different months are detected as duplicates
+    // For installments, try dateless fingerprint (all installments of same purchase share key)
+    // For recurring monthly, try month-based fingerprint (same month = dup, different months = ok)
     const rec = normalizeString(item.recurrence || 'none').toLowerCase() || 'none'
     const inst = Number(item.installments) || 0
-    if (rec === 'monthly' || inst > 1) {
-      set.add(txnDatelessFingerprint(item.description, item.amount))
+    if (inst > 1) {
+      set.add(txnInstallmentFingerprint(item.description, item.amount))
+    } else if (rec === 'monthly') {
+      set.add(txnMonthlyFingerprint(item.date, item.description, item.amount))
+      // Also try with original CSV date for monthly items
+      if (rawDate && isValidDate(rawDate)) set.add(txnMonthlyFingerprint(rawDate, item.description, item.amount))
     }
     return set
   }
