@@ -249,12 +249,7 @@ func (h *TransactionHandler) Import(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	importTimeout := h.queryTimeout
-	if importTimeout < 30*time.Second {
-		importTimeout = 30 * time.Second
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), importTimeout)
-	defer cancel()
+	ctx := r.Context()
 
 	startedAt := time.Now()
 	result := domain.TransactionImportResult{Total: total}

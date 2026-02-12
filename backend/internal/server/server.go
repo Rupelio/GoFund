@@ -75,7 +75,17 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
 	r.Use(chimw.Recoverer)
-	r.Use(chimw.Logger)
+	r.Use(func(next http.Handler) http.Handler {
+		logger := chimw.Logger(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Ignore /health in app logs to reduce Fly health-check noise.
+			if r.URL.Path == "/health" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			logger.ServeHTTP(w, r)
+		})
+	})
 	r.Use(chimw.Timeout(cfg.RequestTimeout))
 	r.Use(mw.SecurityHeaders)
 	r.Use(mw.CORS(cfg.AllowedOrigins))
