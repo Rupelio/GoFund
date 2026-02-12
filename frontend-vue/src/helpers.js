@@ -310,19 +310,33 @@ export function setInvestmentYield(category, rate) {
 
 export function getInvestmentStats(allTransactions) {
   const allInvestments = allTransactions.filter(t => t.type === 'investimento')
-  const totalInvested = allInvestments.reduce((s, t) => s + t.amount, 0)
-  if (totalInvested <= 0) return { totalInvested: 0, avgMonthlyRate: 0, estimatedMonthlyYield: 0 }
+  const totalApplied = allInvestments.reduce((s, t) => s + t.amount, 0)
+  // Subtract withdrawals (resgate = receita with investment-related category)
+  const investCategories = new Set(allInvestments.map(t => t.category.toLowerCase()))
+  const withdrawals = allTransactions.filter(t =>
+    t.type === 'receita' && investCategories.has(t.category.toLowerCase())
+  )
+  const totalWithdrawn = withdrawals.reduce((s, t) => s + t.amount, 0)
+  const totalInvested = Math.max(0, round2(totalApplied - totalWithdrawn))
+  if (totalInvested <= 0) return { totalInvested: 0, totalApplied: round2(totalApplied), totalWithdrawn: round2(totalWithdrawn), avgMonthlyRate: 0, estimatedMonthlyYield: 0 }
   const yields = getInvestmentYields()
   const groups = {}
   allInvestments.forEach(t => {
     if (!groups[t.category]) groups[t.category] = 0
     groups[t.category] += t.amount
   })
+  // Subtract withdrawals per category for accurate yield calculation
+  withdrawals.forEach(t => {
+    const key = Object.keys(groups).find(k => k.toLowerCase() === t.category.toLowerCase())
+    if (key) groups[key] = Math.max(0, groups[key] - t.amount)
+  })
   let weightedSum = 0
   Object.entries(groups).forEach(([cat, total]) => { weightedSum += (yields[cat] || 0) * total })
   const avgMonthlyRate = weightedSum / totalInvested / 100
   return {
-    totalInvested: round2(totalInvested),
+    totalInvested,
+    totalApplied: round2(totalApplied),
+    totalWithdrawn: round2(totalWithdrawn),
     avgMonthlyRate,
     estimatedMonthlyYield: round2(totalInvested * avgMonthlyRate),
   }

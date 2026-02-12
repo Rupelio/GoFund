@@ -6,7 +6,7 @@
       <!-- KPI grid -->
       <section class="kpi-grid" style="margin-bottom:1rem">
         <article class="kpi-card"><p>Investido este mês</p><strong class="warning">{{ formatCurrency(totalThisMonth) }}</strong></article>
-        <article class="kpi-card"><p>Total investido (geral)</p><strong class="warning">{{ formatCurrency(totalAllTime) }}</strong></article>
+        <article class="kpi-card"><p>Saldo investido atual</p><strong class="warning">{{ formatCurrency(totalAllTime) }}</strong></article>
         <article class="kpi-card"><p>Projeção 12 meses</p><strong class="positive">{{ formatCurrency(projected12) }}</strong></article>
         <article class="kpi-card"><p>Rend. médio ponderado</p><strong>{{ avgYield.toFixed(2) }}% a.m.</strong></article>
       </section>
@@ -91,7 +91,7 @@ const totalThisMonth = computed(() => {
 })
 
 const totalAllTime = computed(() => {
-  return data.transactions.filter(t => t.type === 'investimento').reduce((s, t) => s + t.amount, 0)
+  return data.investmentStats.totalInvested
 })
 
 const projected12 = computed(() => {
