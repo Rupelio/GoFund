@@ -31,22 +31,17 @@ func TestTransactionDedupeKey_ChangesWithCoreFields(t *testing.T) {
 func TestTransactionDedupeKey_RecurringIgnoresDate(t *testing.T) {
 	dateA := time.Date(2026, time.January, 5, 0, 0, 0, 0, time.UTC)
 	dateB := time.Date(2026, time.February, 5, 0, 0, 0, 0, time.UTC)
-	// Monthly recurring transactions in DIFFERENT months should produce DIFFERENT keys
-	// (salary Jan != salary Feb)
+	// Monthly recurring transactions with same description and amount
+	// should produce the SAME dedupe key regardless of date/month,
+	// because a monthly recurrence already expands to every month.
 	keyA := TransactionDedupeKey(dateA, "Salário", 5000.00, "monthly", 0)
 	keyB := TransactionDedupeKey(dateB, "Salário", 5000.00, "monthly", 0)
-	if keyA == keyB {
-		t.Fatalf("expected different dedupe keys for recurring tx in different months, got same %q", keyA)
-	}
-	// But same month, different day → same key (same salary imported from two statements)
-	dateC := time.Date(2026, time.January, 10, 0, 0, 0, 0, time.UTC)
-	keyC := TransactionDedupeKey(dateC, "Salário", 5000.00, "monthly", 0)
-	if keyA != keyC {
-		t.Fatalf("expected same dedupe key for recurring tx in same month, got %q and %q", keyA, keyC)
+	if keyA != keyB {
+		t.Fatalf("expected same dedupe key for recurring tx in different months, got %q and %q", keyA, keyB)
 	}
 	// Non-recurring should differ from recurring
-	keyD := TransactionDedupeKey(dateA, "Salário", 5000.00, "none", 0)
-	if keyA == keyD {
+	keyC := TransactionDedupeKey(dateA, "Salário", 5000.00, "none", 0)
+	if keyA == keyC {
 		t.Fatalf("recurring and non-recurring should have different keys")
 	}
 }
@@ -66,16 +61,10 @@ func TestTransactionDedupeKey_InstallmentsIgnoresDate(t *testing.T) {
 func TestTransactionDedupeKey_SubscriptionIgnoresDate(t *testing.T) {
 	dateA := time.Date(2026, time.January, 17, 0, 0, 0, 0, time.UTC)
 	dateB := time.Date(2026, time.February, 17, 0, 0, 0, 0, time.UTC)
-	// Monthly subscription in DIFFERENT months → different keys (each month gets its own)
+	// Monthly subscription is fully dateless — same key regardless of month
 	keyA := TransactionDedupeKey(dateA, "Netflix.Com", 20.90, "monthly", 0)
 	keyB := TransactionDedupeKey(dateB, "Netflix.Com", 20.90, "monthly", 0)
-	if keyA == keyB {
-		t.Fatalf("expected different dedupe keys for monthly subscription in different months, got same %q", keyA)
-	}
-	// Same month → same key
-	dateC := time.Date(2026, time.January, 20, 0, 0, 0, 0, time.UTC)
-	keyC := TransactionDedupeKey(dateC, "Netflix.Com", 20.90, "monthly", 0)
-	if keyA != keyC {
-		t.Fatalf("expected same dedupe key for same month subscription, got %q and %q", keyA, keyC)
+	if keyA != keyB {
+		t.Fatalf("expected same dedupe key for monthly subscription in different months, got %q and %q", keyA, keyB)
 	}
 }

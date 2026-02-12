@@ -695,13 +695,12 @@ export function txnFingerprint(date, description, amount) {
   return `${date}|${d}|${Math.abs(Number(amount)).toFixed(2)}`
 }
 
-// Month-based fingerprint for recurring (monthly) transactions.
-// Same salary/subscription in the same month = duplicate,
-// but different months are allowed through.
-export function txnMonthlyFingerprint(date, description, amount) {
+// Dateless fingerprint for recurring monthly transactions.
+// A monthly recurrence already expands to every month, so importing
+// the same salary/subscription from a different month's statement is a duplicate.
+export function txnMonthlyFingerprint(description, amount) {
   const d = normalizeDescriptionForFingerprint(description)
-  const month = String(date || '').substring(0, 7) // YYYY-MM
-  return `monthly|${month}|${d}|${Math.abs(Number(amount)).toFixed(2)}`
+  return `monthly|${d}|${Math.abs(Number(amount)).toFixed(2)}`
 }
 
 // Fully dateless fingerprint for installment transactions.

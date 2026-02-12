@@ -552,7 +552,8 @@ export const useDataStore = defineStore('data', () => {
       const previous = map.get(fp)
       if (!previous || isTransactionMetadataRicher(t, previous)) map.set(fp, t)
       // For installment transactions, index by dateless fingerprint (all installments share one key)
-      // For recurring monthly, index by month-based fingerprint (same month = dup, different month = ok)
+      // For recurring monthly, also dateless — a monthly recurrence expands to every month,
+      // so importing the same salary/subscription from a different month's statement is a duplicate.
       const rec = normalizeString(t.recurrence || 'none').toLowerCase() || 'none'
       const inst = Number(t.installments) || 0
       if (inst > 1) {
@@ -560,7 +561,7 @@ export const useDataStore = defineStore('data', () => {
         const prev = map.get(instFp)
         if (!prev || isTransactionMetadataRicher(t, prev)) map.set(instFp, t)
       } else if (rec === 'monthly') {
-        const monthFp = txnMonthlyFingerprint(t.date, t.description, t.amount)
+        const monthFp = txnMonthlyFingerprint(t.description, t.amount)
         const prev = map.get(monthFp)
         if (!prev || isTransactionMetadataRicher(t, prev)) map.set(monthFp, t)
       }
@@ -620,15 +621,14 @@ export const useDataStore = defineStore('data', () => {
     const rawDate = normalizeString(String(item?._csvOriginalDate || ''))
     if (rawDate && isValidDate(rawDate)) set.add(txnFingerprint(rawDate, item.description, item.amount))
     // For installments, try dateless fingerprint (all installments of same purchase share key)
-    // For recurring monthly, try month-based fingerprint (same month = dup, different months = ok)
+    // For recurring monthly, also dateless — monthly recurrence covers all months, so importing
+    // the same salary/subscription from another month's statement is a duplicate.
     const rec = normalizeString(item.recurrence || 'none').toLowerCase() || 'none'
     const inst = Number(item.installments) || 0
     if (inst > 1) {
       set.add(txnInstallmentFingerprint(item.description, item.amount))
     } else if (rec === 'monthly') {
-      set.add(txnMonthlyFingerprint(item.date, item.description, item.amount))
-      // Also try with original CSV date for monthly items
-      if (rawDate && isValidDate(rawDate)) set.add(txnMonthlyFingerprint(rawDate, item.description, item.amount))
+      set.add(txnMonthlyFingerprint(item.description, item.amount))
     }
     return set
   }

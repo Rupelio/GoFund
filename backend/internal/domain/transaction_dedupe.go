@@ -19,8 +19,9 @@ var fingerprintSpaces = regexp.MustCompile(`\s+`)
 // Dedup strategy varies by transaction kind:
 //   - Installments (installments > 1): fully dateless key with installment suffix stripped.
 //     "Parcela 2/3" and "Parcela 3/3" of the same purchase share one key.
-//   - Recurring monthly: uses YYYY-MM (month) instead of full date.
-//     Salary Jan ≠ Salary Feb, but two imports of Salary Feb = duplicate.
+//   - Recurring monthly: fully dateless key. A monthly recurrence already expands
+//     to every month, so importing the same salary/subscription from a different
+//     month's statement must be recognized as a duplicate.
 //   - One-time: uses full YYYY-MM-DD date.
 func TransactionDedupeKey(dateValue time.Time, description string, amount float64, recurrence string, installments int) string {
 	normDesc := normalizeDescriptionForDedupe(description)
@@ -30,9 +31,9 @@ func TransactionDedupeKey(dateValue time.Time, description string, amount float6
 		clean := stripInstallmentSuffix(normDesc)
 		base = fmt.Sprintf("installment|%s|%d", clean, amountToCents(amount))
 	} else if recurrence == "monthly" {
-		// Month-based — same subscription/salary in the same month = duplicate,
-		// but different months are allowed through.
-		base = fmt.Sprintf("monthly|%s|%s|%d", dateValue.Format("2006-01"), normDesc, amountToCents(amount))
+		// Fully dateless — a monthly recurrence covers every month,
+		// so the same subscription/salary from any statement is a duplicate.
+		base = fmt.Sprintf("monthly|%s|%d", normDesc, amountToCents(amount))
 	} else {
 		base = fmt.Sprintf("%s|%s|%d", dateValue.Format("2006-01-02"), normDesc, amountToCents(amount))
 	}
