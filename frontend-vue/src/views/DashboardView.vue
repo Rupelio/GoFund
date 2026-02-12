@@ -45,8 +45,8 @@ import { useDataStore } from '../stores/data.js'
 import { useAppStore } from '../stores/app.js'
 import {
   formatCurrency, round2, getChartTheme, withAlpha, getChartColors,
-  getMonthSequence, getMonthlyTransactions, formatMonthLabel, getYAxisConfig, formatAxisValue,
-  formatGoalDueDate, getTodayDate, getInvestmentStats,
+  getMonthSequence, getMonthlyTransactions, getMonthShift, formatMonthLabel, getYAxisConfig, formatAxisValue,
+  formatGoalDueDate, getTodayDate, getInvestmentStats, getClosingCash,
 } from '../helpers.js'
 
 const data = useDataStore()
@@ -160,7 +160,10 @@ function renderCashFlowChart() {
     }
   })
   const labels = []; const cumulative = []; const patriCumulative = []
-  let running = 0; let patriRunning = 0
+  // Start from previous month's closing cash to carry over balance
+  const prevMonth = getMonthShift(app.currentMonth, -1)
+  const prevClosing = getClosingCash(data.transactions, prevMonth)
+  let running = prevClosing; let patriRunning = prevClosing
   const investStats = getInvestmentStats(data.transactions)
   const dailyYield = days > 0 ? investStats.estimatedMonthlyYield / days : 0
   for (let i = 0; i < days; i++) {

@@ -73,7 +73,7 @@
               <div class="report-card"><p>Receitas</p><div class="report-value positive">{{ formatCurrency(cmpCur.income) }}</div></div>
               <div class="report-card"><p>Despesas</p><div class="report-value negative">{{ formatCurrency(cmpCur.expense) }}</div></div>
               <div class="report-card"><p>Investimentos</p><div class="report-value warning">{{ formatCurrency(cmpCur.investment) }}</div></div>
-              <div class="report-card"><p>Saldo</p><div class="report-value">{{ formatCurrency(cmpCur.income - cmpCur.expense - cmpCur.investment) }}</div></div>
+              <div class="report-card"><p>Saldo</p><div class="report-value">{{ formatCurrency(cmpCur.balance) }}</div></div>
               <div class="report-card"><p>Cartão de Crédito</p><div class="report-value warning">{{ formatCurrency(cmpCur.creditCard) }}</div></div>
             </div>
             <p style="margin-top:.5rem;font-size:.82rem;color:var(--text-muted)">{{ cmpCurAll.length }} transações totais ({{ cmpCurCash.length }} em caixa)</p>
@@ -84,7 +84,7 @@
               <div class="report-card"><p>Receitas</p><div class="report-value positive">{{ formatCurrency(cmpOther.income) }}</div></div>
               <div class="report-card"><p>Despesas</p><div class="report-value negative">{{ formatCurrency(cmpOther.expense) }}</div></div>
               <div class="report-card"><p>Investimentos</p><div class="report-value warning">{{ formatCurrency(cmpOther.investment) }}</div></div>
-              <div class="report-card"><p>Saldo</p><div class="report-value">{{ formatCurrency(cmpOther.income - cmpOther.expense - cmpOther.investment) }}</div></div>
+              <div class="report-card"><p>Saldo</p><div class="report-value">{{ formatCurrency(cmpOther.balance) }}</div></div>
               <div class="report-card"><p>Cartão de Crédito</p><div class="report-value warning">{{ formatCurrency(cmpOther.creditCard) }}</div></div>
             </div>
             <p style="margin-top:.5rem;font-size:.82rem;color:var(--text-muted)">{{ cmpOtherAll.length }} transações totais ({{ cmpOtherCash.length }} em caixa)</p>
@@ -139,15 +139,16 @@ const cur = computed(() => {
   const expense = sumByType(curTx.value, 'despesa')
   const investment = sumByType(curTx.value, 'investimento')
   const creditCard = curTxAll.value.filter(t => t.method === 'credito' && t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
-  return { income, expense, investment, creditCard, balance: income - expense - investment }
+  return { income, expense, investment, creditCard, balance: getClosingCash(data.transactions, app.currentMonth) }
 })
 
 const prev = computed(() => {
   const income = sumByType(prevTx.value, 'receita')
   const expense = sumByType(prevTx.value, 'despesa')
   const investment = sumByType(prevTx.value, 'investimento')
+  const prevMonth = getMonthShift(app.currentMonth, -1)
   const creditCard = prevTxAll.value.filter(t => t.method === 'credito' && t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
-  return { income, expense, investment, creditCard, balance: income - expense - investment }
+  return { income, expense, investment, creditCard, balance: getClosingCash(data.transactions, prevMonth) }
 })
 
 const incChange = computed(() => changeInfo(cur.value.income, prev.value.income))
@@ -217,13 +218,14 @@ function buildSums(month) {
   const expense = sumByType(cash, 'despesa')
   const investment = sumByType(cash, 'investimento')
   const creditCard = all.filter(t => t.method === 'credito' && t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
-  return { income, expense, investment, creditCard, all, cash }
+  const balance = getClosingCash(data.transactions, month)
+  return { income, expense, investment, creditCard, balance, all, cash }
 }
 
 const cmpCurData = computed(() => buildSums(app.currentMonth))
-const cmpOtherData = computed(() => compareMonth.value ? buildSums(compareMonth.value) : { income: 0, expense: 0, investment: 0, creditCard: 0, all: [], cash: [] })
-const cmpCur = computed(() => ({ income: cmpCurData.value.income, expense: cmpCurData.value.expense, investment: cmpCurData.value.investment, creditCard: cmpCurData.value.creditCard }))
-const cmpOther = computed(() => ({ income: cmpOtherData.value.income, expense: cmpOtherData.value.expense, investment: cmpOtherData.value.investment, creditCard: cmpOtherData.value.creditCard }))
+const cmpOtherData = computed(() => compareMonth.value ? buildSums(compareMonth.value) : { income: 0, expense: 0, investment: 0, creditCard: 0, balance: 0, all: [], cash: [] })
+const cmpCur = computed(() => ({ income: cmpCurData.value.income, expense: cmpCurData.value.expense, investment: cmpCurData.value.investment, creditCard: cmpCurData.value.creditCard, balance: cmpCurData.value.balance }))
+const cmpOther = computed(() => ({ income: cmpOtherData.value.income, expense: cmpOtherData.value.expense, investment: cmpOtherData.value.investment, creditCard: cmpOtherData.value.creditCard, balance: cmpOtherData.value.balance }))
 const cmpCurAll = computed(() => cmpCurData.value.all)
 const cmpCurCash = computed(() => cmpCurData.value.cash)
 const cmpOtherAll = computed(() => cmpOtherData.value.all)
