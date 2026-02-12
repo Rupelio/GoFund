@@ -521,10 +521,12 @@ export const useDataStore = defineStore('data', () => {
       }
 
       if (isCreditCardCsv && inferredInstallments <= 0 && inferredRecurrence === 'none') {
-        if (isSubscriptionDescription(rawDesc)) inferredRecurrence = 'monthly'
+        // CSV imports never auto-infer monthly recurrence.
+        // Each CSV line is a real historical transaction, not a template.
+        // Monthly recurrence is only for manually created entries.
       }
       if (isBankCsv && inferredInstallments <= 0 && inferredRecurrence === 'none') {
-        if (shouldInferMonthlyBankRecurrence(rawDesc, inferredMethod, inferredType, inferredCategory, Math.abs(rawAmount))) inferredRecurrence = 'monthly'
+        // Same as above — bank statement lines are actual transactions.
       }
 
       const item = normalizeTransaction({

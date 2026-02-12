@@ -156,11 +156,9 @@ export function normalizeTransaction(t) {
   let recurrence = normalizeString(String(t?.recurrence || 'none')).toLowerCase()
 
   if (t?._csvImport && (recurrence === '' || recurrence === 'none') && installments <= 1) {
-    if (shouldInferMonthlyBankRecurrence(description, method, type, category, Math.abs(amount))) {
-      recurrence = 'monthly'
-    } else {
-      recurrence = 'none'
-    }
+    // CSV imports never auto-infer monthly recurrence.
+    // Each CSV line is a real historical transaction.
+    recurrence = 'none'
   } else if (recurrence === '') {
     recurrence = 'none'
   }
