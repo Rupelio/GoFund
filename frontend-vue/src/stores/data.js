@@ -105,7 +105,7 @@ export const useDataStore = defineStore('data', () => {
     const expense = cashBasis.filter(t => t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
     const investment = cashBasis.filter(t => t.type === 'investimento').reduce((s, t) => s + t.amount, 0)
     const creditCard = monthly.filter(t => t.method === 'credito' && t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
-    const balance = income - expense - investment
+    const balance = getClosingCash(transactions.value, app.currentMonth)
     return { income, expense, investment, creditCard, balance, monthly }
   })
 
