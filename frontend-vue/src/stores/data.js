@@ -9,7 +9,7 @@ import {
   normalizeTransaction, normalizeBudget, normalizeGoal, normalizeProjection,
   isValidTransaction, isValidBudget, isValidGoal,
   getMonthlyTransactions, getInvestmentStats, getInvestmentYields, setInvestmentYield as setYield,
-  getClosingCash, getMonthlySummaryMap, getAverageMonthlyFlow,
+  getClosingCash, getMonthlySummaryMap, getAverageMonthlyFlow, getInvestmentCategories, isInvestmentRedemption,
   getMonthSequence, getMonthShift, round2, formatMonthLabel, formatCurrency,
   normalizeString, normalizeCategory, normalizeHeader, findHeaderIdx,
   parseFlexibleNumber, detectCsvDelimiter, parseCsvLine, csvEscape,
@@ -98,12 +98,17 @@ export const useDataStore = defineStore('data', () => {
   })
 
   // ── Dashboard computed ─────────────────────────────────
+  const investCategories = computed(() => getInvestmentCategories(transactions.value))
+
   const dashboardData = computed(() => {
     const monthly = monthlyTransactions(app.currentMonth)
     const cashBasis = monthly.filter(t => t.method !== 'credito')
-    const income = cashBasis.filter(t => t.type === 'receita').reduce((s, t) => s + t.amount, 0)
+    const invCats = investCategories.value
+    const income = cashBasis.filter(t => t.type === 'receita' && !isInvestmentRedemption(t, invCats)).reduce((s, t) => s + t.amount, 0)
     const expense = cashBasis.filter(t => t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
-    const investment = cashBasis.filter(t => t.type === 'investimento').reduce((s, t) => s + t.amount, 0)
+    const applied = cashBasis.filter(t => t.type === 'investimento').reduce((s, t) => s + t.amount, 0)
+    const redeemed = cashBasis.filter(t => isInvestmentRedemption(t, invCats)).reduce((s, t) => s + t.amount, 0)
+    const investment = round2(applied - redeemed)
     const creditCard = monthly.filter(t => t.method === 'credito' && t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
     const balance = getClosingCash(transactions.value, app.currentMonth)
     return { income, expense, investment, creditCard, balance, monthly }
@@ -415,17 +420,26 @@ export const useDataStore = defineStore('data', () => {
   }
 
   // ── CSV Export ──────────────────────────────────────────
-  function exportCsv() {
-    if (!transactions.value.length) {
+  function exportCsv(mode = 'month') {
+    let txns
+    let suffix
+    if (mode === 'all') {
+      txns = transactions.value
+      suffix = 'tudo'
+    } else {
+      txns = getMonthlyTransactions(transactions.value, app.currentMonth)
+      suffix = app.currentMonth
+    }
+    if (!txns.length) {
       app.showMessage('Sem movimentações para exportar.', 'error')
       return
     }
     const headers = ['id', 'date', 'type', 'category', 'method', 'description', 'amount', 'recurrence', 'recurrenceEnd', 'installments', 'createdAt']
-    const rows = transactions.value.map(t => [t.id, t.date, t.type, t.category, t.method, t.description, t.amount.toFixed(2), t.recurrence || 'none', t.recurrenceEnd || '', t.installments || 0, t.createdAt])
+    const rows = txns.map(t => [t.id, t.date, t.type, t.category, t.method, t.description, t.amount.toFixed(2), t.recurrence || 'none', t.recurrenceEnd || '', t.installments || 0, t.createdAt])
     const csv = [headers.join(',')].concat(rows.map(r => r.map(csvEscape).join(','))).join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
-    const a = Object.assign(document.createElement('a'), { href: url, download: `movimentacoes-${app.currentMonth}.csv` })
+    const a = Object.assign(document.createElement('a'), { href: url, download: `movimentacoes-${suffix}.csv` })
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
     app.showMessage('CSV exportado.', 'success')
   }

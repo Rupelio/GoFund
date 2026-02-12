@@ -24,6 +24,7 @@ const csvImporting = ref(false)
 const csvAccountId = ref('')
 const showGlobalLoader = ref(true)
 const showDropZone = ref(false)
+const showExportMenu = ref(false)
 let dragCounter = 0
 
 // CSV Account Dialog (Step 1 — before preview)
@@ -129,6 +130,15 @@ function handleKeydown(e) {
 
 onMounted(() => document.addEventListener('keydown', handleKeydown))
 onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
+
+// Close export menu on outside click
+function handleDocClick(e) {
+  if (showExportMenu.value && !e.target.closest('.export-dropdown') && !e.target.closest('[data-export-toggle]')) {
+    showExportMenu.value = false
+  }
+}
+onMounted(() => document.addEventListener('click', handleDocClick, true))
+onUnmounted(() => document.removeEventListener('click', handleDocClick, true))
 
 // ── CSV Import (two-step: account dialog → preview) ────
 function triggerCsvImport() {
@@ -242,7 +252,13 @@ async function confirmImport() {
         <AppTopbar>
           <template #actions>
             <button class="btn ghost tiny" type="button" title="Enviar resumo do mês por email" @click="data.sendMonthlySummary"><i class="fa-solid fa-chart-pie"></i> Resumo</button>
-            <button class="btn ghost tiny" type="button" @click="data.exportCsv">Exportar CSV</button>
+            <div style="position:relative;display:inline-block">
+              <button class="btn ghost tiny" type="button" @click="showExportMenu = !showExportMenu">Exportar CSV ▾</button>
+              <div v-if="showExportMenu" class="export-dropdown" style="position:absolute;top:100%;right:0;z-index:50;min-width:160px;margin-top:4px;background:var(--surface-alt);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);overflow:hidden" @click="showExportMenu = false">
+                <button type="button" style="display:flex;align-items:center;gap:8px;width:100%;padding:0.5rem 0.75rem;border:0;background:transparent;color:var(--text);font-size:0.85rem;cursor:pointer;text-align:left" @mouseenter="$event.target.style.background='var(--surface-hover, rgba(255,255,255,.08))'" @mouseleave="$event.target.style.background='transparent'" @click="data.exportCsv('month')"><i class="fa-solid fa-calendar-day"></i> Mês atual</button>
+                <button type="button" style="display:flex;align-items:center;gap:8px;width:100%;padding:0.5rem 0.75rem;border:0;background:transparent;color:var(--text);font-size:0.85rem;cursor:pointer;text-align:left" @mouseenter="$event.target.style.background='var(--surface-hover, rgba(255,255,255,.08))'" @mouseleave="$event.target.style.background='transparent'" @click="data.exportCsv('all')"><i class="fa-solid fa-calendar"></i> Todos os meses</button>
+              </div>
+            </div>
             <button class="btn ghost tiny" type="button" @click="triggerCsvImport">Importar</button>
             <input ref="csvInput" type="file" accept=".csv" hidden @change="handleCsvFile" />
             <button class="btn ghost tiny danger-text" type="button" title="Apagar todas as movimentações" @click="handleDeleteAll">🗑️ Apagar Tudo</button>

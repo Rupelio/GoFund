@@ -47,6 +47,7 @@ import {
   formatCurrency, round2, getChartTheme, withAlpha, getChartColors,
   getMonthSequence, getMonthlyTransactions, getMonthShift, formatMonthLabel, getYAxisConfig, formatAxisValue,
   formatGoalDueDate, getTodayDate, getInvestmentStats, getClosingCash,
+  getInvestmentCategories, isInvestmentRedemption,
 } from '../helpers.js'
 
 const data = useDataStore()
@@ -149,13 +150,16 @@ function renderCashFlowChart() {
   const days = new Date(y, m, 0).getDate()
   const daily = new Array(days).fill(0)
   const dailyPatri = new Array(days).fill(0)
+  const invCats = getInvestmentCategories(data.transactions)
   transactions.forEach(t => {
     const d = Number(t.date.slice(8, 10)) - 1
     if (d >= 0 && d < days) {
       if (t.type === 'transferencia') return
       if (t.method === 'credito') return
+      const isRedempt = isInvestmentRedemption(t, invCats)
       daily[d] += (t.type === 'receita' ? 1 : -1) * t.amount
-      if (t.type === 'receita') dailyPatri[d] += t.amount
+      // Investment round-trips (application / redemption) don't change patrimônio
+      if (t.type === 'receita' && !isRedempt) dailyPatri[d] += t.amount
       else if (t.type === 'despesa') dailyPatri[d] -= t.amount
     }
   })

@@ -298,6 +298,19 @@ function shouldSkipMonthlyExpansionForTransfer(t) {
 }
 
 // ── Investment Yield Helpers ───────────────────────────────
+
+/** Set of lower-cased categories that have at least one type=investimento txn */
+export function getInvestmentCategories(allTransactions) {
+  return new Set(
+    allTransactions.filter(t => t.type === 'investimento').map(t => t.category.toLowerCase())
+  )
+}
+
+/** True when a receita transaction is actually a return of invested capital (resgate) */
+export function isInvestmentRedemption(t, investCategories) {
+  return t.type === 'receita' && investCategories.has(t.category.toLowerCase())
+}
+
 export function getInvestmentYields() {
   try { return JSON.parse(localStorage.getItem('gofund_investment_yields') || '{}') } catch { return {} }
 }
@@ -388,6 +401,7 @@ export function getClosingCash(allTransactions, targetMonth) {
 
 export function getMonthlySummaryMap(allTransactions, selectedMonth) {
   const map = new Map()
+  const investCats = getInvestmentCategories(allTransactions)
   const historyMonths = getMonthSequence(selectedMonth, -5, 0)
   historyMonths.forEach(m => {
     const expanded = getMonthlyTransactions(allTransactions, m)
@@ -395,7 +409,8 @@ export function getMonthlySummaryMap(allTransactions, selectedMonth) {
       if (t.type === 'transferencia') return
       if (t.method === 'credito') return
       const c = map.get(m) || { income: 0, expense: 0, investment: 0 }
-      if (t.type === 'receita') c.income += t.amount
+      if (t.type === 'receita' && !isInvestmentRedemption(t, investCats)) c.income += t.amount
+      else if (t.type === 'receita' && isInvestmentRedemption(t, investCats)) c.investment -= t.amount
       else if (t.type === 'despesa') c.expense += t.amount
       else if (t.type === 'investimento') c.investment += t.amount
       map.set(m, c)
