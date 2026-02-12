@@ -493,7 +493,11 @@ export const useDataStore = defineStore('data', () => {
 
       if (isCreditCardCsv) {
         const desc = rawDesc.toLowerCase()
-        if (rawAmount <= 0 && desc.includes('pagamento recebido')) { skipped++; return }
+        // Internal credit-card operations:
+        // - "pagamento recebido" (payment/credit on bill)
+        // - negative "parcelamento de fatura" line (internal refinance adjustment)
+        // Keep positive "parcelamento de fatura" entries as real installments.
+        if (rawAmount <= 0 && (desc.includes('pagamento recebido') || desc.includes('parcelamento de fatura'))) { skipped++; return }
         if (!inferredType) inferredType = rawAmount >= 0 ? 'despesa' : 'receita'
         if (!inferredMethod) inferredMethod = 'credito'
         if (!inferredCategory) inferredCategory = inferCategoryFromDescription(desc, { method: inferredMethod, type: inferredType })
