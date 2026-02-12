@@ -311,27 +311,42 @@ export function setInvestmentYield(category, rate) {
 export function getInvestmentStats(allTransactions) {
   const allInvestments = allTransactions.filter(t => t.type === 'investimento')
   const totalApplied = allInvestments.reduce((s, t) => s + t.amount, 0)
-  // Subtract withdrawals (resgate = receita with investment-related category)
+  // Identify withdrawal categories (receita with same category as investments)
   const investCategories = new Set(allInvestments.map(t => t.category.toLowerCase()))
   const withdrawals = allTransactions.filter(t =>
     t.type === 'receita' && investCategories.has(t.category.toLowerCase())
   )
   const totalWithdrawn = withdrawals.reduce((s, t) => s + t.amount, 0)
-  const totalInvested = Math.max(0, round2(totalApplied - totalWithdrawn))
+
+  // Calculate net invested per category chronologically.
+  // Each withdrawal consumes at most the current balance (principal only).
+  // Any excess (yield) is income, not a reduction in invested capital.
+  const categoryBalance = {}
+  const events = []
+  allInvestments.forEach(t => events.push({ date: t.date + '|0', cat: t.category, amount: t.amount, type: 'apply' }))
+  withdrawals.forEach(t => events.push({ date: t.date + '|1', cat: t.category, amount: t.amount, type: 'withdraw' }))
+  events.sort((a, b) => a.date.localeCompare(b.date))
+  for (const e of events) {
+    const key = e.cat.toLowerCase()
+    if (!categoryBalance[key]) categoryBalance[key] = { balance: 0, catName: e.cat }
+    if (e.type === 'apply') {
+      categoryBalance[key].balance += e.amount
+    } else {
+      // Withdrawal caps at current balance (extra = yield/income)
+      categoryBalance[key].balance = Math.max(0, categoryBalance[key].balance - e.amount)
+    }
+  }
+
+  const totalInvested = round2(Object.values(categoryBalance).reduce((s, c) => s + c.balance, 0))
   if (totalInvested <= 0) return { totalInvested: 0, totalApplied: round2(totalApplied), totalWithdrawn: round2(totalWithdrawn), avgMonthlyRate: 0, estimatedMonthlyYield: 0 }
+
   const yields = getInvestmentYields()
-  const groups = {}
-  allInvestments.forEach(t => {
-    if (!groups[t.category]) groups[t.category] = 0
-    groups[t.category] += t.amount
-  })
-  // Subtract withdrawals per category for accurate yield calculation
-  withdrawals.forEach(t => {
-    const key = Object.keys(groups).find(k => k.toLowerCase() === t.category.toLowerCase())
-    if (key) groups[key] = Math.max(0, groups[key] - t.amount)
-  })
   let weightedSum = 0
-  Object.entries(groups).forEach(([cat, total]) => { weightedSum += (yields[cat] || 0) * total })
+  for (const [key, c] of Object.entries(categoryBalance)) {
+    if (c.balance > 0) {
+      weightedSum += (yields[c.catName] || 0) * c.balance
+    }
+  }
   const avgMonthlyRate = weightedSum / totalInvested / 100
   return {
     totalInvested,
