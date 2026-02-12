@@ -739,7 +739,7 @@ export const useDataStore = defineStore('data', () => {
         if (rawAmount <= 0 && (desc.includes('pagamento recebido') || desc.includes('parcelamento de fatura'))) { skipped++; return }
         if (!inferredType) inferredType = rawAmount >= 0 ? 'despesa' : 'receita'
         if (!inferredMethod) inferredMethod = 'credito'
-        if (!inferredCategory) inferredCategory = inferCategoryFromDescription(desc, { method: inferredMethod, type: inferredType })
+        if (!inferredCategory) inferredCategory = inferCategoryFromDescription(desc, { method: inferredMethod, type: inferredType, amount: rawAmount })
       } else if (isBankCsv) {
         const desc = rawDesc.toLowerCase()
         if (!inferredType) {
@@ -756,7 +756,7 @@ export const useDataStore = defineStore('data', () => {
           else if (desc.includes('transferência') || desc.includes('transferencia')) inferredMethod = 'transferencia'
           else inferredMethod = 'pix'
         }
-        if (!inferredCategory) inferredCategory = inferCategoryFromDescription(desc, { method: inferredMethod, type: inferredType })
+        if (!inferredCategory) inferredCategory = inferCategoryFromDescription(desc, { method: inferredMethod, type: inferredType, amount: rawAmount })
       }
 
       const descLower = rawDesc.toLowerCase()

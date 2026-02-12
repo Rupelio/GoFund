@@ -638,9 +638,12 @@ export function inferCategoryFromDescription(desc, context = {}) {
   const normalizedDesc = String(desc || '').toLowerCase()
   const method = normalizeString(context.method || '').toLowerCase()
   const type = normalizeString(context.type || '').toLowerCase()
+  const numericAmount = Number(context.amount) || 0
+  const normalizedDescAscii = normalizedDesc.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 
   if (type === 'despesa' && CARD_BILL_REGEX.test(normalizedDesc)) return 'Fatura'
   if (isSubscriptionDescription(normalizedDesc)) return 'Assinaturas'
+  if (isLikelySalaryIncome(normalizedDescAscii, type, method, '', Math.abs(numericAmount))) return 'Salário'
 
   const rules = [
     [/supermercado|condor|angeloni|festval|carrefour|atacad[ãa]o|big\b|assa[ií]|walmart|p[ãa]o de a[çc][úu]car|extra\s*hiper|zaffari|nacional|koch|bistek|giassi|fort\s*atacadista|sams?\s*club|makro|maxxi|mini\s*mercado|mini\s*pre[çc]o|dia\s*supermercado/, 'Supermercado'],
@@ -655,7 +658,7 @@ export function inferCategoryFromDescription(desc, context = {}) {
     [/[óo]tica|[óo]culos|lentes|vision/, 'Saúde'],
     [/\bcopel\b|\bcopel\s*dis\b|\bsanepar\b|\bcompagas\b|\bcomgas\b|\bnaturgy\b|\bgasmig\b|\bbahiagas\b|\bsulgas\b|\bceg\b|\bceg\s*rio\b|\benel\b|\bedp\b|\bcpfl\b|\bcemig\b|\bceee\b|\bcelesc\b|\bcoelba\b|\bequatorial\b|\bneoenergia\b|\blight\b|\bcelpe\b|\bcosern\b|\benergisa\b|\brge\b|\belektro\b|\beletropaulo\b|\bampla\b|\bsabesp\b|\bsaneago\b|\bcopasa\b|\bcaesb\b|\bcedae\b|\bcorsan\b|\bcagece\b|\bcompesa\b|\bembasa\b|\bsanasa\b|\bsaneatins\b|\bigu[aá]\s*saneamento\b|\bbrk\s*ambiental\b|\b[aá]guas?\s*do\s*rio\b|\b[aá]guas?\s*de\s*manaus\b|\benergia\b|\beletric[ai]\b|\b[aá]gua\b|\bg[aá]s\b|\bsaneamento\b|\bconta\s*de\s*(?:luz|energia|[aá]gua|g[aá]s)\b|\bfatura\s*de\s*(?:energia|[aá]gua|g[aá]s)\b/, 'Contas'],
     [/aluguel|condom[ií]nio|iptu|seguro\s*resid/, 'Moradia'],
-    [/internet|telefone|\bclaro\b|\bvivo\b|\btim(?:\*|\b)|\boi\b|\bnet\b|\bsky\b|brisanet|\bdesktop\b|\balgar\b|sercomtel/, 'Internet'],
+    [/internet|telefone|banda\s*larga|fibra(?:\s*[óo]ptica)?|provedor(?:a)?\s*de\s*internet|wi[\s-]?fi|\bclaro\b|\bvivo\b|\btim(?:\*|\b)|\boi\b|\bnet\b|\bsky\b|brisanet|\bdesktop\b|\balgar\b|sercomtel|\bnio\b|\bsumicity\b|\bunifique\b|\bvalenet\b|\balares?\b|\bligga\b|\bvtal\b|\bservi[cç]os?\s+de\s+rede\b|\brede\s+nordeste\b|\btelecom\b/, 'Internet'],
     [/universidade|faculdade|escola|\bcurso\b|\bcultura\b|livraria|associa[çã]o.*cultura|apc|saraiva|amazon\s*kindle/, 'Educação'],
     [/udemy|coursera|alura|rocketseat|origamid|domestika|duolingo/, 'Educação'],
     [/cinema|teatro|steam|playstation|xbox|\bgame\b|nuuvem|sharkcraft|ingresso/, 'Lazer'],
@@ -714,9 +717,13 @@ function isLikelySalaryIncome(normalizedDesc, normalizedType, normalizedMethod, 
   if (normalizedCategory === 'salario') return true
   if (/\bsalario\b|\bfolha\b|\bpro\s*labore\b|\bholerite\b|\bpagamento\s+de\s+salario\b|\badiantamento\s+salarial\b/.test(normalizedDesc)) return true
   const isPixOrTransfer = normalizedMethod === 'pix' || normalizedMethod === 'transferencia'
-  const isReceived = /\btransfer\w*\s+recebida\b|\bpix\b/.test(normalizedDesc)
+  if (!isPixOrTransfer) return false
+  const isReceived = /\b(?:transfer\w*|pix|ted|doc)\s*(?:recebid[ao]|creditad[ao])\b|\brecebid[ao]\s+pelo\s+pix\b/.test(normalizedDesc)
+  if (!isReceived) return false
   const hasCnpj = /\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/.test(normalizedDesc)
-  return isPixOrTransfer && isReceived && hasCnpj && numericAmount >= 1000
+  if (!hasCnpj || numericAmount < 1000) return false
+  const nonSalaryHints = /\b(?:estorno|reembolso|devolu(?:cao|c)|resgate|rendimento|emprestimo|venda|cashback)\b/.test(normalizedDesc)
+  return !nonSalaryHints
 }
 
 // ── CSV Import Fingerprinting ──────────────────────────────

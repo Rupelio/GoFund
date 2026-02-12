@@ -38,6 +38,7 @@ const csvNewAccountColor = ref('#5e7fff')
 const csvEarliestDate = ref('')
 const csvPendingFile = ref(null)
 const csvSuggestedAccount = ref(null)
+const csvImportNotice = ref(null)
 
 const csvFormattedEarliestDate = computed(() => {
   if (!csvEarliestDate.value) return 'o extrato'
@@ -61,6 +62,14 @@ const csvSelectedAccountSource = computed(() => (
 ))
 const csvBatchGlobalValidation = computed(() => data.validateCsvBatchForAccount(csvPendingFile.value, ''))
 const csvBatchSelectedValidation = computed(() => data.validateCsvBatchForAccount(csvPendingFile.value, csvSelectedAccountId.value))
+
+function clearCsvImportNotice() {
+  csvImportNotice.value = null
+}
+
+function setCsvImportNotice(tone, text) {
+  csvImportNotice.value = { tone, text }
+}
 
 async function handleDeleteAll() {
   const ok = await showConfirm({ title: 'Apagar todas as movimentações?', message: `Você tem ${data.transactions.length} movimentação(ões). Essa ação é irreversível.`, tone: 'danger' })
@@ -168,6 +177,7 @@ function handleCsvFile(e) {
 
 async function startCsvImportBatch(files) {
   try {
+    clearCsvImportNotice()
     // Read and parse CSV files without account ID yet
     const result = await data.importCsvBatchCore(files, undefined)
     csvPendingFile.value = result
@@ -268,6 +278,7 @@ function csvAccountCancel() {
   showCsvAccountDialog.value = false
   csvPendingFile.value = null
   csvSuggestedAccount.value = null
+  clearCsvImportNotice()
 }
 
 async function recomputeCsvPreviewFromParsed() {
@@ -281,6 +292,7 @@ async function recomputeCsvPreviewFromParsed() {
 async function confirmImport() {
   if (!csvPreview.value) return
   csvImporting.value = true
+  clearCsvImportNotice()
   let shouldResetImportState = false
   try {
     const { result, upgradeResult } = await data.executeImport(csvPreview.value, csvAccountId.value || undefined)
@@ -300,13 +312,18 @@ async function confirmImport() {
         ? `Importacao concluida apos instabilidade de gateway. ${partialImported} movimentacao(oes) confirmada(s).`
         : 'Importacao concluida apos instabilidade de gateway.'
       app.showMessage(msg, 'success')
+      setCsvImportNotice('success', msg)
       shouldResetImportState = true
       return
     }
     if (partialImported > 0 || remaining > 0) {
-      app.showMessage(`Importacao interrompida por instabilidade (${err.message || 'gateway'}). Ja importadas: ${partialImported}. Pendentes: ${remaining}. Clique em Importar novamente para concluir.`, 'error')
+      const notice = `Importacao interrompida por instabilidade (${err.message || 'gateway'}). Ja importadas: ${partialImported}. Pendentes: ${remaining}. Clique em Importar novamente para concluir.`
+      setCsvImportNotice('warning', notice)
+      app.showMessage(notice, 'error')
     } else {
-      app.showMessage(`Erro na importacao: ${err.message}`, 'error')
+      const notice = `Erro na importacao: ${err.message}`
+      setCsvImportNotice('error', notice)
+      app.showMessage(notice, 'error')
     }
   } finally {
     csvImporting.value = false
@@ -315,6 +332,7 @@ async function confirmImport() {
       csvPreview.value = null
       csvPendingFile.value = null
       csvSuggestedAccount.value = null
+      clearCsvImportNotice()
     }
   }
 }
@@ -468,6 +486,23 @@ async function confirmImport() {
           <button class="dialog-close-btn" type="button" @click="showCsvImport = false">&times;</button>
         </header>
         <div class="dialog-body">
+          <div
+            v-if="csvImportNotice?.text"
+            :style="{
+              padding: '0.55rem 0.7rem',
+              borderRadius: '8px',
+              border: `1px solid ${csvImportNotice.tone === 'success' ? 'var(--success)' : (csvImportNotice.tone === 'warning' ? 'var(--warning)' : 'var(--danger)')}`,
+              background: csvImportNotice.tone === 'success' ? 'rgba(25,135,84,0.08)' : (csvImportNotice.tone === 'warning' ? 'rgba(255,193,7,0.12)' : 'rgba(220,53,69,0.08)'),
+              color: csvImportNotice.tone === 'success' ? 'var(--success)' : (csvImportNotice.tone === 'warning' ? 'var(--warning)' : 'var(--danger)'),
+              fontSize: '0.82rem',
+              marginBottom: '0.6rem',
+            }"
+          >
+            <p style="margin:0;display:flex;align-items:center;gap:0.4rem">
+              <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+              {{ csvImportNotice.text }}
+            </p>
+          </div>
           <p v-if="csvPendingFilesSummary.length > 1"><strong>{{ csvPendingFilesSummary.length }}</strong> arquivos no lote.</p>
           <p v-if="csvAccountId"><strong>Conta:</strong> {{ (data.accounts.find(a => a.id === csvAccountId) || {}).name }}</p>
           <p><strong>{{ csvPreview.toImport.length }}</strong> novas movimentações para importar.</p>
