@@ -206,6 +206,19 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_type_check;
 			ALTER TABLE accounts ADD CONSTRAINT accounts_type_check CHECK (type IN ('corrente', 'poupanca', 'carteira', 'investimento', 'credito'));
 		END $$`,
+		// Repair imported rows affected by transfer-type overclassification:
+		// some PIX entries were imported as type=transferencia when they were
+		// real inflow/outflow movements (receita/despesa).
+		`UPDATE transactions
+		 SET type = CASE
+			WHEN description ~* '(recebid[ao]|creditad[ao]|entrada)' THEN 'receita'
+			WHEN description ~* '(enviad[ao]|debitad[ao]|saida)' THEN 'despesa'
+			ELSE type
+		 END
+		 WHERE type = 'transferencia'
+		   AND import_batch_id IS NOT NULL
+		   AND method IN ('pix', 'transferencia')
+		   AND (lower(category) = 'transferência' OR lower(category) = 'transferencia')`,
 		// Migrate legacy initial-balance transactions to a supported method.
 		`UPDATE transactions
 		 SET method = 'transferencia'

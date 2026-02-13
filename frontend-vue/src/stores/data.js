@@ -773,10 +773,6 @@ export const useDataStore = defineStore('data', () => {
         if (!inferredCategory) inferredCategory = inferCategoryFromDescription(desc, { method: inferredMethod, type: inferredType, amount: rawAmount })
       }
 
-      const normalizedInferredCategory = normalizeCategory(String(inferredCategory || '')).toLowerCase()
-      const isTransferCategory = normalizedInferredCategory === 'transferência' || normalizedInferredCategory === 'transferencia'
-      if (isBankCsv && isTransferCategory) inferredType = 'transferencia'
-
       const descLower = rawDesc.toLowerCase()
       if (inferredType === 'despesa' && CARD_BILL_REGEX.test(descLower)) {
         inferredCategory = 'Fatura'
