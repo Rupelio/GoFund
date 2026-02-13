@@ -53,50 +53,50 @@ func (h *SummaryHandler) SendMonthlySummary(w http.ResponseWriter, r *http.Reque
 	}
 	items := expandTransactionsForMonth(allItems, month)
 
-	// Calculate summary — cash-basis: exclude method=credito from KPIs (matches dashboard logic)
-	var income, expenses, investment, creditCard float64
+	// Calculate summary — cash-basis: exclude credit-card and transfer-like rows.
+	var incomeCents, expensesCents, investmentCents, creditCardCents int64
 	catMap := map[string]float64{}
 
 	for _, t := range items {
 		// Credit-card purchases are informational only (cash-basis accounting)
 		if t.Method == "credito" {
 			if t.Type == "despesa" {
-				creditCard += t.Amount
+				creditCardCents += domain.ToCents(t.Amount)
 			}
+			continue
+		}
+		if !domain.IsCashAffectingDTO(t) {
 			continue
 		}
 		switch t.Type {
 		case "receita":
-			income += t.Amount
+			incomeCents += domain.ToCents(t.Amount)
 		case "despesa":
-			expenses += t.Amount
+			expensesCents += domain.ToCents(t.Amount)
 			catMap[t.Category] += t.Amount
 		case "investimento":
-			investment += t.Amount
-			// transferencia is intentionally ignored (neutral)
+			investmentCents += domain.ToCents(t.Amount)
 		}
 	}
 
 	// Calculate net worth from ALL transactions (not just this month)
-	var totalIncome, totalExpense, totalInvestment float64
-	allReal := make([]domain.TransactionDTO, 0, len(allItems))
+	var totalIncomeCents, totalExpenseCents int64
 	for _, t := range allItems {
-		if t.Method == "credito" {
+		if !domain.IsCashAffectingDTO(t) {
 			continue
 		}
-		allReal = append(allReal, t)
-	}
-	for _, t := range allReal {
 		switch t.Type {
 		case "receita":
-			totalIncome += t.Amount
+			totalIncomeCents += domain.ToCents(t.Amount)
 		case "despesa":
-			totalExpense += t.Amount
-		case "investimento":
-			totalInvestment += t.Amount
+			totalExpenseCents += domain.ToCents(t.Amount)
 		}
 	}
-	netWorth := totalIncome - totalExpense
+	netWorth := domain.FromCents(totalIncomeCents - totalExpenseCents)
+	income := domain.FromCents(incomeCents)
+	expenses := domain.FromCents(expensesCents)
+	investment := domain.FromCents(investmentCents)
+	creditCard := domain.FromCents(creditCardCents)
 
 	// Sort categories by amount descending, keep top 5
 	type catEntry struct {

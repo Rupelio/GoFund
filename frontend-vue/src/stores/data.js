@@ -15,9 +15,9 @@ import {
   parseFlexibleNumber, detectCsvDelimiter, parseCsvLine, csvEscape,
   readFileAsText, normalizeCsvDate, extractInstallmentInfo, adjustToInstallmentStartDate,
   isSubscriptionDescription, shouldInferMonthlyBankRecurrence,
-  inferCategoryFromDescription, CARD_BILL_REGEX, SUBSCRIPTION_REGEX,
+  inferCategoryFromDescription, inferTransferDirection, inferTransferCounterparty, normalizeTransferDirection, CARD_BILL_REGEX, SUBSCRIPTION_REGEX,
   txnFingerprint, txnMonthlyFingerprint, txnInstallmentFingerprint, normalizeDescriptionForFingerprint, toPayload, isValidDate,
-  getProjectionBasis, getAccountBalance,
+  getProjectionBasis, getAccountBalance, isCashAffectingTransaction,
 } from '../helpers.js'
 
 export const useDataStore = defineStore('data', () => {
@@ -103,7 +103,7 @@ export const useDataStore = defineStore('data', () => {
 
   const dashboardData = computed(() => {
     const monthly = monthlyTransactions(app.currentMonth)
-    const cashBasis = monthly.filter(t => t.method !== 'credito')
+    const cashBasis = monthly.filter(isCashAffectingTransaction)
     const income = cashBasis.filter(t => t.type === 'receita').reduce((s, t) => s + t.amount, 0)
     const expense = cashBasis.filter(t => t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
     const investment = cashBasis.filter(t => t.type === 'investimento').reduce((s, t) => s + t.amount, 0)
@@ -116,14 +116,13 @@ export const useDataStore = defineStore('data', () => {
   const investmentStats = computed(() => getInvestmentStats(transactions.value))
 
   const netWorth = computed(() => {
-    const real = transactions.value.filter(t => t.method !== 'credito')
+    const real = transactions.value.filter(isCashAffectingTransaction)
     const totalIncome = real.filter(t => t.type === 'receita').reduce((s, t) => s + t.amount, 0)
     const totalExpense = real.filter(t => t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
     const totalInvestment = real.filter(t => t.type === 'investimento').reduce((s, t) => s + t.amount, 0)
     const cash = totalIncome - totalExpense - totalInvestment
-    const goalsSaved = goals.value.reduce((s, g) => s + g.current, 0)
     const stats = investmentStats.value
-    return round2(cash + stats.totalInvested + goalsSaved)
+    return round2(cash + stats.totalInvested)
   })
 
   // ── Transaction CRUD ───────────────────────────────────
@@ -713,6 +712,8 @@ export const useDataStore = defineStore('data', () => {
       recurrence: findHeaderIdx(headers, ['recurrence', 'recorrencia']),
       recurrenceEnd: findHeaderIdx(headers, ['recurrenceend', 'recurrence_end', 'fimrecorrencia']),
       installments: findHeaderIdx(headers, ['installments', 'parcelas']),
+      transferDirection: findHeaderIdx(headers, ['transferdirection', 'transfer_direction', 'direcaotransferencia', 'direction', 'direcao']),
+      transferCounterparty: findHeaderIdx(headers, ['transfercounterparty', 'transfer_counterparty', 'contrapartetransferencia', 'favorecido', 'counterparty']),
       createdAt: findHeaderIdx(headers, ['createdat', 'created_at']),
     }
     const hasAmountColumn = idx.amount >= 0
@@ -782,6 +783,27 @@ export const useDataStore = defineStore('data', () => {
       let inferredInstallments = idx.installments >= 0 ? Number(cols[idx.installments]) || 0 : 0
       let inferredRecurrence = idx.recurrence >= 0 ? String(cols[idx.recurrence] || 'none') : 'none'
       let inferredRecurrenceEnd = idx.recurrenceEnd >= 0 ? String(cols[idx.recurrenceEnd] || '') : ''
+      let inferredTransferDirection = idx.transferDirection >= 0 ? String(cols[idx.transferDirection] || '') : ''
+      const normalizedCategory = normalizeCategory(inferredCategory).toLowerCase()
+      const isTransferCategory = normalizedCategory === 'transferência' || normalizedCategory === 'transferencia'
+      const isTransferType = normalizeString(inferredType).toLowerCase() === 'transferencia'
+      if (!normalizeTransferDirection(inferredTransferDirection) && (isTransferCategory || isTransferType)) {
+        const amountDirection = rawAmount > 0 ? 'in' : rawAmount < 0 ? 'out' : ''
+        inferredTransferDirection = inferTransferDirection(rawDesc, inferredType, {
+          method: inferredMethod,
+          category: inferredCategory,
+          amount: rawAmount,
+          direction: amountDirection,
+        })
+      }
+      let inferredTransferCounterparty = idx.transferCounterparty >= 0 ? String(cols[idx.transferCounterparty] || '') : ''
+      if (!inferredTransferCounterparty && normalizeTransferDirection(inferredTransferDirection)) {
+        inferredTransferCounterparty = inferTransferCounterparty(rawDesc)
+      }
+      if (!isTransferCategory && !isTransferType) {
+        inferredTransferDirection = ''
+        inferredTransferCounterparty = ''
+      }
       const installmentInfo = extractInstallmentInfo(rawDesc)
       if (installmentInfo) {
         if (inferredInstallments <= 0) inferredInstallments = installmentInfo.total
@@ -807,6 +829,8 @@ export const useDataStore = defineStore('data', () => {
         recurrence: inferredRecurrence,
         recurrenceEnd: inferredRecurrenceEnd,
         installments: inferredInstallments,
+        transferDirection: inferredTransferDirection,
+        transferCounterparty: inferredTransferCounterparty,
         createdAt: idx.createdAt >= 0 ? String(cols[idx.createdAt] || new Date().toISOString()) : new Date().toISOString(),
       })
       if (isValidDate(originalParsedDate)) item._csvOriginalDate = originalParsedDate
@@ -935,6 +959,11 @@ export const useDataStore = defineStore('data', () => {
       recurrence: normalizeString(existing.recurrence || 'none').toLowerCase() || 'none',
       recurrenceEnd: normalizeString(existing.recurrenceEnd || ''),
       installments: Number(existing.installments) || 0, accountId: normalizeString(existing.accountId || ''),
+      transferDirection: normalizeTransferDirection(existing.transferDirection || ''),
+      transferCounterparty: normalizeString(existing.transferCounterparty || ''),
+      transferGroupId: normalizeString(existing.transferGroupId || ''),
+      transferFromAccountId: normalizeString(existing.transferFromAccountId || ''),
+      transferToAccountId: normalizeString(existing.transferToAccountId || ''),
     }
     const ii = Number(incoming.installments) || 0
     const ir = normalizeString(incoming.recurrence || 'none').toLowerCase() || 'none'
@@ -948,6 +977,21 @@ export const useDataStore = defineStore('data', () => {
     if (payload.installments <= 1 && payload.recurrence === 'none' && ir === 'monthly') {
       payload.recurrence = 'monthly'
       if (incoming.recurrenceEnd && isValidDate(incoming.recurrenceEnd)) payload.recurrenceEnd = incoming.recurrenceEnd
+    }
+    if (!payload.transferDirection) {
+      payload.transferDirection = normalizeTransferDirection(incoming.transferDirection || '')
+    }
+    if (!payload.transferCounterparty) {
+      payload.transferCounterparty = normalizeString(incoming.transferCounterparty || '')
+    }
+    if (!payload.transferFromAccountId) {
+      payload.transferFromAccountId = normalizeString(incoming.transferFromAccountId || '')
+    }
+    if (!payload.transferToAccountId) {
+      payload.transferToAccountId = normalizeString(incoming.transferToAccountId || '')
+    }
+    if (!payload.transferGroupId) {
+      payload.transferGroupId = normalizeString(incoming.transferGroupId || '')
     }
     return payload
   }
@@ -998,7 +1042,14 @@ export const useDataStore = defineStore('data', () => {
       } catch (e) {
         throw new Error(`Falha ao processar ${fileName}. ${e?.message || ''}`.trim())
       }
-      if (accountId) parsed.items.forEach(item => { item.accountId = accountId })
+      if (accountId) {
+        parsed.items.forEach(item => {
+          item.accountId = accountId
+          const direction = normalizeTransferDirection(item.transferDirection)
+          if (direction === 'out' && !item.transferFromAccountId) item.transferFromAccountId = accountId
+          if (direction === 'in' && !item.transferToAccountId) item.transferToAccountId = accountId
+        })
+      }
       parsedByFile.push({ file, parsed })
     }
 
@@ -1044,7 +1095,12 @@ export const useDataStore = defineStore('data', () => {
         const rawItems = Array.isArray(entry?.items) ? entry.items : []
         const items = rawItems.map(item => {
           const withAccount = { ...item }
-          if (accountId) withAccount.accountId = accountId
+          if (accountId) {
+            withAccount.accountId = accountId
+            const direction = normalizeTransferDirection(withAccount.transferDirection)
+            if (direction === 'out' && !withAccount.transferFromAccountId) withAccount.transferFromAccountId = accountId
+            if (direction === 'in' && !withAccount.transferToAccountId) withAccount.transferToAccountId = accountId
+          }
           return toPayload(withAccount, false)
         }).filter(item => isValidDate(item.date) && Number(item.amount) > 0)
         return { name: fileName, items }

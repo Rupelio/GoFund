@@ -72,11 +72,6 @@ const routes = [
         component: () => import('../views/ReportsView.vue'),
       },
       {
-        path: 'reconciliation',
-        name: 'reconciliation',
-        component: () => import('../views/ReconciliationView.vue'),
-      },
-      {
         path: 'installments',
         name: 'installments',
         component: () => import('../views/InstallmentsView.vue'),

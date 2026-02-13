@@ -82,17 +82,22 @@ func MustUUID() string {
 // Returns the parsed date, optional recurrence end date, the normalised payload, and an error.
 func ValidateTransactionPayload(p TransactionPayload) (time.Time, *time.Time, TransactionPayload, error) {
 	n := TransactionPayload{
-		ID:            NormalizeString(p.ID),
-		Date:          NormalizeString(p.Date),
-		Type:          NormalizeLower(p.Type),
-		Category:      NormalizeString(p.Category),
-		Method:        NormalizeLower(p.Method),
-		Description:   NormalizeString(p.Description),
-		Amount:        p.Amount,
-		Recurrence:    NormalizeLower(p.Recurrence),
-		RecurrenceEnd: NormalizeString(p.RecurrenceEnd),
-		Installments:  p.Installments,
-		AccountID:     NormalizeString(p.AccountID),
+		ID:                    NormalizeString(p.ID),
+		Date:                  NormalizeString(p.Date),
+		Type:                  NormalizeLower(p.Type),
+		Category:              NormalizeString(p.Category),
+		Method:                NormalizeLower(p.Method),
+		Description:           NormalizeString(p.Description),
+		Amount:                p.Amount,
+		Recurrence:            NormalizeLower(p.Recurrence),
+		RecurrenceEnd:         NormalizeString(p.RecurrenceEnd),
+		Installments:          p.Installments,
+		AccountID:             NormalizeString(p.AccountID),
+		TransferDirection:     NormalizeTransferDirection(p.TransferDirection),
+		TransferCounterparty:  NormalizeString(p.TransferCounterparty),
+		TransferGroupID:       NormalizeString(p.TransferGroupID),
+		TransferFromAccountID: NormalizeString(p.TransferFromAccountID),
+		TransferToAccountID:   NormalizeString(p.TransferToAccountID),
 	}
 
 	if n.Date == "" {
@@ -140,6 +145,26 @@ func ValidateTransactionPayload(p TransactionPayload) (time.Time, *time.Time, Tr
 	}
 	if n.Recurrence == "monthly" && n.Installments > 0 {
 		return time.Time{}, nil, TransactionPayload{}, NewValidationError("recurrence and installments are mutually exclusive")
+	}
+
+	if NormalizeString(p.TransferDirection) != "" && n.TransferDirection == "" {
+		return time.Time{}, nil, TransactionPayload{}, NewValidationError("transferDirection must be in or out")
+	}
+	if n.TransferDirection == "" {
+		if n.TransferFromAccountID != "" && n.TransferToAccountID == "" {
+			n.TransferDirection = "out"
+		} else if n.TransferToAccountID != "" && n.TransferFromAccountID == "" {
+			n.TransferDirection = "in"
+		}
+	}
+	if n.TransferDirection == "out" && n.TransferFromAccountID == "" && n.AccountID != "" {
+		n.TransferFromAccountID = n.AccountID
+	}
+	if n.TransferDirection == "in" && n.TransferToAccountID == "" && n.AccountID != "" {
+		n.TransferToAccountID = n.AccountID
+	}
+	if n.TransferFromAccountID != "" && n.TransferToAccountID != "" && n.TransferFromAccountID == n.TransferToAccountID {
+		return time.Time{}, nil, TransactionPayload{}, NewValidationError("transferFromAccountId and transferToAccountId must be different")
 	}
 
 	return dateValue, recurrenceEnd, n, nil

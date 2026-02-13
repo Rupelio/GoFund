@@ -74,7 +74,7 @@ import {
   formatCurrency, round2, getChartTheme, withAlpha, getChartColors,
   getMonthSequence, getMonthlyTransactions, getMonthShift, formatMonthLabel, getYAxisConfig, formatAxisValue,
   formatGoalDueDate, getTodayDate, getInvestmentStats, getClosingCash,
-  getInvestmentCategories, isInvestmentRedemption,
+  getInvestmentCategories, isInvestmentRedemption, isCashAffectingTransaction,
 } from '../helpers.js'
 
 const data = useDataStore()
@@ -151,7 +151,7 @@ const allAlerts = computed(() => {
   const month = app.currentMonth
   const monthly = data.monthlyTransactions(month)
   const expenses = {}
-  monthly.filter(t => (t.type === 'despesa' || t.type === 'investimento') && t.method !== 'credito')
+  monthly.filter(t => isCashAffectingTransaction(t) && (t.type === 'despesa' || t.type === 'investimento'))
     .forEach(t => { expenses[t.category.toLowerCase()] = (expenses[t.category.toLowerCase()] || 0) + t.amount })
 
   // Budget alerts
@@ -186,8 +186,8 @@ const allAlerts = computed(() => {
     if (t.recurrenceEnd && t.recurrenceEnd.slice(0, 7) < month) return false
     return true
   })
-  const recurringExpenses = upcomingRecurring.filter(t => t.type === 'despesa')
-  const recurringIncome = upcomingRecurring.filter(t => t.type === 'receita')
+  const recurringExpenses = upcomingRecurring.filter(t => isCashAffectingTransaction(t) && t.type === 'despesa')
+  const recurringIncome = upcomingRecurring.filter(t => isCashAffectingTransaction(t) && t.type === 'receita')
   if (recurringExpenses.length > 0) {
     const total = recurringExpenses.reduce((s, t) => s + t.amount, 0)
     alerts.push({ id: 'recurring-expenses', type: 'info', icon: '<i class="fa-solid fa-rotate"></i>', text: `${recurringExpenses.length} despesas recorrentes este mês (${formatCurrency(total)})` })
@@ -213,8 +213,7 @@ function renderCashFlowChart() {
   transactions.forEach(t => {
     const d = Number(t.date.slice(8, 10)) - 1
     if (d >= 0 && d < days) {
-      if (t.type === 'transferencia') return
-      if (t.method === 'credito') return
+      if (!isCashAffectingTransaction(t)) return
       const isRedempt = isInvestmentRedemption(t, invCats)
       daily[d] += (t.type === 'receita' ? 1 : -1) * t.amount
       // Investment round-trips (application / redemption) don't change patrimônio
@@ -269,7 +268,7 @@ function renderExpenseByCategoryChart() {
   if (expenseChart) expenseChart.destroy()
   const theme = getChartTheme()
   const monthly = data.monthlyTransactions(app.currentMonth)
-  const expenses = monthly.filter(t => t.type === 'despesa')
+  const expenses = monthly.filter(t => t.type === 'despesa' && isCashAffectingTransaction(t))
   const groups = {}
   expenses.forEach(t => { groups[t.category] = (groups[t.category] || 0) + t.amount })
   const sorted = Object.entries(groups).sort((a, b) => b[1] - a[1])

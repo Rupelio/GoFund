@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="transactions-page">
     <section class="panel-grid">
       <!-- Transaction Form -->
@@ -43,6 +43,32 @@
               <select v-model="form.accountId">
                 <option value="">Sem conta</option>
                 <option v-for="acc in data.accounts" :key="acc.id" :value="acc.id">{{ acc.name }}</option>
+              </select>
+            </label>
+          </div>
+          <div v-if="showTransferFields" class="row-2">
+            <label>Direção da transferência
+              <select v-model="form.transferDirection">
+                <option value="">Não informado</option>
+                <option value="out">Saída</option>
+                <option value="in">Entrada</option>
+              </select>
+            </label>
+            <label>Contraparte
+              <input v-model="form.transferCounterparty" type="text" maxlength="120" placeholder="Ex: Nubank / Pessoa / Empresa" />
+            </label>
+          </div>
+          <div v-if="showTransferFields" class="row-2">
+            <label>Conta origem
+              <select v-model="form.transferFromAccountId">
+                <option value="">Não vincular</option>
+                <option v-for="acc in data.accounts" :key="`from-${acc.id}`" :value="acc.id">{{ acc.name }}</option>
+              </select>
+            </label>
+            <label>Conta destino
+              <select v-model="form.transferToAccountId">
+                <option value="">Não vincular</option>
+                <option v-for="acc in data.accounts" :key="`to-${acc.id}`" :value="acc.id">{{ acc.name }}</option>
               </select>
             </label>
           </div>
@@ -178,11 +204,11 @@
           <button :disabled="data.tablePage <= 1" @click="data.tablePage--">&lt;</button>
           <template v-if="pagStart > 1">
             <button @click="data.tablePage = 1">1</button>
-            <span class="page-info">…</span>
+            <span class="page-info">â€¦</span>
           </template>
           <button v-for="p in pagRange" :key="p" :class="{ 'is-active': p === data.tablePage }" @click="data.tablePage = p">{{ p }}</button>
           <template v-if="pagEnd < totalPages">
-            <span class="page-info">…</span>
+            <span class="page-info">â€¦</span>
             <button @click="data.tablePage = totalPages">{{ totalPages }}</button>
           </template>
           <button :disabled="data.tablePage >= totalPages" @click="data.tablePage++">&gt;</button>
@@ -240,7 +266,10 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useDataStore } from '../stores/data.js'
 import { useAppStore } from '../stores/app.js'
-import { formatDate, formatCurrency, getMethodLabel, getTodayDate, normalizeCategory, defaultCategoryTypes } from '../helpers.js'
+import {
+  formatDate, formatCurrency, getMethodLabel, getTodayDate,
+  normalizeCategory, defaultCategoryTypes, normalizeString, normalizeTransferDirection,
+} from '../helpers.js'
 
 const data = useDataStore()
 const app = useAppStore()
@@ -253,6 +282,7 @@ const confirmDeleteItem = ref(null)
 const form = ref({
   description: '', amount: null, date: getTodayDate(), category: '',
   type: 'despesa', method: 'pix', accountId: '', installments: null, recurrenceEnd: '',
+  transferDirection: '', transferCounterparty: '', transferFromAccountId: '', transferToAccountId: '',
 })
 
 const recurrenceMode = ref('none')
@@ -265,6 +295,10 @@ const categoryOptions = computed(() => {
 })
 
 const totalPages = computed(() => Math.max(1, Math.ceil(data.filteredTransactions.length / data.tablePageSize)))
+const showTransferFields = computed(() => {
+  const category = normalizeString(form.value.category).toLowerCase()
+  return form.value.type === 'transferencia' || category === 'transferência' || category === 'transferencia'
+})
 
 const paginatedTransactions = computed(() => {
   const start = (data.tablePage - 1) * data.tablePageSize
@@ -309,6 +343,7 @@ const pagRange = computed(() => {
 })
 
 function handleSubmit() {
+  const direction = normalizeTransferDirection(form.value.transferDirection)
   const payload = {
     description: form.value.description, amount: form.value.amount, date: form.value.date,
     category: normalizeCategory(form.value.category), type: form.value.type, method: form.value.method,
@@ -317,18 +352,38 @@ function handleSubmit() {
     recurrenceEnd: recurrenceMode.value === 'monthly' ? form.value.recurrenceEnd : '',
     installments: recurrenceMode.value === 'installments' ? (form.value.installments || 0) : 0,
   }
+  if (showTransferFields.value) {
+    payload.transferDirection = direction || undefined
+    payload.transferCounterparty = normalizeString(form.value.transferCounterparty) || undefined
+    payload.transferFromAccountId = normalizeString(form.value.transferFromAccountId) || undefined
+    payload.transferToAccountId = normalizeString(form.value.transferToAccountId) || undefined
+    if (!payload.transferFromAccountId && !payload.transferToAccountId && payload.accountId) {
+      if (direction === 'out') payload.transferFromAccountId = payload.accountId
+      if (direction === 'in') payload.transferToAccountId = payload.accountId
+    }
+  }
   data.saveTransaction(payload).then(ok => { if (ok) resetForm() })
 }
 
 function resetForm() {
-  form.value = { description: '', amount: null, date: getTodayDate(), category: '', type: 'despesa', method: 'pix', accountId: '', installments: null, recurrenceEnd: '' }
+  form.value = {
+    description: '', amount: null, date: getTodayDate(), category: '', type: 'despesa', method: 'pix', accountId: '',
+    installments: null, recurrenceEnd: '', transferDirection: '', transferCounterparty: '', transferFromAccountId: '', transferToAccountId: '',
+  }
   recurrenceMode.value = 'none'
   data.editingTransactionId = null
 }
 
 function editTransaction(t) {
   data.editingTransactionId = t.id
-  form.value = { description: t.description, amount: t.amount, date: t.date, category: t.category, type: t.type, method: t.method, accountId: t.accountId || '', installments: t.installments || null, recurrenceEnd: t.recurrenceEnd || '' }
+  form.value = {
+    description: t.description, amount: t.amount, date: t.date, category: t.category, type: t.type, method: t.method,
+    accountId: t.accountId || '', installments: t.installments || null, recurrenceEnd: t.recurrenceEnd || '',
+    transferDirection: normalizeTransferDirection(t.transferDirection) || '',
+    transferCounterparty: t.transferCounterparty || '',
+    transferFromAccountId: t.transferFromAccountId || '',
+    transferToAccountId: t.transferToAccountId || '',
+  }
   if (t.installments > 1) recurrenceMode.value = 'installments'
   else if (t.recurrence === 'monthly') recurrenceMode.value = 'monthly'
   else recurrenceMode.value = 'none'
@@ -342,7 +397,7 @@ function doDelete() { data.deleteTransaction(confirmDeleteItem.value.id); confir
 async function createQuickCategory() {
   if (!quickCategoryName.value.trim()) return
   const cat = normalizeCategory(quickCategoryName.value)
-  await data.saveCategory({ name: cat, type: 'todas', icon: '📁' })
+  await data.saveCategory({ name: cat, type: 'todas', icon: 'ðŸ“' })
   form.value.category = cat
   quickCategoryName.value = ''
   showQuickCategory.value = false
@@ -371,4 +426,17 @@ watch(() => form.value.category, (newCat) => {
     if (dt !== 'todas') form.value.type = dt
   }
 })
+
+watch(showTransferFields, (enabled) => {
+  if (enabled) return
+  form.value.transferDirection = ''
+  form.value.transferCounterparty = ''
+  form.value.transferFromAccountId = ''
+  form.value.transferToAccountId = ''
+})
 </script>
+
+
+
+
+

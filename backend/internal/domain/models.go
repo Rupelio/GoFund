@@ -31,17 +31,22 @@ type ChangePasswordPayload struct {
 // ── Transaction ──────────────────────────────────────────────
 
 type TransactionPayload struct {
-	ID            string  `json:"id,omitempty"`
-	Date          string  `json:"date"`
-	Type          string  `json:"type"`
-	Category      string  `json:"category"`
-	Method        string  `json:"method"`
-	Description   string  `json:"description"`
-	Amount        float64 `json:"amount"`
-	Recurrence    string  `json:"recurrence"`
-	RecurrenceEnd string  `json:"recurrenceEnd,omitempty"`
-	Installments  int     `json:"installments"`
-	AccountID     string  `json:"accountId,omitempty"`
+	ID                    string  `json:"id,omitempty"`
+	Date                  string  `json:"date"`
+	Type                  string  `json:"type"`
+	Category              string  `json:"category"`
+	Method                string  `json:"method"`
+	Description           string  `json:"description"`
+	Amount                float64 `json:"amount"`
+	Recurrence            string  `json:"recurrence"`
+	RecurrenceEnd         string  `json:"recurrenceEnd,omitempty"`
+	Installments          int     `json:"installments"`
+	AccountID             string  `json:"accountId,omitempty"`
+	TransferDirection     string  `json:"transferDirection,omitempty"`
+	TransferCounterparty  string  `json:"transferCounterparty,omitempty"`
+	TransferGroupID       string  `json:"transferGroupId,omitempty"`
+	TransferFromAccountID string  `json:"transferFromAccountId,omitempty"`
+	TransferToAccountID   string  `json:"transferToAccountId,omitempty"`
 }
 
 type TransactionImportPayload struct {
@@ -97,19 +102,24 @@ type TransactionImportJobDTO struct {
 }
 
 type TransactionDTO struct {
-	ID            string  `json:"id"`
-	Date          string  `json:"date"`
-	Type          string  `json:"type"`
-	Category      string  `json:"category"`
-	Method        string  `json:"method"`
-	Description   string  `json:"description"`
-	Amount        float64 `json:"amount"`
-	Recurrence    string  `json:"recurrence"`
-	RecurrenceEnd string  `json:"recurrenceEnd,omitempty"`
-	Installments  int     `json:"installments"`
-	AccountID     string  `json:"accountId,omitempty"`
-	CreatedAt     string  `json:"createdAt"`
-	UpdatedAt     string  `json:"updatedAt"`
+	ID                    string  `json:"id"`
+	Date                  string  `json:"date"`
+	Type                  string  `json:"type"`
+	Category              string  `json:"category"`
+	Method                string  `json:"method"`
+	Description           string  `json:"description"`
+	Amount                float64 `json:"amount"`
+	Recurrence            string  `json:"recurrence"`
+	RecurrenceEnd         string  `json:"recurrenceEnd,omitempty"`
+	Installments          int     `json:"installments"`
+	AccountID             string  `json:"accountId,omitempty"`
+	TransferDirection     string  `json:"transferDirection,omitempty"`
+	TransferCounterparty  string  `json:"transferCounterparty,omitempty"`
+	TransferGroupID       string  `json:"transferGroupId,omitempty"`
+	TransferFromAccountID string  `json:"transferFromAccountId,omitempty"`
+	TransferToAccountID   string  `json:"transferToAccountId,omitempty"`
+	CreatedAt             string  `json:"createdAt"`
+	UpdatedAt             string  `json:"updatedAt"`
 }
 
 // ── Budget ───────────────────────────────────────────────────

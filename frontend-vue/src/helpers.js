@@ -47,9 +47,106 @@ const SUBSCRIPTION_KEYWORDS = [
 export const SUBSCRIPTION_REGEX = new RegExp(SUBSCRIPTION_KEYWORDS.join("|"), "i")
 
 export const PIX_TRANSFER_HINT_REGEX = /\b(?:enviado|enviada|recebido|recebida|devolu(?:c|ç)ao|transfer(?:encia)?|ted|doc|cpf|cnpj|chave|favorecido)\b/i
+const TRANSFER_SIGNAL_REGEX = /\b(?:transfer\w*|pix|ted|doc|chave\s*pix|ag[êe]ncia:|conta:)\b/i
+const TRANSFER_RECEIVED_REGEX = /\b(?:recebid[ao]|creditad[ao]|entrada|depositad[ao])\b/i
+const TRANSFER_SENT_REGEX = /\b(?:enviad[ao]|debitad[ao]|saida|transfer[êe]ncia\s+enviad[ao])\b/i
+const CPF_CNPJ_REGEX = /\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2}/
 
 // ── String Utilities ───────────────────────────────────────
 export function normalizeString(v) { return String(v || '').replace(/\s+/g, ' ').trim() }
+function normalizeAscii(v) { return normalizeString(v).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') }
+
+export function normalizeTransferDirection(direction) {
+  const v = normalizeAscii(direction)
+  if (!v) return ''
+  if (v === 'in' || v === 'entrada' || v === 'recebida' || v === 'recebido') return 'in'
+  if (v === 'out' || v === 'saida' || v === 'enviada' || v === 'enviado') return 'out'
+  return ''
+}
+
+export function inferTransferCounterparty(description) {
+  const raw = normalizeString(description)
+  if (!raw) return ''
+
+  const pieces = raw.split(' - ').map(v => normalizeString(v)).filter(Boolean)
+  for (let i = 1; i < pieces.length; i++) {
+    const part = pieces[i]
+    if (!part || part.length < 3) continue
+    if (CPF_CNPJ_REGEX.test(part)) continue
+    if (/^(?:ag[êe]ncia|conta|bco|banco|ip\s*\(\d{4}\))/i.test(part)) continue
+    return part.slice(0, 120)
+  }
+
+  const direct = raw.match(/(?:pix|transfer[êe]ncia)[^-\n]*-\s*(.+?)\s*-\s*(?:\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2})/i)
+  if (direct && direct[1]) return normalizeString(direct[1]).slice(0, 120)
+  return ''
+}
+
+export function inferTransferDirection(description, type, context = {}) {
+  const normalizedDesc = normalizeAscii(description)
+  const normalizedType = normalizeAscii(type)
+  const normalizedMethod = normalizeAscii(context.method)
+  const normalizedCategory = normalizeAscii(context.category)
+  const prefilled = normalizeTransferDirection(context.direction || context.transferDirection)
+  if (prefilled) return prefilled
+
+  const hasTransferSignal = normalizedCategory === 'transferencia'
+    || normalizedMethod === 'transferencia'
+    || TRANSFER_SIGNAL_REGEX.test(normalizedDesc)
+
+  if (!hasTransferSignal && normalizedType !== 'transferencia') return ''
+  if (TRANSFER_RECEIVED_REGEX.test(normalizedDesc)) return 'in'
+  if (TRANSFER_SENT_REGEX.test(normalizedDesc)) return 'out'
+
+  const numericAmount = Number(context.amount)
+  if (Number.isFinite(numericAmount) && numericAmount < 0) return 'out'
+  if (Number.isFinite(numericAmount) && numericAmount > 0 && normalizedType === 'receita') return 'in'
+  if (normalizedType === 'receita') return 'in'
+  if (normalizedType === 'despesa' || normalizedType === 'investimento') return 'out'
+  return ''
+}
+
+export function isTransferLikeTransaction(t) {
+  if (!t || typeof t !== 'object') return false
+  const type = normalizeAscii(t.type)
+  if (type === 'transferencia') return true
+
+  const direction = normalizeTransferDirection(t.transferDirection || t.transfer_direction)
+  if (direction) return true
+
+  const transferFrom = normalizeString(t.transferFromAccountId || t.transfer_from_account_id)
+  const transferTo = normalizeString(t.transferToAccountId || t.transfer_to_account_id)
+  if (transferFrom || transferTo) return true
+
+  if (normalizeString(t.transferCounterparty || t.transfer_counterparty)) return true
+
+  const category = normalizeAscii(t.category)
+  if (category === 'transferencia') return true
+
+  return false
+}
+
+export function isCashAffectingTransaction(t) {
+  if (!t || typeof t !== 'object') return false
+  const type = normalizeAscii(t.type)
+  if (type !== 'receita' && type !== 'despesa' && type !== 'investimento') return false
+  if (normalizeAscii(t.method) === 'credito') return false
+  return true
+}
+
+export function getSignedCashImpact(t) {
+  if (!isCashAffectingTransaction(t)) return 0
+  const amount = Number(t.amount) || 0
+  return normalizeAscii(t.type) === 'receita' ? amount : -amount
+}
+
+export function toCents(value) {
+  return Math.round((Number(value) || 0) * 100)
+}
+
+export function fromCents(cents) {
+  return round2((Number(cents) || 0) / 100)
+}
 
 export function normalizeCategory(v) {
   const n = normalizeString(v)
@@ -129,8 +226,15 @@ export function getMonthShift(base, offset) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-export function sumByType(transactions, type) {
-  return transactions.filter(t => t.type === type).reduce((s, t) => s + t.amount, 0)
+export function sumByType(transactions, type, options = {}) {
+  const normalizedType = normalizeAscii(type)
+  const excludeTransferLike = options.excludeTransferLike === true
+  const excludeCredit = options.excludeCredit === true
+  return transactions
+    .filter(t => normalizeAscii(t.type) === normalizedType)
+    .filter(t => !excludeCredit || normalizeAscii(t.method) !== 'credito')
+    .filter(t => !excludeTransferLike || !isTransferLikeTransaction(t))
+    .reduce((s, t) => s + (Number(t.amount) || 0), 0)
 }
 
 // ── Normalizers ────────────────────────────────────────────
@@ -153,7 +257,25 @@ export function normalizeTransaction(t) {
   const category = normalizeCategory(String(t?.category || ''))
   const method = normalizeString(String(t?.method || '')).toLowerCase()
   const amount = Number(t?.amount)
+  const accountId = normalizeString(String(t?.accountId || t?.account_id || ''))
   let recurrence = normalizeString(String(t?.recurrence || 'none')).toLowerCase()
+  const normalizedCategoryAscii = normalizeAscii(category)
+  const shouldInferTransferMeta = type === 'transferencia'
+    || normalizedCategoryAscii === 'transferencia'
+    || normalizeTransferDirection(t?.transferDirection || t?.transfer_direction) !== ''
+  let transferDirection = normalizeTransferDirection(t?.transferDirection || t?.transfer_direction)
+  if (!transferDirection && shouldInferTransferMeta) {
+    transferDirection = inferTransferDirection(description, type, { method, category, amount })
+  }
+  let transferCounterparty = normalizeString(String(t?.transferCounterparty || t?.transfer_counterparty || ''))
+  if (!transferCounterparty && transferDirection) transferCounterparty = inferTransferCounterparty(description)
+  const transferGroupId = normalizeString(String(t?.transferGroupId || t?.transfer_group_id || ''))
+  let transferFromAccountId = normalizeString(String(t?.transferFromAccountId || t?.transfer_from_account_id || ''))
+  let transferToAccountId = normalizeString(String(t?.transferToAccountId || t?.transfer_to_account_id || ''))
+  if (!transferFromAccountId && !transferToAccountId && accountId) {
+    if (transferDirection === 'out') transferFromAccountId = accountId
+    if (transferDirection === 'in') transferToAccountId = accountId
+  }
 
   if (t?._csvImport && (recurrence === '' || recurrence === 'none') && installments <= 1) {
     // CSV imports never auto-infer monthly recurrence.
@@ -176,7 +298,12 @@ export function normalizeTransaction(t) {
     recurrence,
     recurrenceEnd: normalizeString(String(t?.recurrenceEnd || t?.recurrence_end || '')),
     installments,
-    accountId: normalizeString(String(t?.accountId || t?.account_id || '')),
+    accountId,
+    transferDirection,
+    transferCounterparty,
+    transferGroupId,
+    transferFromAccountId,
+    transferToAccountId,
   }
 }
 
@@ -372,7 +499,7 @@ export function getInvestmentStats(allTransactions) {
 
 // ── Cash / Patrimônio helpers ──────────────────────────────
 export function getClosingCash(allTransactions, targetMonth) {
-  let cash = 0
+  let cashCents = 0
   const months = new Set()
   allTransactions.forEach(t => {
     const m = t.date.slice(0, 7)
@@ -391,12 +518,10 @@ export function getClosingCash(allTransactions, targetMonth) {
   sortedMonths.forEach(m => {
     const expanded = getMonthlyTransactions(allTransactions, m)
     expanded.forEach(t => {
-      if (t.type === 'transferencia') return
-      if (t.method === 'credito') return
-      cash += t.type === 'receita' ? t.amount : -t.amount
+      cashCents += toCents(getSignedCashImpact(t))
     })
   })
-  return round2(cash)
+  return fromCents(cashCents)
 }
 
 export function getMonthlySummaryMap(allTransactions, selectedMonth) {
@@ -405,8 +530,7 @@ export function getMonthlySummaryMap(allTransactions, selectedMonth) {
   historyMonths.forEach(m => {
     const expanded = getMonthlyTransactions(allTransactions, m)
     expanded.forEach(t => {
-      if (t.type === 'transferencia') return
-      if (t.method === 'credito') return
+      if (!isCashAffectingTransaction(t)) return
       const c = map.get(m) || { income: 0, expense: 0, investment: 0 }
       if (t.type === 'receita') c.income += t.amount
       else if (t.type === 'despesa') c.expense += t.amount
@@ -498,17 +622,39 @@ export function getYAxisConfig(theme, dataArrays) {
 export function getAccountBalance(accountId, accounts, transactions) {
   const account = accounts.find(a => a.id === accountId)
   if (!account) return 0
-  let balance = 0
-  const linked = transactions.filter(t => t.accountId === accountId)
-  linked.forEach(t => {
-    if (t.type === 'transferencia') return
-    if (t.method === 'credito') return
-    balance += t.type === 'receita' ? t.amount : -t.amount
+  let balanceCents = 0
+  const linked = transactions.filter(t => {
+    if (t.accountId === accountId) return true
+    const from = normalizeString(t.transferFromAccountId || t.transfer_from_account_id)
+    const to = normalizeString(t.transferToAccountId || t.transfer_to_account_id)
+    return from === accountId || to === accountId
   })
-  if (balance === 0 && (account.initialBalance || 0) > 0 && linked.length === 0) {
-    balance = account.initialBalance
+  linked.forEach(t => {
+    if (normalizeAscii(t.method) === 'credito') return
+
+    if (isTransferLikeTransaction(t)) {
+      const direction = normalizeTransferDirection(t.transferDirection || t.transfer_direction)
+      const from = normalizeString(t.transferFromAccountId || t.transfer_from_account_id)
+      const to = normalizeString(t.transferToAccountId || t.transfer_to_account_id)
+      const amountCents = toCents(t.amount)
+
+      if (from && from === accountId) balanceCents -= amountCents
+      if (to && to === accountId) balanceCents += amountCents
+      if (!from && !to) {
+        if (direction === 'out') balanceCents -= amountCents
+        else if (direction === 'in') balanceCents += amountCents
+      }
+      return
+    }
+
+    balanceCents += toCents(normalizeAscii(t.type) === 'receita' ? t.amount : -Number(t.amount || 0))
+  })
+  if (linked.length === 0) {
+    balanceCents = toCents(account.initialBalance || 0)
+  } else if (account.initialBalance) {
+    balanceCents += toCents(account.initialBalance)
   }
-  return round2(balance)
+  return fromCents(balanceCents)
 }
 
 // ── CSV Helpers ────────────────────────────────────────────
@@ -767,6 +913,11 @@ export function toPayload(t, preserveId) {
     recurrenceEnd: t.recurrenceEnd || '', installments: Number(t.installments) || 0,
   }
   if (t.accountId) p.accountId = t.accountId
+  if (normalizeTransferDirection(t.transferDirection)) p.transferDirection = normalizeTransferDirection(t.transferDirection)
+  if (normalizeString(t.transferCounterparty)) p.transferCounterparty = normalizeString(t.transferCounterparty)
+  if (normalizeString(t.transferGroupId)) p.transferGroupId = normalizeString(t.transferGroupId)
+  if (normalizeString(t.transferFromAccountId)) p.transferFromAccountId = normalizeString(t.transferFromAccountId)
+  if (normalizeString(t.transferToAccountId)) p.transferToAccountId = normalizeString(t.transferToAccountId)
   if (preserveId && t.id) p.id = t.id
   return p
 }

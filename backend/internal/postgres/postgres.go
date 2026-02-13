@@ -151,6 +151,11 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			UNIQUE (user_id, name)
 		)`,
 		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS account_id UUID REFERENCES accounts(id) ON DELETE SET NULL`,
+		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transfer_direction TEXT`,
+		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transfer_counterparty TEXT`,
+		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transfer_group_id TEXT`,
+		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transfer_from_account_id UUID REFERENCES accounts(id) ON DELETE SET NULL`,
+		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transfer_to_account_id UUID REFERENCES accounts(id) ON DELETE SET NULL`,
 		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS import_batch_id UUID`,
 		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS import_job_id UUID`,
 		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS import_file_name TEXT`,
@@ -185,6 +190,9 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		`CREATE INDEX IF NOT EXISTS idx_categories_user ON categories (user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts (user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions (account_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_transactions_transfer_from ON transactions (transfer_from_account_id) WHERE transfer_from_account_id IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_transactions_transfer_to ON transactions (transfer_to_account_id) WHERE transfer_to_account_id IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_transactions_transfer_group ON transactions (user_id, transfer_group_id) WHERE transfer_group_id IS NOT NULL`,
 		`CREATE INDEX IF NOT EXISTS idx_transactions_import_batch ON transactions (user_id, import_batch_id) WHERE import_batch_id IS NOT NULL`,
 		`CREATE INDEX IF NOT EXISTS idx_import_jobs_user_created ON transaction_import_jobs (user_id, created_at DESC)`,
 		`CREATE TABLE IF NOT EXISTS password_reset_tokens (
@@ -201,11 +209,48 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_type_check;
 			ALTER TABLE transactions ADD CONSTRAINT transactions_type_check CHECK (type IN ('receita', 'despesa', 'investimento', 'transferencia'));
 		END $$`,
+		// Ensure transfer direction accepts only known values.
+		`DO $$ BEGIN
+			ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_transfer_direction_check;
+			ALTER TABLE transactions ADD CONSTRAINT transactions_transfer_direction_check CHECK (transfer_direction IS NULL OR transfer_direction IN ('in', 'out'));
+		END $$`,
 		// Migrate account type CHECK to include 'credito'
 		`DO $$ BEGIN
 			ALTER TABLE accounts DROP CONSTRAINT IF EXISTS accounts_type_check;
 			ALTER TABLE accounts ADD CONSTRAINT accounts_type_check CHECK (type IN ('corrente', 'poupanca', 'carteira', 'investimento', 'credito'));
 		END $$`,
+		// Optional backfill: classify old transfer-like rows as transferencia when category/method/description agree.
+		`UPDATE transactions
+		 SET type = 'transferencia'
+		 WHERE type IN ('receita', 'despesa')
+		   AND (lower(category) = 'transferência' OR lower(category) = 'transferencia')
+		   AND method IN ('pix', 'transferencia')
+		   AND description ~* '(transfer|pix|ted|doc|ag[eê]ncia:|conta:)'
+		   AND description !~* '(sal[aá]rio|folha|pro\\s*labore|honor[aá]rio|fatura|boleto|internet|energia|[aá]gua|g[aá]s)'`,
+		// Backfill transfer direction from description/type.
+		`UPDATE transactions
+		 SET transfer_direction = CASE
+			WHEN description ~* '(recebid[ao]|creditad[ao]|entrada|depositad[ao])' THEN 'in'
+			WHEN description ~* '(enviad[ao]|debitad[ao]|saida)' THEN 'out'
+			WHEN type = 'receita' THEN 'in'
+			WHEN type = 'despesa' THEN 'out'
+			ELSE transfer_direction
+		 END
+		 WHERE transfer_direction IS NULL
+		   AND (type = 'transferencia' OR lower(category) = 'transferência' OR lower(category) = 'transferencia')`,
+		// Backfill linked account side for transfer rows.
+		`UPDATE transactions
+		 SET transfer_from_account_id = account_id
+		 WHERE transfer_from_account_id IS NULL
+		   AND account_id IS NOT NULL
+		   AND transfer_direction = 'out'
+		   AND (type = 'transferencia' OR lower(category) = 'transferência' OR lower(category) = 'transferencia')`,
+		`UPDATE transactions
+		 SET transfer_to_account_id = account_id
+		 WHERE transfer_to_account_id IS NULL
+		   AND account_id IS NOT NULL
+		   AND transfer_direction = 'in'
+		   AND (type = 'transferencia' OR lower(category) = 'transferência' OR lower(category) = 'transferencia')`,
 		// Repair imported rows affected by transfer-type overclassification:
 		// some PIX entries were imported as type=transferencia when they were
 		// real inflow/outflow movements (receita/despesa).

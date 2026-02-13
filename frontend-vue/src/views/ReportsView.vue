@@ -42,6 +42,45 @@
         </div>
       </div>
 
+      <h3 class="section-title" style="margin-top:1rem">Fechamento Mensal (Auditável)</h3>
+      <div class="report-grid">
+        <div class="report-card">
+          <p>Saldo Calculado (Sistema)</p>
+          <div class="report-value">{{ formatCurrency(cur.balance) }}</div>
+          <div class="report-change neutral">Base: transações em caixa (sem crédito e sem transferência)</div>
+        </div>
+        <div class="report-card">
+          <p>Saldo do Extrato (Informado)</p>
+          <input
+            v-model="statementBalanceInput"
+            type="number"
+            step="0.01"
+            placeholder="Ex: 322.53"
+            style="width:100%;margin-top:.35rem;background:var(--surface-alt);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:.5rem .65rem"
+          />
+          <div class="report-change neutral">Valor opcional para fechamento bancário do mês.</div>
+        </div>
+        <div class="report-card">
+          <p>Divergência de Fechamento</p>
+          <div class="report-value" :class="statementDiffClass">
+            {{ statementDiff === null ? '—' : formatCurrency(statementDiff) }}
+          </div>
+          <div class="report-change" :class="statementDiffClass">
+            {{ statementDiffMessage }}
+          </div>
+        </div>
+      </div>
+
+      <template v-if="divergenceItems.length">
+        <div class="report-category-list" style="margin-top:.75rem">
+          <div v-for="item in divergenceItems" :key="item.id" class="report-category-row">
+            <span>{{ item.label }}</span>
+            <span class="report-change down">{{ item.count }}</span>
+          </div>
+        </div>
+      </template>
+      <p v-else class="empty-state" style="margin-top:.75rem">Sem divergências estruturais detectadas neste mês.</p>
+
       <!-- Category Breakdown -->
       <template v-if="sortedCats.length">
         <h3 class="section-title">Despesas por Categoria</h3>
@@ -119,6 +158,7 @@ import {
   formatCurrency, round2, getMonthShift, getMonthSequence,
   getMonthlyTransactions, sumByType, formatMonthLabel, getChartTheme,
   withAlpha, getYAxisConfig, formatAxisValue, getClosingCash, getInvestmentStats,
+  isCashAffectingTransaction, isTransferLikeTransaction, normalizeTransferDirection, normalizeString,
 } from '../helpers.js'
 
 const data = useDataStore()
@@ -128,6 +168,31 @@ const reportPanel = ref(null)
 const patrimonioCanvas = ref(null)
 let patrimonioChart = null
 const compareMonth = ref('')
+const statementBalanceInput = ref('')
+
+function statementBalanceKey(month) {
+  return `gofund_statement_balance_${month}`
+}
+
+function loadStatementBalance(month) {
+  try {
+    return localStorage.getItem(statementBalanceKey(month)) || ''
+  } catch {
+    return ''
+  }
+}
+
+function saveStatementBalance(month, value) {
+  try {
+    if (!normalizeString(value)) {
+      localStorage.removeItem(statementBalanceKey(month))
+    } else {
+      localStorage.setItem(statementBalanceKey(month), String(value))
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
 
 // ── Monthly Report KPIs ──────────────────────
 function changeInfo(cur, prev) {
@@ -139,8 +204,8 @@ function arrow(cls) { return cls === 'up' ? '↑' : cls === 'down' ? '↓' : '�
 
 const curTxAll = computed(() => getMonthlyTransactions(data.transactions, app.currentMonth))
 const prevTxAll = computed(() => getMonthlyTransactions(data.transactions, getMonthShift(app.currentMonth, -1)))
-const curTx = computed(() => curTxAll.value.filter(t => t.method !== 'credito'))
-const prevTx = computed(() => prevTxAll.value.filter(t => t.method !== 'credito'))
+const curTx = computed(() => curTxAll.value.filter(isCashAffectingTransaction))
+const prevTx = computed(() => prevTxAll.value.filter(isCashAffectingTransaction))
 
 const cur = computed(() => {
   const income = sumByType(curTx.value, 'receita')
@@ -172,6 +237,45 @@ const balChange = computed(() => changeInfo(cur.value.balance, prev.value.balanc
 const expChangeInverted = computed(() => expChange.value.cls === 'up' ? 'down' : expChange.value.cls === 'down' ? 'up' : 'neutral')
 const ccChangeInverted = computed(() => ccChange.value.cls === 'up' ? 'down' : ccChange.value.cls === 'down' ? 'up' : 'neutral')
 const totOutChangeInverted = computed(() => totOutChange.value.cls === 'up' ? 'down' : totOutChange.value.cls === 'down' ? 'up' : 'neutral')
+
+const statementBalance = computed(() => {
+  const raw = normalizeString(statementBalanceInput.value).replace(',', '.')
+  if (!raw) return null
+  const value = Number(raw)
+  return Number.isFinite(value) ? value : null
+})
+const statementDiff = computed(() => {
+  if (statementBalance.value === null) return null
+  return round2(statementBalance.value - cur.value.balance)
+})
+const statementDiffClass = computed(() => {
+  if (statementDiff.value === null) return 'neutral'
+  if (Math.abs(statementDiff.value) < 0.01) return 'up'
+  return statementDiff.value > 0 ? 'up' : 'down'
+})
+const statementDiffMessage = computed(() => {
+  if (statementDiff.value === null) return 'Informe o saldo do extrato para calcular a divergência.'
+  if (Math.abs(statementDiff.value) < 0.01) return 'Fechamento conciliado (diferença zero).'
+  return 'Diferença entre saldo do banco e saldo calculado pelo sistema.'
+})
+
+const transferMonthRows = computed(() => curTxAll.value.filter(isTransferLikeTransaction))
+const divergenceItems = computed(() => {
+  const rows = transferMonthRows.value
+  const withoutDirection = rows.filter(t => normalizeTransferDirection(t.transferDirection || t.transfer_direction) === '').length
+  const withoutLink = rows.filter(t => {
+    const from = normalizeString(t.transferFromAccountId || t.transfer_from_account_id || '')
+    const to = normalizeString(t.transferToAccountId || t.transfer_to_account_id || '')
+    return !from && !to && !normalizeString(t.accountId || '')
+  }).length
+  const legacyType = rows.filter(t => normalizeString(t.type).toLowerCase() !== 'transferencia').length
+
+  return [
+    { id: 'missing-direction', label: 'Transferências sem direção (in/out)', count: withoutDirection },
+    { id: 'missing-account-link', label: 'Transferências sem vínculo de conta (origem/destino)', count: withoutLink },
+    { id: 'legacy-type', label: 'Transferências em tipo legado (receita/despesa)', count: legacyType },
+  ].filter(item => item.count > 0)
+})
 
 // Category breakdown
 const curCats = computed(() => {
@@ -225,7 +329,7 @@ function renderPatrimonioChart() {
 // ── Comparative Mode ─────────────────────────
 function buildSums(month) {
   const all = getMonthlyTransactions(data.transactions, month)
-  const cash = all.filter(t => t.method !== 'credito')
+  const cash = all.filter(isCashAffectingTransaction)
   const income = sumByType(cash, 'receita')
   const expense = sumByType(cash, 'despesa')
   const investment = sumByType(cash, 'investimento')
@@ -433,7 +537,7 @@ async function exportPdf() {
     pdf.setFontSize(8)
     pdf.setFont('helvetica', 'normal')
     pdf.setTextColor(...textMuted)
-    pdf.text(`${txAll.length} transações no mês (${txCash.length} em caixa, ${txAll.length - txCash.length} no crédito)`, margin, y + 4)
+    pdf.text(`${txAll.length} transações no mês (${txCash.length} em caixa, ${txAll.length - txCash.length} excluídas por crédito/transferência)`, margin, y + 4)
     y += 9
 
     // Transaction table header
@@ -574,6 +678,14 @@ async function exportPdf() {
     app.showMessage(`Erro ao gerar PDF: ${err.message || err}`, 'error')
   }
 }
+
+watch(() => app.currentMonth, month => {
+  statementBalanceInput.value = loadStatementBalance(month)
+}, { immediate: true })
+
+watch(statementBalanceInput, value => {
+  saveStatementBalance(app.currentMonth, value)
+})
 
 watch(() => [app.currentMonth, data.transactions.length], () => nextTick(renderPatrimonioChart), { deep: true })
 onMounted(() => nextTick(renderPatrimonioChart))

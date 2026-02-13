@@ -24,12 +24,17 @@ func NewTransactionRepo(pool *pgxpool.Pool) *TransactionRepo {
 
 // scan helper
 type transactionRow struct {
-	dto           domain.TransactionDTO
-	dateValue     time.Time
-	recurrenceEnd *time.Time
-	accountID     *string
-	createdAt     time.Time
-	updatedAt     time.Time
+	dto                   domain.TransactionDTO
+	dateValue             time.Time
+	recurrenceEnd         *time.Time
+	accountID             *string
+	transferDirection     *string
+	transferCounterparty  *string
+	transferGroupID       *string
+	transferFromAccountID *string
+	transferToAccountID   *string
+	createdAt             time.Time
+	updatedAt             time.Time
 }
 
 func (r *transactionRow) targets() []any {
@@ -37,7 +42,10 @@ func (r *transactionRow) targets() []any {
 		&r.dto.ID, &r.dateValue, &r.dto.Type, &r.dto.Category,
 		&r.dto.Method, &r.dto.Description, &r.dto.Amount,
 		&r.dto.Recurrence, &r.recurrenceEnd, &r.dto.Installments,
-		&r.accountID, &r.createdAt, &r.updatedAt,
+		&r.accountID,
+		&r.transferDirection, &r.transferCounterparty, &r.transferGroupID,
+		&r.transferFromAccountID, &r.transferToAccountID,
+		&r.createdAt, &r.updatedAt,
 	}
 }
 
@@ -49,6 +57,21 @@ func (r *transactionRow) toDTO() domain.TransactionDTO {
 	if r.accountID != nil {
 		r.dto.AccountID = *r.accountID
 	}
+	if r.transferDirection != nil {
+		r.dto.TransferDirection = *r.transferDirection
+	}
+	if r.transferCounterparty != nil {
+		r.dto.TransferCounterparty = *r.transferCounterparty
+	}
+	if r.transferGroupID != nil {
+		r.dto.TransferGroupID = *r.transferGroupID
+	}
+	if r.transferFromAccountID != nil {
+		r.dto.TransferFromAccountID = *r.transferFromAccountID
+	}
+	if r.transferToAccountID != nil {
+		r.dto.TransferToAccountID = *r.transferToAccountID
+	}
 	r.dto.CreatedAt = domain.FormatTimeUTC(r.createdAt)
 	r.dto.UpdatedAt = domain.FormatTimeUTC(r.updatedAt)
 	return r.dto
@@ -56,7 +79,10 @@ func (r *transactionRow) toDTO() domain.TransactionDTO {
 
 const transactionColumns = `id::text, date, type, category, method, description,
 	amount::double precision, recurrence, recurrence_end, installments,
-	account_id::text, created_at, updated_at`
+	account_id::text,
+	transfer_direction, transfer_counterparty, transfer_group_id,
+	transfer_from_account_id::text, transfer_to_account_id::text,
+	created_at, updated_at`
 
 // List returns a paginated slice of transactions, optionally filtered by month (YYYY-MM).
 // Uses date range filter instead of to_char for index utilisation.
@@ -202,13 +228,44 @@ func (r *TransactionRepo) Create(ctx context.Context, userID string, dateValue t
 	if p.AccountID != "" {
 		accountID = &p.AccountID
 	}
+	var transferDirection *string
+	if p.TransferDirection != "" {
+		transferDirection = &p.TransferDirection
+	}
+	var transferCounterparty *string
+	if p.TransferCounterparty != "" {
+		transferCounterparty = &p.TransferCounterparty
+	}
+	var transferGroupID *string
+	if p.TransferGroupID != "" {
+		transferGroupID = &p.TransferGroupID
+	}
+	var transferFromAccountID *string
+	if p.TransferFromAccountID != "" {
+		transferFromAccountID = &p.TransferFromAccountID
+	}
+	var transferToAccountID *string
+	if p.TransferToAccountID != "" {
+		transferToAccountID = &p.TransferToAccountID
+	}
 
 	var createdAt, updatedAt time.Time
 	err := r.pool.QueryRow(ctx,
-		`INSERT INTO transactions (id, user_id, date, type, category, method, description, amount, recurrence, recurrence_end, installments, account_id, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+		`INSERT INTO transactions (
+			id, user_id, date, type, category, method, description, amount,
+			recurrence, recurrence_end, installments, account_id,
+			transfer_direction, transfer_counterparty, transfer_group_id, transfer_from_account_id, transfer_to_account_id,
+			created_at, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8,
+			$9, $10, $11, $12,
+			$13, $14, $15, $16, $17,
+			NOW(), NOW()
+		)
 		 RETURNING created_at, updated_at`,
-		id, userID, dateValue, p.Type, p.Category, p.Method, p.Description, p.Amount, p.Recurrence, recurrenceEnd, p.Installments, accountID,
+		id, userID, dateValue, p.Type, p.Category, p.Method, p.Description, p.Amount,
+		p.Recurrence, recurrenceEnd, p.Installments, accountID,
+		transferDirection, transferCounterparty, transferGroupID, transferFromAccountID, transferToAccountID,
 	).Scan(&createdAt, &updatedAt)
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -223,7 +280,9 @@ func (r *TransactionRepo) Create(ctx context.Context, userID string, dateValue t
 		Type: p.Type, Category: p.Category, Method: p.Method,
 		Description: p.Description, Amount: p.Amount,
 		Recurrence: p.Recurrence, Installments: p.Installments,
-		AccountID: p.AccountID,
+		AccountID:         p.AccountID,
+		TransferDirection: p.TransferDirection, TransferCounterparty: p.TransferCounterparty,
+		TransferGroupID: p.TransferGroupID, TransferFromAccountID: p.TransferFromAccountID, TransferToAccountID: p.TransferToAccountID,
 		CreatedAt: domain.FormatTimeUTC(createdAt), UpdatedAt: domain.FormatTimeUTC(updatedAt),
 	}
 	if recurrenceEnd != nil {
@@ -243,6 +302,26 @@ func (r *TransactionRepo) CreateImported(ctx context.Context, userID string, dat
 	var accountID *string
 	if p.AccountID != "" {
 		accountID = &p.AccountID
+	}
+	var transferDirection *string
+	if p.TransferDirection != "" {
+		transferDirection = &p.TransferDirection
+	}
+	var transferCounterparty *string
+	if p.TransferCounterparty != "" {
+		transferCounterparty = &p.TransferCounterparty
+	}
+	var transferGroupID *string
+	if p.TransferGroupID != "" {
+		transferGroupID = &p.TransferGroupID
+	}
+	var transferFromAccountID *string
+	if p.TransferFromAccountID != "" {
+		transferFromAccountID = &p.TransferFromAccountID
+	}
+	var transferToAccountID *string
+	if p.TransferToAccountID != "" {
+		transferToAccountID = &p.TransferToAccountID
 	}
 
 	var importBatchID, importJobID, importFileName *string
@@ -267,18 +346,21 @@ func (r *TransactionRepo) CreateImported(ctx context.Context, userID string, dat
 		`INSERT INTO transactions (
 			id, user_id, date, type, category, method, description, amount,
 			recurrence, recurrence_end, installments, account_id, dedupe_key,
+			transfer_direction, transfer_counterparty, transfer_group_id, transfer_from_account_id, transfer_to_account_id,
 			import_batch_id, import_job_id, import_file_name, import_row_index,
 			created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8,
 			$9, $10, $11, $12, $13,
-			$14, $15, $16, $17,
+			$14, $15, $16, $17, $18,
+			$19, $20, $21, $22,
 			NOW(), NOW()
 		)
 		ON CONFLICT DO NOTHING
 		RETURNING created_at`,
 		id, userID, dateValue, p.Type, p.Category, p.Method, p.Description, p.Amount,
 		p.Recurrence, recurrenceEnd, p.Installments, accountID, dedupeKey,
+		transferDirection, transferCounterparty, transferGroupID, transferFromAccountID, transferToAccountID,
 		importBatchID, importJobID, importFileName, importRowIndex,
 	).Scan(&createdAt)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -314,15 +396,39 @@ func (r *TransactionRepo) Update(ctx context.Context, id, userID string, dateVal
 	if p.AccountID != "" {
 		accountID = &p.AccountID
 	}
+	var transferDirection *string
+	if p.TransferDirection != "" {
+		transferDirection = &p.TransferDirection
+	}
+	var transferCounterparty *string
+	if p.TransferCounterparty != "" {
+		transferCounterparty = &p.TransferCounterparty
+	}
+	var transferGroupID *string
+	if p.TransferGroupID != "" {
+		transferGroupID = &p.TransferGroupID
+	}
+	var transferFromAccountID *string
+	if p.TransferFromAccountID != "" {
+		transferFromAccountID = &p.TransferFromAccountID
+	}
+	var transferToAccountID *string
+	if p.TransferToAccountID != "" {
+		transferToAccountID = &p.TransferToAccountID
+	}
 
 	var createdAt, updatedAt time.Time
 	err := r.pool.QueryRow(ctx,
 		`UPDATE transactions
 		 SET date = $3, type = $4, category = $5, method = $6, description = $7,
-		     amount = $8, recurrence = $9, recurrence_end = $10, installments = $11, account_id = $12, updated_at = NOW()
+		     amount = $8, recurrence = $9, recurrence_end = $10, installments = $11, account_id = $12,
+		     transfer_direction = $13, transfer_counterparty = $14, transfer_group_id = $15,
+		     transfer_from_account_id = $16, transfer_to_account_id = $17,
+		     updated_at = NOW()
 		 WHERE id = $1 AND user_id = $2
 		 RETURNING created_at, updated_at`,
 		id, userID, dateValue, p.Type, p.Category, p.Method, p.Description, p.Amount, p.Recurrence, recurrenceEnd, p.Installments, accountID,
+		transferDirection, transferCounterparty, transferGroupID, transferFromAccountID, transferToAccountID,
 	).Scan(&createdAt, &updatedAt)
 
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -341,7 +447,9 @@ func (r *TransactionRepo) Update(ctx context.Context, id, userID string, dateVal
 		Type: p.Type, Category: p.Category, Method: p.Method,
 		Description: p.Description, Amount: p.Amount,
 		Recurrence: p.Recurrence, Installments: p.Installments,
-		AccountID: p.AccountID,
+		AccountID:         p.AccountID,
+		TransferDirection: p.TransferDirection, TransferCounterparty: p.TransferCounterparty,
+		TransferGroupID: p.TransferGroupID, TransferFromAccountID: p.TransferFromAccountID, TransferToAccountID: p.TransferToAccountID,
 		CreatedAt: domain.FormatTimeUTC(createdAt), UpdatedAt: domain.FormatTimeUTC(updatedAt),
 	}
 	if recurrenceEnd != nil {
