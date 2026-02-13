@@ -107,8 +107,15 @@ function matchesAccount(t) {
   return normalizeString(t.accountId) === accountFilter.value
 }
 
+function isTransferLikeTransaction(t) {
+  const normalizedType = normalizeString(String(t.type || '')).toLowerCase()
+  if (normalizedType === 'transferencia') return true
+  const normalizedCategory = normalizeString(String(t.category || '')).toLowerCase()
+  return normalizedCategory === 'transferência' || normalizedCategory === 'transferencia'
+}
+
 function isCoreCashTransaction(t) {
-  if (t.type === 'transferencia') return false
+  if (isTransferLikeTransaction(t)) return false
   if (t.method === 'credito') return false
   return true
 }
@@ -181,11 +188,13 @@ const expectedClosing = computed(() =>
 const transferRows = computed(() => {
   const rows = []
   for (const t of monthTransactions.value) {
-    if (t.type !== 'transferencia') continue
+    if (!isTransferLikeTransaction(t)) continue
     const desc = normalizeString(t.description).toLowerCase()
     let direction = 'Indefinida'
     if (/\brecebid[ao]\b|\bcreditad[ao]\b|\bentrada\b/.test(desc)) direction = 'Recebida'
     else if (/\benviad[ao]\b|\bdebitad[ao]\b|\bsaida\b/.test(desc)) direction = 'Enviada'
+    else if (String(t.type || '').toLowerCase() === 'receita') direction = 'Recebida'
+    else if (String(t.type || '').toLowerCase() === 'despesa') direction = 'Enviada'
     rows.push({
       key: `${t.id}-${direction}`,
       description: normalizeString(t.description) || 'Transferência',
