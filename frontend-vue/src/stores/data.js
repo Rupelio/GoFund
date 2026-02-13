@@ -390,7 +390,7 @@ export const useDataStore = defineStore('data', () => {
       projectedPatrimonio[i] = round2(rolling + investedCapital)
     }
 
-    return {
+  return {
       labels, actual, projected, projectedPatrimonio,
       expectedIncome, expectedExpense, expectedInvestment, expectedNet,
       projectedEndCash: rolling,
@@ -448,6 +448,8 @@ export const useDataStore = defineStore('data', () => {
   const IMPORT_MIN_CHUNK_SIZE = 50
   const IMPORT_RETRY_LIMIT = 2
   const IMPORT_RECOVERY_PASSES = 4
+  const IMPORT_JOB_POLL_INTERVAL_MS = 1200
+  const IMPORT_JOB_MAX_WAIT_MS = 8 * 60 * 1000
 
   function isTransientImportError(err) {
     const status = Number(err?.status || 0)
@@ -469,6 +471,18 @@ export const useDataStore = defineStore('data', () => {
       invalid: Number(partialResult?.invalid || 0),
     }
     wrapped.remaining = Number(remaining || 0)
+    return wrapped
+  }
+
+  function buildImportJobFailure(job) {
+    const wrapped = new Error(job?.error || 'Falha na importacao assíncrona')
+    wrapped.partialResult = {
+      imported: Number(job?.result?.imported || 0),
+      duplicates: Number(job?.result?.duplicates || 0),
+      invalid: Number(job?.result?.invalid || 0),
+      failed: Number(job?.result?.failed || 0),
+    }
+    wrapped.job = job
     return wrapped
   }
 
@@ -1001,6 +1015,11 @@ export const useDataStore = defineStore('data', () => {
       skipped: entry.parsed.skipped || 0,
       source: entry.parsed.source || { key: 'unknown', label: 'Origem nao identificada', confidence: 'low' },
     }))
+    const parsedByFilePayload = parsedByFile.map(entry => ({
+      fileName: entry.parsed.fileName,
+      items: entry.parsed.items,
+      source: entry.parsed.source || { key: 'unknown', label: 'Origem nao identificada', confidence: 'low' },
+    }))
     const sourceSummary = summarizeBatchSources(fileSummaries)
     const skipped = fileSummaries.reduce((sum, item) => sum + (item.skipped || 0), 0)
 
@@ -1008,6 +1027,7 @@ export const useDataStore = defineStore('data', () => {
       parsed: { items: parsedItems, skipped },
       preview,
       files: csvFiles,
+      parsedByFile: parsedByFilePayload,
       fileSummaries,
       sourceSummary,
     }
@@ -1015,6 +1035,82 @@ export const useDataStore = defineStore('data', () => {
 
   async function importCsvCore(file, accountId) {
     return importCsvBatchCore([file], accountId)
+  }
+
+  function buildImportJobFiles(parsedByFile, accountId) {
+    return (Array.isArray(parsedByFile) ? parsedByFile : [])
+      .map(entry => {
+        const fileName = normalizeString(String(entry?.fileName || 'arquivo.csv')) || 'arquivo.csv'
+        const rawItems = Array.isArray(entry?.items) ? entry.items : []
+        const items = rawItems.map(item => {
+          const withAccount = { ...item }
+          if (accountId) withAccount.accountId = accountId
+          return toPayload(withAccount, false)
+        }).filter(item => isValidDate(item.date) && Number(item.amount) > 0)
+        return { name: fileName, items }
+      })
+      .filter(file => file.items.length > 0)
+  }
+
+  async function waitForImportJob(jobId, onProgress) {
+    const startedAt = Date.now()
+    let transientFailures = 0
+
+    while (true) {
+      let job
+      try {
+        job = await transactionsApi.getImportJob(auth.token, jobId)
+        transientFailures = 0
+      } catch (err) {
+        if (isTransientImportError(err) && (Date.now() - startedAt) < IMPORT_JOB_MAX_WAIT_MS) {
+          transientFailures += 1
+          if (transientFailures > 5) throw err
+          await sleep(IMPORT_JOB_POLL_INTERVAL_MS)
+          continue
+        }
+        throw err
+      }
+
+      if (typeof onProgress === 'function') onProgress(job)
+      const status = normalizeString(job?.status || '').toLowerCase()
+      if (status === 'completed') return job
+      if (status === 'failed') throw buildImportJobFailure(job)
+      if ((Date.now() - startedAt) > IMPORT_JOB_MAX_WAIT_MS) {
+        throw new Error('Tempo limite aguardando a conclusao da importacao.')
+      }
+      await sleep(IMPORT_JOB_POLL_INTERVAL_MS)
+    }
+  }
+
+  async function executeImportJob(batchData, preview, accountId, onProgress) {
+    const filesPayload = buildImportJobFiles(batchData?.parsedByFile, accountId)
+    if (!filesPayload.length) throw new Error('Nenhuma movimentacao valida para importar.')
+
+    let createdJob
+    try {
+      createdJob = await transactionsApi.startImportJob(auth.token, filesPayload)
+      if (typeof onProgress === 'function') onProgress(createdJob)
+    } catch (err) {
+      // Backward compatibility with deployments that still only expose /import sync.
+      if (Number(err?.status || 0) === 404 || Number(err?.status || 0) === 405) {
+        const legacy = await executeImport(preview, accountId)
+        return { ...legacy, job: null }
+      }
+      throw err
+    }
+
+    const finalJob = await waitForImportJob(createdJob.id, onProgress)
+    const upgradeResult = await applyImportMetadataUpgrades(preview?.toUpgrade)
+    await refreshSnapshot()
+    return { result: finalJob.result || {}, upgradeResult, job: finalJob }
+  }
+
+  async function undoImportBatch(batchId) {
+    const normalizedBatchId = normalizeString(String(batchId || ''))
+    if (!normalizedBatchId) throw new Error('Lote invalido para desfazer.')
+    const result = await transactionsApi.undoImportBatch(auth.token, normalizedBatchId)
+    await refreshSnapshot()
+    return result
   }
 
   async function executeImport(preview, accountId) {
@@ -1084,7 +1180,7 @@ export const useDataStore = defineStore('data', () => {
     return [...all].sort((a, b) => a.localeCompare(b, 'pt-BR'))
   })
 
-  return {
+    return {
     // state
     transactions, budgets, goals, accounts, categories, projection,
     loading, importSnapshotTransactions,
@@ -1104,7 +1200,7 @@ export const useDataStore = defineStore('data', () => {
     saveProjection, buildProjectionModel,
     sendMonthlySummary, exportCsv,
     parseTransactionsFromCsv, buildExistingFingerprints, buildImportPreview,
-    importCsvCore, importCsvBatchCore, executeImport, refreshSnapshot,
+    importCsvCore, importCsvBatchCore, executeImport, executeImportJob, undoImportBatch, refreshSnapshot,
     getAccountCsvSource, setAccountCsvSource, clearAccountCsvSource,
     validateCsvBatchForAccount, suggestAccountForBatch,
     changePassword,

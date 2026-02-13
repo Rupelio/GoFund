@@ -39,6 +39,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 	catRepo := postgres.NewCategoryRepo(pool)
 	accRepo := postgres.NewAccountRepo(pool)
 	tokenRepo := postgres.NewTokenRepo(pool)
+	importJobRepo := postgres.NewImportJobRepo(pool)
 
 	// ── Email sender ────────────────────────────────────────
 	emailSender := email.NewSender(email.Config{
@@ -57,7 +58,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 	timeout := cfg.DBQueryTimeout
 
 	authH := handler.NewAuthHandler(userRepo, tokenRepo, auth, emailSender, timeout)
-	txnH := handler.NewTransactionHandler(txnRepo, timeout)
+	txnH := handler.NewTransactionHandler(txnRepo, importJobRepo, timeout)
 	budgetH := handler.NewBudgetHandler(budgetRepo, timeout)
 	goalH := handler.NewGoalHandler(goalRepo, timeout)
 	projH := handler.NewProjectionHandler(projRepo, timeout)
@@ -122,6 +123,9 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 				rt.Get("/", txnH.List)
 				rt.Post("/", txnH.Create)
 				rt.Post("/import", txnH.Import)
+				rt.Post("/import/jobs", txnH.StartImportJob)
+				rt.Get("/import/jobs/{jobID}", txnH.GetImportJob)
+				rt.Delete("/import/batches/{batchID}", txnH.UndoImportBatch)
 				rt.Delete("/", txnH.DeleteAll)
 				rt.Get("/{id}", txnH.Get)
 				rt.Put("/{id}", txnH.Update)

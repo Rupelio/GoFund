@@ -22,4 +22,13 @@ export const transactionsApi = {
   import(token, items) {
     return api.post('/api/transactions/import', { items }, { token })
   },
+  startImportJob(token, files) {
+    return api.post('/api/transactions/import/jobs', { files }, { token })
+  },
+  getImportJob(token, jobId) {
+    return api.get(`/api/transactions/import/jobs/${jobId}`, { token })
+  },
+  undoImportBatch(token, batchId) {
+    return api.del(`/api/transactions/import/batches/${batchId}`, { token })
+  },
 }

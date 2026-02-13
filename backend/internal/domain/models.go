@@ -54,6 +54,46 @@ type TransactionImportResult struct {
 	Imported   int `json:"imported"`
 	Duplicates int `json:"duplicates"`
 	Invalid    int `json:"invalid"`
+	Failed     int `json:"failed,omitempty"`
+}
+
+type TransactionImportFilePayload struct {
+	Name  string               `json:"name"`
+	Items []TransactionPayload `json:"items"`
+}
+
+type TransactionImportJobPayload struct {
+	Files []TransactionImportFilePayload `json:"files"`
+}
+
+type TransactionImportFileResult struct {
+	Name       string `json:"name"`
+	Total      int    `json:"total"`
+	Processed  int    `json:"processed"`
+	Imported   int    `json:"imported"`
+	Duplicates int    `json:"duplicates"`
+	Invalid    int    `json:"invalid"`
+	Failed     int    `json:"failed"`
+}
+
+type TransactionImportMetadata struct {
+	BatchID  string
+	JobID    string
+	FileName string
+	RowIndex int
+}
+
+type TransactionImportJobDTO struct {
+	ID         string                        `json:"id"`
+	BatchID    string                        `json:"batchId"`
+	Status     string                        `json:"status"`
+	Result     TransactionImportResult       `json:"result"`
+	Files      []TransactionImportFileResult `json:"files"`
+	Error      string                        `json:"error,omitempty"`
+	CreatedAt  string                        `json:"createdAt"`
+	StartedAt  string                        `json:"startedAt,omitempty"`
+	FinishedAt string                        `json:"finishedAt,omitempty"`
+	UpdatedAt  string                        `json:"updatedAt"`
 }
 
 type TransactionDTO struct {

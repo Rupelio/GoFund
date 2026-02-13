@@ -151,6 +151,29 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 			UNIQUE (user_id, name)
 		)`,
 		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS account_id UUID REFERENCES accounts(id) ON DELETE SET NULL`,
+		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS import_batch_id UUID`,
+		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS import_job_id UUID`,
+		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS import_file_name TEXT`,
+		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS import_row_index INT`,
+		`CREATE TABLE IF NOT EXISTS transaction_import_jobs (
+			id UUID PRIMARY KEY,
+			user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			batch_id UUID NOT NULL,
+			status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed')),
+			total_rows INT NOT NULL DEFAULT 0,
+			processed_rows INT NOT NULL DEFAULT 0,
+			valid_rows INT NOT NULL DEFAULT 0,
+			imported_rows INT NOT NULL DEFAULT 0,
+			duplicates_rows INT NOT NULL DEFAULT 0,
+			invalid_rows INT NOT NULL DEFAULT 0,
+			failed_rows INT NOT NULL DEFAULT 0,
+			files_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+			error_message TEXT,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			started_at TIMESTAMPTZ,
+			finished_at TIMESTAMPTZ,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
 	); err != nil {
 		return err
 	}
@@ -162,6 +185,8 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		`CREATE INDEX IF NOT EXISTS idx_categories_user ON categories (user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts (user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions (account_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_transactions_import_batch ON transactions (user_id, import_batch_id) WHERE import_batch_id IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_import_jobs_user_created ON transaction_import_jobs (user_id, created_at DESC)`,
 		`CREATE TABLE IF NOT EXISTS password_reset_tokens (
 			id UUID PRIMARY KEY,
 			user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

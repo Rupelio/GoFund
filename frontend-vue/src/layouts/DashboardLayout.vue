@@ -39,6 +39,8 @@ const csvEarliestDate = ref('')
 const csvPendingFile = ref(null)
 const csvSuggestedAccount = ref(null)
 const csvImportNotice = ref(null)
+const csvImportJob = ref(null)
+const csvLastImportBatch = ref('')
 
 const csvFormattedEarliestDate = computed(() => {
   if (!csvEarliestDate.value) return 'o extrato'
@@ -62,6 +64,15 @@ const csvSelectedAccountSource = computed(() => (
 ))
 const csvBatchGlobalValidation = computed(() => data.validateCsvBatchForAccount(csvPendingFile.value, ''))
 const csvBatchSelectedValidation = computed(() => data.validateCsvBatchForAccount(csvPendingFile.value, csvSelectedAccountId.value))
+const csvImportProgress = computed(() => {
+  const result = csvImportJob.value?.result
+  if (!result) return null
+  const total = Number(result.total || 0)
+  const processed = Number(result.imported || 0) + Number(result.duplicates || 0) + Number(result.invalid || 0) + Number(result.failed || 0)
+  const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0
+  return { total, processed, pct }
+})
+const csvImportFilesProgress = computed(() => csvImportJob.value?.files || [])
 
 function clearCsvImportNotice() {
   csvImportNotice.value = null
@@ -178,6 +189,7 @@ function handleCsvFile(e) {
 async function startCsvImportBatch(files) {
   try {
     clearCsvImportNotice()
+    csvImportJob.value = null
     // Read and parse CSV files without account ID yet
     const result = await data.importCsvBatchCore(files, undefined)
     csvPendingFile.value = result
@@ -278,6 +290,7 @@ function csvAccountCancel() {
   showCsvAccountDialog.value = false
   csvPendingFile.value = null
   csvSuggestedAccount.value = null
+  csvImportJob.value = null
   clearCsvImportNotice()
 }
 
@@ -293,19 +306,34 @@ async function confirmImport() {
   if (!csvPreview.value) return
   csvImporting.value = true
   clearCsvImportNotice()
+  csvImportJob.value = null
   let shouldResetImportState = false
   try {
-    const { result, upgradeResult } = await data.executeImport(csvPreview.value, csvAccountId.value || undefined)
-    const imported = result?.imported ?? csvPreview.value.toImport.length
+    const { result, upgradeResult, job } = await data.executeImportJob(
+      csvPendingFile.value,
+      csvPreview.value,
+      csvAccountId.value || undefined,
+      (currentJob) => { csvImportJob.value = currentJob }
+    )
+    const imported = Number(result?.imported || 0)
+    const duplicates = Number(result?.duplicates || 0)
+    const invalid = Number(result?.invalid || 0)
+    const failed = Number(result?.failed || 0)
     const upgraded = upgradeResult?.updated || 0
     let msg = imported > 0 ? `${imported} movimentacao(oes) importada(s).` : 'Nenhuma nova movimentacao foi adicionada.'
     if (upgraded > 0) msg += ` ${upgraded} atualizada(s).`
-    if (csvPreview.value.duplicatesExisting > 0) msg += ` ${csvPreview.value.duplicatesExisting} duplicata(s) ignorada(s).`
+    if (duplicates > 0) msg += ` ${duplicates} duplicata(s) ignorada(s).`
+    if (invalid > 0) msg += ` ${invalid} linha(s) invalida(s).`
+    if (failed > 0) msg += ` ${failed} linha(s) com erro.`
+    if (job?.batchId && imported > 0) csvLastImportBatch.value = job.batchId
     app.showMessage(msg, imported > 0 || upgraded > 0 ? 'success' : 'info')
+    setCsvImportNotice('success', msg)
     shouldResetImportState = true
   } catch (err) {
+    await data.refreshSnapshot()
     await recomputeCsvPreviewFromParsed()
     const partialImported = Number(err?.partialResult?.imported || 0)
+    const partialFailed = Number(err?.partialResult?.failed || 0)
     const remaining = Number(csvPreview.value?.toImport?.length || 0)
     if (remaining === 0) {
       const msg = partialImported > 0
@@ -316,8 +344,8 @@ async function confirmImport() {
       shouldResetImportState = true
       return
     }
-    if (partialImported > 0 || remaining > 0) {
-      const notice = `Importacao interrompida por instabilidade (${err.message || 'gateway'}). Ja importadas: ${partialImported}. Pendentes: ${remaining}. Clique em Importar novamente para concluir.`
+    if (partialImported > 0 || remaining > 0 || partialFailed > 0) {
+      const notice = `Importacao interrompida (${err.message || 'erro'}). Ja importadas: ${partialImported}. Pendentes: ${remaining}. Erros: ${partialFailed}. Clique em Importar novamente para concluir.`
       setCsvImportNotice('warning', notice)
       app.showMessage(notice, 'error')
     } else {
@@ -332,8 +360,28 @@ async function confirmImport() {
       csvPreview.value = null
       csvPendingFile.value = null
       csvSuggestedAccount.value = null
+      csvImportJob.value = null
       clearCsvImportNotice()
     }
+  }
+}
+
+async function undoLastImportBatch() {
+  if (!csvLastImportBatch.value) return
+  const ok = await showConfirm({
+    title: 'Desfazer ultimo lote importado?',
+    message: 'Essa acao removera todas as movimentacoes importadas no ultimo lote.',
+    tone: 'danger',
+  })
+  if (!ok) return
+
+  try {
+    const result = await data.undoImportBatch(csvLastImportBatch.value)
+    const deleted = Number(result?.deleted || 0)
+    app.showMessage(`${deleted} movimentacao(oes) removida(s) do lote.`, 'success')
+    csvLastImportBatch.value = ''
+  } catch (err) {
+    app.showMessage(`Falha ao desfazer lote. (${err.message || ''})`, 'error')
   }
 }
 </script>
@@ -363,6 +411,9 @@ async function confirmImport() {
               </div>
             </div>
             <button class="btn ghost tiny" type="button" @click="triggerCsvImport">Importar</button>
+            <button v-if="csvLastImportBatch" class="btn ghost tiny danger-text" type="button" @click="undoLastImportBatch">
+              <i class="fa-solid fa-rotate-left"></i> Desfazer Ultimo Lote
+            </button>
             <input ref="csvInput" type="file" accept=".csv" multiple hidden @change="handleCsvFile" />
             <button class="btn ghost tiny danger-text" type="button" title="Apagar todas as movimentações" @click="handleDeleteAll">🗑️ Apagar Tudo</button>
             <button class="btn primary tiny" type="button" @click="router.push({ name: 'transactions' })">+ Nova (N)</button>
@@ -505,6 +556,20 @@ async function confirmImport() {
           </div>
           <p v-if="csvPendingFilesSummary.length > 1"><strong>{{ csvPendingFilesSummary.length }}</strong> arquivos no lote.</p>
           <p v-if="csvAccountId"><strong>Conta:</strong> {{ (data.accounts.find(a => a.id === csvAccountId) || {}).name }}</p>
+          <div v-if="csvImportProgress" style="padding:0.55rem 0.7rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-card, var(--surface-alt));margin-bottom:0.6rem">
+            <p style="margin:0 0 0.35rem 0;font-size:0.82rem;color:var(--text-secondary)">
+              Status: <strong>{{ csvImportJob?.status || 'running' }}</strong> - {{ csvImportProgress.processed }}/{{ csvImportProgress.total }} ({{ csvImportProgress.pct }}%)
+            </p>
+            <div style="height:6px;border-radius:99px;background:var(--surface-alt);overflow:hidden">
+              <div :style="{ width: `${csvImportProgress.pct}%`, height: '100%', background: 'var(--primary)' }"></div>
+            </div>
+            <div v-if="csvImportFilesProgress.length" style="margin-top:0.45rem;display:flex;flex-direction:column;gap:0.25rem">
+              <div v-for="file in csvImportFilesProgress" :key="file.name" style="display:flex;justify-content:space-between;gap:0.6rem;font-size:0.78rem;color:var(--text-secondary)">
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ file.name }}</span>
+                <span>{{ file.processed || 0 }}/{{ file.total || 0 }}</span>
+              </div>
+            </div>
+          </div>
           <p><strong>{{ csvPreview.toImport.length }}</strong> novas movimentações para importar.</p>
           <p v-if="csvPreview.duplicatesExisting"><strong>{{ csvPreview.duplicatesExisting }}</strong> duplicatas encontradas (serão ignoradas).</p>
           <p v-if="!csvPreview.toImport.length && csvPreview.duplicatesExisting" style="color:var(--text-secondary)">
@@ -516,7 +581,7 @@ async function confirmImport() {
         <footer class="dialog-footer">
           <button class="btn ghost tiny" @click="showCsvImport = false">Cancelar</button>
           <button class="btn primary tiny" :disabled="csvImporting" @click="confirmImport">
-            {{ csvImporting ? 'Importando…' : 'Importar' }}
+            {{ csvImporting ? 'Processando...' : 'Importar' }}
           </button>
         </footer>
       </section>

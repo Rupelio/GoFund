@@ -234,7 +234,7 @@ func (r *TransactionRepo) Create(ctx context.Context, userID string, dateValue t
 
 // CreateImported inserts one transaction for CSV import.
 // Returns imported=false when the row was skipped due to idempotency/conflict.
-func (r *TransactionRepo) CreateImported(ctx context.Context, userID string, dateValue time.Time, recurrenceEnd *time.Time, p domain.TransactionPayload, dedupeKey string) (bool, error) {
+func (r *TransactionRepo) CreateImported(ctx context.Context, userID string, dateValue time.Time, recurrenceEnd *time.Time, p domain.TransactionPayload, dedupeKey string, meta *domain.TransactionImportMetadata) (bool, error) {
 	id := p.ID
 	if id == "" {
 		id = domain.MustUUID()
@@ -245,19 +245,41 @@ func (r *TransactionRepo) CreateImported(ctx context.Context, userID string, dat
 		accountID = &p.AccountID
 	}
 
+	var importBatchID, importJobID, importFileName *string
+	var importRowIndex *int
+	if meta != nil {
+		if meta.BatchID != "" {
+			importBatchID = &meta.BatchID
+		}
+		if meta.JobID != "" {
+			importJobID = &meta.JobID
+		}
+		if meta.FileName != "" {
+			importFileName = &meta.FileName
+		}
+		if meta.RowIndex > 0 {
+			importRowIndex = &meta.RowIndex
+		}
+	}
+
 	var createdAt time.Time
 	err := r.pool.QueryRow(ctx,
 		`INSERT INTO transactions (
 			id, user_id, date, type, category, method, description, amount,
-			recurrence, recurrence_end, installments, account_id, dedupe_key, created_at, updated_at
+			recurrence, recurrence_end, installments, account_id, dedupe_key,
+			import_batch_id, import_job_id, import_file_name, import_row_index,
+			created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8,
-			$9, $10, $11, $12, $13, NOW(), NOW()
+			$9, $10, $11, $12, $13,
+			$14, $15, $16, $17,
+			NOW(), NOW()
 		)
 		ON CONFLICT DO NOTHING
 		RETURNING created_at`,
 		id, userID, dateValue, p.Type, p.Category, p.Method, p.Description, p.Amount,
 		p.Recurrence, recurrenceEnd, p.Installments, accountID, dedupeKey,
+		importBatchID, importJobID, importFileName, importRowIndex,
 	).Scan(&createdAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
@@ -275,6 +297,15 @@ func (r *TransactionRepo) CreateImported(ctx context.Context, userID string, dat
 		return false, err
 	}
 	return true, nil
+}
+
+// DeleteByImportBatch removes all imported transactions from a specific batch.
+func (r *TransactionRepo) DeleteByImportBatch(ctx context.Context, userID, batchID string) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM transactions WHERE user_id = $1 AND import_batch_id = $2`, userID, batchID)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 // Update modifies an existing transaction.

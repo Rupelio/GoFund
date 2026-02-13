@@ -13,7 +13,7 @@ import (
 )
 
 type mockTransactionStore struct {
-	createImportedFn func(ctx context.Context, userID string, dateValue time.Time, recurrenceEnd *time.Time, p domain.TransactionPayload, dedupeKey string) (bool, error)
+	createImportedFn func(ctx context.Context, userID string, dateValue time.Time, recurrenceEnd *time.Time, p domain.TransactionPayload, dedupeKey string, meta *domain.TransactionImportMetadata) (bool, error)
 }
 
 func (m *mockTransactionStore) List(ctx context.Context, userID, month string, limit, offset int) ([]domain.TransactionDTO, int, error) {
@@ -28,8 +28,8 @@ func (m *mockTransactionStore) Create(ctx context.Context, userID string, dateVa
 	return domain.TransactionDTO{}, nil
 }
 
-func (m *mockTransactionStore) CreateImported(ctx context.Context, userID string, dateValue time.Time, recurrenceEnd *time.Time, p domain.TransactionPayload, dedupeKey string) (bool, error) {
-	return m.createImportedFn(ctx, userID, dateValue, recurrenceEnd, p, dedupeKey)
+func (m *mockTransactionStore) CreateImported(ctx context.Context, userID string, dateValue time.Time, recurrenceEnd *time.Time, p domain.TransactionPayload, dedupeKey string, meta *domain.TransactionImportMetadata) (bool, error) {
+	return m.createImportedFn(ctx, userID, dateValue, recurrenceEnd, p, dedupeKey, meta)
 }
 
 func (m *mockTransactionStore) Update(ctx context.Context, id, userID string, dateValue time.Time, recurrenceEnd *time.Time, p domain.TransactionPayload) (domain.TransactionDTO, error) {
@@ -42,10 +42,14 @@ func (m *mockTransactionStore) DeleteAll(ctx context.Context, userID string) (in
 	return 0, nil
 }
 
+func (m *mockTransactionStore) DeleteByImportBatch(ctx context.Context, userID, batchID string) (int64, error) {
+	return 0, nil
+}
+
 func TestTransactionImportSummary(t *testing.T) {
 	call := 0
 	store := &mockTransactionStore{
-		createImportedFn: func(ctx context.Context, userID string, dateValue time.Time, recurrenceEnd *time.Time, p domain.TransactionPayload, dedupeKey string) (bool, error) {
+		createImportedFn: func(ctx context.Context, userID string, dateValue time.Time, recurrenceEnd *time.Time, p domain.TransactionPayload, dedupeKey string, meta *domain.TransactionImportMetadata) (bool, error) {
 			call++
 			if call == 1 {
 				return true, nil
@@ -53,7 +57,7 @@ func TestTransactionImportSummary(t *testing.T) {
 			return false, nil
 		},
 	}
-	h := NewTransactionHandler(store, 2*time.Second)
+	h := NewTransactionHandler(store, nil, 2*time.Second)
 
 	payload := domain.TransactionImportPayload{
 		Items: []domain.TransactionPayload{
@@ -103,10 +107,10 @@ func TestTransactionImportRejectsTooManyRows(t *testing.T) {
 	}
 
 	h := NewTransactionHandler(&mockTransactionStore{
-		createImportedFn: func(ctx context.Context, userID string, dateValue time.Time, recurrenceEnd *time.Time, p domain.TransactionPayload, dedupeKey string) (bool, error) {
+		createImportedFn: func(ctx context.Context, userID string, dateValue time.Time, recurrenceEnd *time.Time, p domain.TransactionPayload, dedupeKey string, meta *domain.TransactionImportMetadata) (bool, error) {
 			return true, nil
 		},
-	}, 2*time.Second)
+	}, nil, 2*time.Second)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/transactions/import", bytes.NewReader(body))
 	req = req.WithContext(context.WithValue(req.Context(), domain.CurrentUserKey, domain.CurrentUser{
