@@ -120,15 +120,6 @@ function isCoreCashTransaction(t) {
   return true
 }
 
-function getBaseInitialBalance() {
-  if (accountFilter.value === '__all__') {
-    return round2(data.accounts.reduce((sum, acc) => sum + Number(acc.initialBalance || 0), 0))
-  }
-  if (accountFilter.value === '__unassigned__') return 0
-  const account = data.accounts.find(acc => acc.id === accountFilter.value)
-  return round2(Number(account?.initialBalance || 0))
-}
-
 function getMonthsUntil(targetMonth) {
   const months = new Set()
   data.transactions.forEach(t => {
@@ -150,7 +141,7 @@ function getMonthsUntil(targetMonth) {
 }
 
 function calculateCoreClosing(month) {
-  let balance = getBaseInitialBalance()
+  let balance = 0
   const months = getMonthsUntil(month)
   months.forEach(m => {
     const items = data.monthlyTransactions(m).filter(matchesAccount)
