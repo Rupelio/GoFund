@@ -172,6 +172,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 
 			priv.Route("/investments", func(ri chi.Router) {
 				ri.Get("/market/search", investmentH.SearchMarketSymbols)
+				ri.Get("/market/quote", investmentH.GetMarketQuote)
 				ri.Get("/assets", investmentH.ListAssets)
 				ri.Post("/assets", investmentH.CreateAsset)
 				ri.Put("/assets/{id}", investmentH.UpdateAsset)

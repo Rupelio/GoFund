@@ -70,6 +70,12 @@ export const investmentsApi = {
       params: { q: query, limit },
     })
   },
+  quoteMarket(token, symbol) {
+    return api.get('/api/investments/market/quote', {
+      token,
+      params: { symbol },
+    })
+  },
   list(token) {
     return api.get('/api/investments/assets', { token })
   },

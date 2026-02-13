@@ -21,18 +21,18 @@
               @click="handleRefreshAllQuotes"
             >
               <i class="fa-solid fa-arrows-rotate"></i>
-              {{ refreshingAllQuotes ? 'Atualizando...' : 'Atualizar cotacoes de mercado' }}
+              {{ refreshingAllQuotes ? 'Atualizando...' : 'Atualizar cotações de mercado' }}
             </button>
           </div>
         </header>
 
         <section class="kpi-grid investments-kpis">
           <article class="kpi-card">
-            <p>Aportes no mes</p>
+            <p>Aportes no mês</p>
             <strong class="warning">{{ formatCurrency(monthlyInvested) }}</strong>
           </article>
           <article class="kpi-card">
-            <p>Resgates no mes</p>
+            <p>Resgates no mês</p>
             <strong class="positive">{{ formatCurrency(monthlyRedeemed) }}</strong>
           </article>
           <article class="kpi-card">
@@ -44,30 +44,30 @@
             <strong class="positive">{{ formatCurrency(totalMarketBRL) }}</strong>
           </article>
           <article class="kpi-card">
-            <p>Resultado nao realizado (BRL)</p>
+            <p>Resultado não realizado (BRL)</p>
             <strong :class="totalPnLBRL >= 0 ? 'positive' : 'negative'">{{ formatCurrency(totalPnLBRL) }}</strong>
           </article>
           <article class="kpi-card">
-            <p>Projecao 12 meses (BRL)</p>
+            <p>Projeção 12 meses (BRL)</p>
             <strong class="positive">{{ formatCurrency(totalProjectedBRL) }}</strong>
           </article>
         </section>
 
         <div class="info-banner" style="margin-bottom: 1rem;">
           <p><strong><i class="fa-solid fa-circle-info"></i> Como esta tela funciona agora</strong></p>
-          <p>Lancamento rapido: voce registra aporte/resgate sem sair desta tela.</p>
-          <p>Carteira por ativo: voce acompanha custo, valor de mercado, P/L e variacao.</p>
-          <p>Renda variavel usa cotacao de mercado (ticker). Renda fixa usa taxa anual opcional.</p>
-          <p>Aportes no mes mostram fluxo. Custo da carteira mostra posicao/custo dos ativos (pode ser diferente do aporte bruto).</p>
+          <p>Lançamento rápido: você registra aporte/resgate sem sair desta tela.</p>
+          <p>Carteira por ativo: você acompanha custo, valor de mercado, P/L e variação.</p>
+          <p>Renda variável usa cotação de mercado (ticker). Renda fixa usa taxa anual opcional.</p>
+          <p>Aportes no mês mostram fluxo. Custo da carteira mostra posição/custo dos ativos (pode ser diferente do aporte bruto).</p>
         </div>
 
         <p v-if="nonBRLAssetsCount > 0" class="empty-state" style="margin-bottom: 1rem;">
-          {{ nonBRLAssetsCount }} ativo(s) em moeda diferente de BRL nao entram nos KPIs agregados.
+          {{ nonBRLAssetsCount }} ativo(s) em moeda diferente de BRL não entram nos KPIs agregados.
         </p>
 
         <section class="investment-section">
           <header class="section-head">
-            <h3>Lancamento rapido</h3>
+            <h3>Lançamento rápido</h3>
             <p>Evita trocar de tela para registrar aporte ou resgate.</p>
           </header>
           <form class="form-stack" @submit.prevent="handleSubmitQuickTransaction">
@@ -82,7 +82,7 @@
               <label>
                 Ativo (opcional)
                 <select v-model="quickTxn.assetId">
-                  <option value="">Nao vincular</option>
+                  <option value="">Não vincular</option>
                   <option v-for="asset in sortedAssets" :key="asset.id" :value="asset.id">{{ asset.name }}</option>
                 </select>
               </label>
@@ -97,12 +97,12 @@
                 <input v-model="quickTxn.date" type="date" required />
               </label>
               <label>
-                Metodo
+                Método
                 <select v-model="quickTxn.method">
-                  <option value="transferencia">Transferencia</option>
+                  <option value="transferencia">Transferência</option>
                   <option value="pix">PIX</option>
-                  <option value="debito">Debito</option>
-                  <option value="credito">Credito</option>
+                  <option value="debito">Débito</option>
+                  <option value="credito">Crédito</option>
                   <option value="boleto">Boleto</option>
                   <option value="dinheiro">Dinheiro</option>
                   <option value="outros">Outros</option>
@@ -117,13 +117,13 @@
               </label>
             </div>
             <label>
-              Descricao (opcional)
+              Descrição (opcional)
               <input v-model="quickTxn.description" type="text" placeholder="Ex: Aporte mensal no ativo" maxlength="140" />
             </label>
             <div class="row-actions">
               <button class="btn primary" type="submit">
                 <i class="fa-solid fa-plus"></i>
-                Salvar lancamento
+                Salvar lançamento
               </button>
             </div>
           </form>
@@ -132,7 +132,7 @@
         <section class="investment-section">
           <header class="section-head">
             <h3>{{ editingAssetId ? 'Editar ativo' : 'Novo ativo da carteira' }}</h3>
-            <p>Use a busca para selecionar o ativo e preencher campos automaticamente.</p>
+            <p>Use a busca para selecionar o ativo e preencher os campos automaticamente.</p>
           </header>
           <form class="form-stack" @submit.prevent="handleSubmitAsset">
             <div class="row-3">
@@ -150,29 +150,27 @@
                 Ativo sugerido
                 <select v-model="assetLookup.selectedKey" @change="handleApplySelectedAssetOption">
                   <option value="">Selecione para auto-preencher</option>
-                  <optgroup label="Resultados da busca" v-if="assetLookup.options.length">
-                    <option v-for="opt in assetLookup.options" :key="opt.optionKey" :value="opt.optionKey">
-                      {{ opt.label }}
-                    </option>
-                  </optgroup>
-                  <optgroup label="Sugestoes rapidas">
-                    <option v-for="opt in presetAssetOptions" :key="opt.optionKey" :value="opt.optionKey">
-                      {{ opt.label }}
-                    </option>
-                  </optgroup>
+                  <option v-if="assetLookup.options.length" disabled value="__group_market__">Resultados da busca</option>
+                  <option v-for="opt in assetLookup.options" :key="opt.optionKey" :value="opt.optionKey">
+                    {{ opt.label }}
+                  </option>
+                  <option disabled value="__group_presets__">Sugestões rápidas</option>
+                  <option v-for="opt in presetAssetOptions" :key="opt.optionKey" :value="opt.optionKey">
+                    {{ opt.label }}
+                  </option>
                 </select>
-                <small v-if="assetLookup.options.length" class="field-help">
-                  {{ assetLookup.options.length }} resultado(s) carregado(s). Voce pode trocar a opcao para alterar o preenchimento.
-                </small>
               </label>
               <label class="asset-search-action">
-                Acao
+                Ação
                 <button class="btn ghost" type="button" :disabled="assetLookup.loading" @click="handleSearchAssetOptions">
                   <i class="fa-solid fa-magnifying-glass"></i>
                   {{ assetLookup.loading ? 'Buscando...' : 'Buscar no mercado' }}
                 </button>
               </label>
             </div>
+            <p v-if="assetLookup.options.length" class="field-help search-row-help">
+              {{ assetLookup.options.length }} resultado(s) carregado(s). Você pode trocar a opção para alterar o preenchimento.
+            </p>
 
             <div class="row-2">
               <label>
@@ -183,7 +181,7 @@
                 Tipo de ativo
                 <select v-model="assetForm.assetType" @change="handleAssetTypeChange">
                   <option value="renda_fixa">Renda fixa</option>
-                  <option value="acao">Acao</option>
+                  <option value="acao">Ação</option>
                   <option value="etf">ETF</option>
                   <option value="fii">FII</option>
                   <option value="fundo">Fundo</option>
@@ -205,7 +203,7 @@
                 <input v-model="customCategoryValue" type="text" maxlength="50" placeholder="Ex: Bolsa de valores internacional" />
               </label>
               <label>
-                Fonte de preco
+                Fonte de preço
                 <select v-model="assetForm.pricingSource">
                   <option value="manual">Manual</option>
                   <option value="market">Mercado (ticker)</option>
@@ -228,18 +226,18 @@
                 <input v-model.number="assetForm.quantity" type="number" min="0" step="0.000001" required />
               </label>
               <label>
-                Preco medio
+                Preço médio
                 <input v-model.number="assetForm.averagePrice" type="number" min="0" step="0.0001" required />
               </label>
               <label>
-                Preco atual manual
+                Preço atual manual
                 <input
                   v-model.number="assetForm.currentPrice"
                   type="number"
                   min="0"
                   step="0.0001"
                   :disabled="assetForm.pricingSource === 'market'"
-                  :placeholder="assetForm.pricingSource === 'market' ? 'Via cotacao' : 'Opcional'"
+                  :placeholder="assetForm.pricingSource === 'market' ? 'Via cotação' : 'Opcional'"
                 />
               </label>
             </div>
@@ -256,7 +254,7 @@
                 />
               </label>
               <label>
-                Perfil de cenario
+                Perfil de cenário
                 <select v-model="assetForm.expectedProfile">
                   <option value="conservador">Conservador</option>
                   <option value="base">Base</option>
@@ -273,7 +271,7 @@
               </label>
             </div>
             <label>
-              Observacoes
+              Observações
               <input v-model="assetForm.notes" type="text" maxlength="160" placeholder="Opcional" />
             </label>
             <div class="row-actions">
@@ -287,8 +285,8 @@
 
         <section class="investment-section">
           <header class="section-head">
-            <h3>Posicao por ativo</h3>
-            <p>Carteira real por ativo, com P/L e variacao quando houver ticker.</p>
+            <h3>Posição por ativo</h3>
+            <p>Carteira real por ativo, com P/L e variação quando houver ticker.</p>
           </header>
 
           <p v-if="!sortedAssets.length" class="empty-state">
@@ -315,7 +313,7 @@
                     @click="handleRefreshQuote(asset)"
                   >
                     <i class="fa-solid fa-arrows-rotate"></i>
-                    {{ refreshingQuotes[asset.id] ? 'Atualizando' : 'Cotacao' }}
+                    {{ refreshingQuotes[asset.id] ? 'Atualizando' : 'Cotação' }}
                   </button>
                   <button class="mini-btn" type="button" @click="handleEditAsset(asset)">Editar</button>
                   <button class="mini-btn" type="button" @click="handleDeleteAsset(asset)">Excluir</button>
@@ -343,15 +341,15 @@
 
               <p class="asset-details">
                 Qtd: {{ formatQuantity(asset.quantityForCalc) }}
-                · Preco medio: {{ formatByCurrency(asset.averagePrice, asset.currency) }}
-                · Preco atual: {{ formatByCurrency(asset.unitPrice, asset.currency) }}
+                · Preço médio: {{ formatByCurrency(asset.averagePrice, asset.currency) }}
+                · Preço atual: {{ formatByCurrency(asset.unitPrice, asset.currency) }}
               </p>
               <p class="asset-details">
-                Cenario: {{ profileLabel(asset.expectedProfile) }}
+                Cenário: {{ profileLabel(asset.expectedProfile) }}
                 · Taxa anual aplicada: {{ asset.appliedAnnualRate.toFixed(2) }}%
               </p>
               <p v-if="asset.lastQuoteAt" class="asset-details quote-line">
-                Ultima cotacao: {{ formatDateTime(asset.lastQuoteAt) }}
+                Última cotação: {{ formatDateTime(asset.lastQuoteAt) }}
                 <span
                   v-if="asset.lastQuoteChange !== null && asset.lastQuoteChange !== undefined"
                   :class="asset.lastQuoteChange >= 0 ? 'positive' : 'negative'"
@@ -379,7 +377,7 @@ const confirm = inject('confirm', async () => true)
 
 const ASSET_TYPE_LABELS = {
   renda_fixa: 'Renda fixa',
-  acao: 'Acao',
+  acao: 'Ação',
   etf: 'ETF',
   fii: 'FII',
   fundo: 'Fundo',
@@ -406,9 +404,9 @@ const PROFILE_ANNUAL_RATES = {
 
 const DEFAULT_CATEGORY_BY_ASSET_TYPE = {
   renda_fixa: 'Renda fixa',
-  acao: 'Acoes',
+  acao: 'Ações',
   etf: 'ETFs',
-  fii: 'Fundos Imobiliarios (FIIs)',
+  fii: 'Fundos Imobiliários (FIIs)',
   fundo: 'Fundos',
   cripto: 'Criptoativos',
   outro: 'Investimentos',
@@ -421,12 +419,12 @@ const BASE_INVESTMENT_CATEGORIES = [
   'Tesouro Direto',
   'LCI/LCA',
   'Debentures/CRI/CRA',
-  'Acoes',
-  'Acoes internacionais',
+  'Ações',
+  'Ações internacionais',
   'ETFs',
-  'Fundos Imobiliarios (FIIs)',
+  'Fundos Imobiliários (FIIs)',
   'Fundos',
-  'Previdencia',
+  'Previdência',
   'Criptoativos',
   'Caixa de investimento',
   'Outros investimentos',
@@ -439,7 +437,7 @@ const presetAssetOptions = [
     symbol: 'PETR4.SA',
     name: 'PETR4',
     assetType: 'acao',
-    category: 'Acoes',
+    category: 'Ações',
     pricingSource: 'market',
     currency: 'BRL',
   },
@@ -449,7 +447,7 @@ const presetAssetOptions = [
     symbol: 'VALE3.SA',
     name: 'VALE3',
     assetType: 'acao',
-    category: 'Acoes',
+    category: 'Ações',
     pricingSource: 'market',
     currency: 'BRL',
   },
@@ -479,7 +477,7 @@ const presetAssetOptions = [
     symbol: 'HGLG11.SA',
     name: 'HGLG11',
     assetType: 'fii',
-    category: 'Fundos Imobiliarios (FIIs)',
+    category: 'Fundos Imobiliários (FIIs)',
     pricingSource: 'market',
     currency: 'BRL',
   },
@@ -778,7 +776,7 @@ function buildMarketLookupOption(item = {}) {
   }
 }
 
-function applyAssetSuggestion(option) {
+async function applyAssetSuggestion(option) {
   if (!option) return
   assetForm.value.name = normalizeString(option.name || option.symbol || assetForm.value.name || '')
   assetForm.value.assetType = normalizeString(option.assetType || 'outro').toLowerCase() || 'outro'
@@ -788,7 +786,14 @@ function applyAssetSuggestion(option) {
   assetForm.value.expectedProfile = normalizeString(option.expectedProfile || assetForm.value.expectedProfile || 'base').toLowerCase() || 'base'
   if (assetForm.value.pricingSource === 'market') {
     assetForm.value.currentPrice = null
-    const marketPrice = Number(option.marketPrice || 0)
+    let marketPrice = Number(option.marketPrice || 0)
+    if (!(marketPrice > 0) && assetForm.value.ticker) {
+      const quote = await data.fetchMarketQuoteBySymbol(assetForm.value.ticker, { silent: true })
+      if (quote?.price > 0) {
+        marketPrice = quote.price
+        assetForm.value.currency = quote.currency || assetForm.value.currency
+      }
+    }
     if (marketPrice > 0) {
       assetForm.value.averagePrice = marketPrice
       assetLookup.lastMarketPrice = marketPrice
@@ -816,21 +821,21 @@ async function handleSearchAssetOptions() {
       return
     }
     assetLookup.selectedKey = assetLookup.options[0].optionKey
-    handleApplySelectedAssetOption()
+    await handleApplySelectedAssetOption()
     app.showMessage(`${assetLookup.options.length} resultado(s) encontrado(s). Primeiro ativo aplicado automaticamente.`, 'info')
   } finally {
     assetLookup.loading = false
   }
 }
 
-function handleApplySelectedAssetOption() {
+async function handleApplySelectedAssetOption() {
   const key = normalizeString(assetLookup.selectedKey)
-  if (!key) return
+  if (!key || key.startsWith('__group_')) return
   const fromMarket = marketLookupOptionByKey.value.get(key)
   const fromPreset = presetOptionByKey.value.get(key)
   const option = fromMarket || fromPreset
   if (!option) return
-  applyAssetSuggestion(option)
+  await applyAssetSuggestion(option)
 }
 
 function buildQuickTransactionPayload() {
@@ -867,7 +872,7 @@ async function handleSubmitQuickTransaction() {
 async function handleSubmitAsset() {
   const category = resolveCategoryFromForm()
   if (!category) {
-    app.showMessage('Informe uma categoria valida para o ativo.', 'error')
+    app.showMessage('Informe uma categoria válida para o ativo.', 'error')
     return
   }
   const payload = {
@@ -936,7 +941,7 @@ async function handleRefreshAllQuotes() {
       localStorage.setItem(AUTO_QUOTE_REFRESH_KEY, String(Date.now()))
     }
     if (summary.total > 0) {
-      app.showMessage(`Cotacoes atualizadas: ${summary.updated}/${summary.total}.`, summary.failed > 0 ? 'info' : 'success')
+      app.showMessage(`Cotações atualizadas: ${summary.updated}/${summary.total}.`, summary.failed > 0 ? 'info' : 'success')
     } else {
       app.showMessage('Nenhum ativo de mercado para atualizar.', 'info')
     }
@@ -956,10 +961,10 @@ async function handleSyncAssetsFromCsv() {
     const fixedIncomeRated = Number(summary?.fixedIncomeRated || 0)
     const failed = Number(summary?.failed || 0)
     let msg = detected > 0
-      ? `Detectados ${detected} padrao(oes) de ativos nos lancamentos.`
-      : 'Nenhum padrao de ativo foi detectado nos lancamentos.'
+      ? `Detectados ${detected} padrão(ões) de ativos nos lançamentos.`
+      : 'Nenhum padrão de ativo foi detectado nos lançamentos.'
     if (created > 0) msg += ` ${created} ativo(s) criado(s).`
-    if (quoted > 0) msg += ` ${quoted} cotacao(oes) atualizada(s).`
+    if (quoted > 0) msg += ` ${quoted} cotação(ões) atualizada(s).`
     if (estimated > 0) msg += ` ${estimated} ativo(s) com quantidade estimada.`
     if (fixedIncomeRated > 0) msg += ` ${fixedIncomeRated} ativo(s) de renda fixa com taxa anual preenchida.`
     if (failed > 0) msg += ` ${failed} falha(s).`
@@ -980,7 +985,7 @@ async function autoRefreshQuotesOnOpen() {
     localStorage.setItem(AUTO_QUOTE_REFRESH_KEY, String(Date.now()))
   }
   if (summary.failed > 0) {
-    app.showMessage(`Cotacao automatica: ${summary.updated}/${summary.total} atualizada(s).`, 'info')
+    app.showMessage(`Cotação automática: ${summary.updated}/${summary.total} atualizada(s).`, 'info')
   }
 }
 
@@ -1044,25 +1049,18 @@ watch(() => Number(assetForm.value.quantity || 0), (qty) => {
 
 .field-help {
   display: block;
-  margin-top: 0.25rem;
+  margin-top: 0.35rem;
   font-size: 0.74rem;
   color: var(--text-secondary);
 }
 
-:deep(select optgroup) {
+.search-row-help {
+  margin-top: -0.15rem;
+  margin-bottom: 0.35rem;
+}
+
+:deep(select option[disabled]) {
   color: var(--text-secondary);
-  background: var(--surface-alt);
-}
-
-:deep(select option) {
-  color: var(--text);
-  background: var(--surface);
-}
-
-:deep(select option:checked),
-:deep(select option:hover) {
-  color: var(--text);
-  background: rgba(94, 127, 255, 0.2);
 }
 
 .assets-grid {

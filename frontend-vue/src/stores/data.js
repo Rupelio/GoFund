@@ -496,6 +496,28 @@ export const useDataStore = defineStore('data', () => {
     }
   }
 
+  async function fetchMarketQuoteBySymbol(symbol, options = {}) {
+    const silent = options?.silent === true
+    const normalizedSymbol = normalizeString(String(symbol || '')).toUpperCase()
+    if (!normalizedSymbol) return null
+
+    try {
+      const quote = await investmentsApi.quoteMarket(auth.token, normalizedSymbol)
+      const price = Number(quote?.price)
+      if (!Number.isFinite(price) || price <= 0) return null
+      return {
+        symbol: normalizeString(String(quote?.symbol || normalizedSymbol)).toUpperCase(),
+        currency: normalizeString(String(quote?.currency || 'BRL')).toUpperCase() || 'BRL',
+        price,
+        changePercent: Number(quote?.changePercent || 0),
+        fetchedAt: normalizeString(String(quote?.fetchedAt || '')),
+      }
+    } catch (e) {
+      if (!silent) app.showMessage(`Falha ao consultar cotação. (${e.message || ''})`, 'error')
+      return null
+    }
+  }
+
   function round6(value) {
     return Math.round((Number(value || 0) + Number.EPSILON) * 1_000_000) / 1_000_000
   }
@@ -1863,7 +1885,7 @@ export const useDataStore = defineStore('data', () => {
     saveAccount, deleteAccount, saveAccountDirect,
     saveCategory, deleteCategory,
     saveInvestmentAsset, deleteInvestmentAsset, refreshInvestmentAssetQuote, refreshAllInvestmentQuotes,
-    searchMarketInvestmentAssets,
+    searchMarketInvestmentAssets, fetchMarketQuoteBySymbol,
     syncInvestmentAssetsFromTransactions,
     saveProjection, buildProjectionModel,
     sendMonthlySummary, exportCsv,

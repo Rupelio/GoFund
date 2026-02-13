@@ -40,6 +40,14 @@ type marketSearchDTO struct {
 	SuggestedPricing   string   `json:"suggestedPricingSource"`
 }
 
+type marketQuoteDTO struct {
+	Symbol        string  `json:"symbol"`
+	Currency      string  `json:"currency"`
+	Price         float64 `json:"price"`
+	ChangePercent float64 `json:"changePercent"`
+	FetchedAt     string  `json:"fetchedAt"`
+}
+
 func NewInvestmentHandler(repo investmentAssetStore, quotes market.QuoteProvider, timeout time.Duration) *InvestmentHandler {
 	return &InvestmentHandler{assets: repo, quotes: quotes, queryTimeout: timeout}
 }
@@ -270,6 +278,37 @@ func (h *InvestmentHandler) SearchMarketSymbols(w http.ResponseWriter, r *http.R
 	}
 
 	WriteJSON(w, http.StatusOK, out)
+}
+
+func (h *InvestmentHandler) GetMarketQuote(w http.ResponseWriter, r *http.Request) {
+	_, ok := MustCurrentUser(w, r)
+	if !ok {
+		return
+	}
+
+	symbol := strings.TrimSpace(r.URL.Query().Get("symbol"))
+	if symbol == "" {
+		WriteError(w, http.StatusBadRequest, "symbol is required")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), h.queryTimeout)
+	defer cancel()
+
+	quote, err := h.quotes.FetchQuote(ctx, symbol)
+	if err != nil {
+		slog.Error("getMarketQuote failed", "error", err, "symbol", symbol)
+		WriteError(w, http.StatusBadGateway, "could not fetch market quote")
+		return
+	}
+
+	WriteJSON(w, http.StatusOK, marketQuoteDTO{
+		Symbol:        quote.Symbol,
+		Currency:      quote.Currency,
+		Price:         quote.Price,
+		ChangePercent: quote.ChangePercent,
+		FetchedAt:     domain.FormatTimeUTC(quote.FetchedAt),
+	})
 }
 
 func classifyMarketSearchSuggestion(item market.SymbolSearchResult) (string, string) {
