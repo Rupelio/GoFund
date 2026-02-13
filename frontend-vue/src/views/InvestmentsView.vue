@@ -161,6 +161,9 @@
                     </option>
                   </optgroup>
                 </select>
+                <small v-if="assetLookup.options.length" class="field-help">
+                  {{ assetLookup.options.length }} resultado(s) carregado(s). Voce pode trocar a opcao para alterar o preenchimento.
+                </small>
               </label>
               <label class="asset-search-action">
                 Acao
@@ -365,7 +368,7 @@
 </template>
 
 <script setup>
-import { computed, inject, onMounted, reactive, ref } from 'vue'
+import { computed, inject, onMounted, reactive, ref, watch } from 'vue'
 import { useDataStore } from '../stores/data.js'
 import { useAppStore } from '../stores/app.js'
 import { classifyInvestmentReceiptKind, formatCurrency, normalizeString } from '../helpers.js'
@@ -565,6 +568,7 @@ const assetLookup = reactive({
   loading: false,
   selectedKey: '',
   options: [],
+  lastMarketPrice: null,
 })
 const refreshingQuotes = reactive({})
 const refreshingAllQuotes = ref(false)
@@ -757,12 +761,15 @@ function buildMarketLookupOption(item = {}) {
   const symbol = normalizeString(String(item.symbol || '')).toUpperCase()
   const name = normalizeString(String(item.name || '')) || symbol
   const exchange = normalizeString(String(item.exchange || ''))
+  const marketPriceRaw = Number(item.marketPrice)
+  const marketPrice = Number.isFinite(marketPriceRaw) && marketPriceRaw > 0 ? marketPriceRaw : null
   const label = exchange ? `${symbol} - ${name} (${exchange})` : `${symbol} - ${name}`
   return {
     optionKey: `market:${item.key || symbol}`,
     label,
     symbol,
     name,
+    marketPrice,
     assetType: normalizeString(String(item.suggestedAssetType || 'outro')).toLowerCase() || 'outro',
     category: normalizeString(String(item.suggestedCategory || 'Investimentos')) || 'Investimentos',
     pricingSource: normalizeString(String(item.suggestedPricingSource || 'market')).toLowerCase() || 'market',
@@ -781,6 +788,11 @@ function applyAssetSuggestion(option) {
   assetForm.value.expectedProfile = normalizeString(option.expectedProfile || assetForm.value.expectedProfile || 'base').toLowerCase() || 'base'
   if (assetForm.value.pricingSource === 'market') {
     assetForm.value.currentPrice = null
+    const marketPrice = Number(option.marketPrice || 0)
+    if (marketPrice > 0) {
+      assetForm.value.averagePrice = marketPrice
+      assetLookup.lastMarketPrice = marketPrice
+    }
   }
   if ((assetForm.value.assetType === 'renda_fixa') && (assetForm.value.annualYieldRate === null || assetForm.value.annualYieldRate === undefined) && Number.isFinite(Number(option.annualYieldRate))) {
     assetForm.value.annualYieldRate = Number(option.annualYieldRate)
@@ -801,7 +813,11 @@ async function handleSearchAssetOptions() {
     assetLookup.options = found.map(item => buildMarketLookupOption(item))
     if (!assetLookup.options.length) {
       app.showMessage('Nenhum ativo encontrado para essa busca.', 'info')
+      return
     }
+    assetLookup.selectedKey = assetLookup.options[0].optionKey
+    handleApplySelectedAssetOption()
+    app.showMessage(`${assetLookup.options.length} resultado(s) encontrado(s). Primeiro ativo aplicado automaticamente.`, 'info')
   } finally {
     assetLookup.loading = false
   }
@@ -869,6 +885,7 @@ function resetAssetForm() {
   assetForm.value = defaultAssetForm()
   customCategoryValue.value = ''
   assetLookup.selectedKey = ''
+  assetLookup.lastMarketPrice = null
 }
 
 function handleEditAsset(asset) {
@@ -970,6 +987,14 @@ async function autoRefreshQuotesOnOpen() {
 onMounted(() => {
   autoRefreshQuotesOnOpen()
 })
+
+watch(() => Number(assetForm.value.quantity || 0), (qty) => {
+  if (assetForm.value.pricingSource !== 'market') return
+  if (qty <= 0) return
+  if (Number(assetForm.value.averagePrice || 0) > 0) return
+  if (Number(assetLookup.lastMarketPrice || 0) <= 0) return
+  assetForm.value.averagePrice = assetLookup.lastMarketPrice
+})
 </script>
 
 <style scoped>
@@ -1015,6 +1040,29 @@ onMounted(() => {
 
 .asset-search-action .btn {
   width: 100%;
+}
+
+.field-help {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+}
+
+:deep(select optgroup) {
+  color: var(--text-secondary);
+  background: var(--surface-alt);
+}
+
+:deep(select option) {
+  color: var(--text);
+  background: var(--surface);
+}
+
+:deep(select option:checked),
+:deep(select option:hover) {
+  color: var(--text);
+  background: rgba(94, 127, 255, 0.2);
 }
 
 .assets-grid {

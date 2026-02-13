@@ -21,11 +21,12 @@ type Quote struct {
 }
 
 type SymbolSearchResult struct {
-	Symbol    string
-	Name      string
-	Exchange  string
-	QuoteType string
-	Currency  string
+	Symbol      string
+	Name        string
+	Exchange    string
+	QuoteType   string
+	Currency    string
+	MarketPrice *float64
 }
 
 type QuoteProvider interface {
@@ -157,12 +158,13 @@ func (p *YahooQuoteProvider) SearchSymbols(ctx context.Context, query string, li
 
 	var payload struct {
 		Quotes []struct {
-			Symbol    string `json:"symbol"`
-			ShortName string `json:"shortname"`
-			LongName  string `json:"longname"`
-			Exchange  string `json:"exchange"`
-			QuoteType string `json:"quoteType"`
-			Currency  string `json:"currency"`
+			Symbol             string  `json:"symbol"`
+			ShortName          string  `json:"shortname"`
+			LongName           string  `json:"longname"`
+			Exchange           string  `json:"exchange"`
+			QuoteType          string  `json:"quoteType"`
+			Currency           string  `json:"currency"`
+			RegularMarketPrice float64 `json:"regularMarketPrice"`
 		} `json:"quotes"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
@@ -194,12 +196,19 @@ func (p *YahooQuoteProvider) SearchSymbols(ctx context.Context, query string, li
 			continue
 		}
 
+		var marketPrice *float64
+		if item.RegularMarketPrice > 0 {
+			price := item.RegularMarketPrice
+			marketPrice = &price
+		}
+
 		results = append(results, SymbolSearchResult{
-			Symbol:    symbol,
-			Name:      name,
-			Exchange:  strings.TrimSpace(item.Exchange),
-			QuoteType: quoteType,
-			Currency:  strings.ToUpper(strings.TrimSpace(item.Currency)),
+			Symbol:      symbol,
+			Name:        name,
+			Exchange:    strings.TrimSpace(item.Exchange),
+			QuoteType:   quoteType,
+			Currency:    strings.ToUpper(strings.TrimSpace(item.Currency)),
+			MarketPrice: marketPrice,
 		})
 		if len(results) >= limit {
 			break

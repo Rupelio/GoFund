@@ -29,14 +29,15 @@ type InvestmentHandler struct {
 }
 
 type marketSearchDTO struct {
-	Symbol             string `json:"symbol"`
-	Name               string `json:"name"`
-	Exchange           string `json:"exchange,omitempty"`
-	Currency           string `json:"currency,omitempty"`
-	QuoteType          string `json:"quoteType,omitempty"`
-	SuggestedAssetType string `json:"suggestedAssetType"`
-	SuggestedCategory  string `json:"suggestedCategory"`
-	SuggestedPricing   string `json:"suggestedPricingSource"`
+	Symbol             string   `json:"symbol"`
+	Name               string   `json:"name"`
+	Exchange           string   `json:"exchange,omitempty"`
+	Currency           string   `json:"currency,omitempty"`
+	MarketPrice        *float64 `json:"marketPrice,omitempty"`
+	QuoteType          string   `json:"quoteType,omitempty"`
+	SuggestedAssetType string   `json:"suggestedAssetType"`
+	SuggestedCategory  string   `json:"suggestedCategory"`
+	SuggestedPricing   string   `json:"suggestedPricingSource"`
 }
 
 func NewInvestmentHandler(repo investmentAssetStore, quotes market.QuoteProvider, timeout time.Duration) *InvestmentHandler {
@@ -260,6 +261,7 @@ func (h *InvestmentHandler) SearchMarketSymbols(w http.ResponseWriter, r *http.R
 			Name:               item.Name,
 			Exchange:           item.Exchange,
 			Currency:           item.Currency,
+			MarketPrice:        item.MarketPrice,
 			QuoteType:          item.QuoteType,
 			SuggestedAssetType: assetType,
 			SuggestedCategory:  category,

@@ -952,16 +952,11 @@ export function extractInvestmentAssetHint(description, context = {}) {
 export function classifyInvestmentReceiptKind(description, context = {}) {
   const descAscii = normalizeAscii(description)
   const categoryAscii = normalizeAscii(context.category || '')
-  const methodAscii = normalizeAscii(context.method || '')
 
   if (!descAscii && categoryAscii !== 'investimento') return 'unknown'
 
   if (/\b(resgate|retirada|saque|liquidacao|venda|amortizacao|desinvest)\b/.test(descAscii)) return 'redemption'
   if (/\b(rendimento|rendimentos|juros|dividendo|provento|rentabilidade|correcao|atualizacao\s*monetaria|yield|cupom)\b/.test(descAscii)) return 'yield'
-
-  if ((methodAscii === 'transferencia' || methodAscii === 'pix') && /\b(recebid[ao]|creditad[ao]|entrada)\b/.test(descAscii)) {
-    return 'redemption'
-  }
   if (categoryAscii === 'investimento') return 'yield'
   return 'unknown'
 }

@@ -463,6 +463,8 @@ export const useDataStore = defineStore('data', () => {
     const suggestedAssetType = normalizeString(String(item.suggestedAssetType || 'outro')).toLowerCase() || 'outro'
     const suggestedCategory = normalizeString(String(item.suggestedCategory || 'Investimentos')) || 'Investimentos'
     const suggestedPricingSource = normalizeString(String(item.suggestedPricingSource || 'market')).toLowerCase() || 'market'
+    const marketPriceRaw = Number(item.marketPrice)
+    const marketPrice = Number.isFinite(marketPriceRaw) && marketPriceRaw > 0 ? marketPriceRaw : null
     const key = `${symbol}::${exchange}::${quoteType}`
     return {
       key,
@@ -470,6 +472,7 @@ export const useDataStore = defineStore('data', () => {
       name,
       exchange,
       currency,
+      marketPrice,
       quoteType,
       suggestedAssetType,
       suggestedCategory,
@@ -534,25 +537,69 @@ export const useDataStore = defineStore('data', () => {
         : `name:${normalizeString(hint.name).toLowerCase()}`
       const entry = groups.get(key) || {
         hint,
-        invested: 0,
-        redeemed: 0,
+        events: [],
         yields: 0,
         count: 0,
       }
       const amount = Number(txn?.amount || 0)
-      if (type === 'investimento') entry.invested += amount
-      if (type === 'receita') {
-        const receiptKind = classifyInvestmentReceiptKind(txn?.description || '', {
-          category: txn?.category || '',
-          method: txn?.method || '',
-        })
-        if (receiptKind === 'redemption') entry.redeemed += amount
-        else entry.yields += amount
-      }
+      if (!Number.isFinite(amount) || amount <= 0) continue
+      entry.events.push({
+        date: normalizeString(txn?.date || ''),
+        type,
+        amount,
+        description: normalizeString(txn?.description || ''),
+        category: normalizeString(txn?.category || ''),
+        method: normalizeString(txn?.method || ''),
+      })
       entry.count += 1
       groups.set(key, entry)
     }
-    return [...groups.values()]
+    return [...groups.values()].map(group => {
+      const events = [...(group.events || [])].sort((a, b) => {
+        if (a.date !== b.date) return a.date.localeCompare(b.date)
+        if (a.type === b.type) return 0
+        return a.type === 'investimento' ? -1 : 1
+      })
+
+      let invested = 0
+      let redeemed = 0
+      let yields = 0
+      let principal = 0
+
+      for (const event of events) {
+        const amount = Number(event.amount || 0)
+        if (!Number.isFinite(amount) || amount <= 0) continue
+
+        if (event.type === 'investimento') {
+          invested += amount
+          principal += amount
+          continue
+        }
+
+        const receiptKind = classifyInvestmentReceiptKind(event.description, {
+          category: event.category,
+          method: event.method,
+        })
+        if (receiptKind === 'redemption') {
+          const principalReduction = Math.min(principal, amount)
+          principal = round2(principal - principalReduction)
+          redeemed += principalReduction
+          const residual = round2(amount - principalReduction)
+          if (residual > 0) yields += residual
+          continue
+        }
+        yields += amount
+      }
+
+      return {
+        hint: group.hint,
+        invested: round2(invested),
+        redeemed: round2(redeemed),
+        yields: round2(yields),
+        principal: round2(principal),
+        count: group.count,
+      }
+    })
   }
 
   async function syncInvestmentAssetsFromTransactions(options = {}) {
@@ -592,7 +639,7 @@ export const useDataStore = defineStore('data', () => {
       const existing = (tickerKey && byTicker.get(tickerKey)) || byName.get(nameKey)
       if (existing) continue
 
-      const netInvested = Math.max(0, round2(candidate.invested - candidate.redeemed))
+      const netInvested = Math.max(0, round2(candidate.principal ?? (candidate.invested - candidate.redeemed)))
       const resolvedAnnualRate = resolveFixedIncomeAnnualRateForHint(hint, annualRateConfig)
       const payload = {
         name: hint.name,
