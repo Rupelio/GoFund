@@ -126,16 +126,34 @@ export function isTransferLikeTransaction(t) {
   return false
 }
 
-export function isCashAffectingTransaction(t) {
+export function getTransferEndpointIds(t) {
+  if (!t || typeof t !== 'object') return { from: '', to: '' }
+  const direction = normalizeTransferDirection(t.transferDirection || t.transfer_direction)
+  const accountId = normalizeString(t.accountId || t.account_id || '')
+  let from = normalizeString(t.transferFromAccountId || t.transfer_from_account_id || '')
+  let to = normalizeString(t.transferToAccountId || t.transfer_to_account_id || '')
+  if (!from && direction === 'out') from = accountId
+  if (!to && direction === 'in') to = accountId
+  return { from, to }
+}
+
+export function isInternalTransferBetweenOwnAccounts(t) {
+  if (!isTransferLikeTransaction(t)) return false
+  const { from, to } = getTransferEndpointIds(t)
+  return Boolean(from && to && from !== to)
+}
+
+export function isCashAffectingTransaction(t, options = {}) {
   if (!t || typeof t !== 'object') return false
   const type = normalizeAscii(t.type)
   if (type !== 'receita' && type !== 'despesa' && type !== 'investimento') return false
   if (normalizeAscii(t.method) === 'credito') return false
+  if (options.excludeInternalTransfers === true && isInternalTransferBetweenOwnAccounts(t)) return false
   return true
 }
 
-export function getSignedCashImpact(t) {
-  if (!isCashAffectingTransaction(t)) return 0
+export function getSignedCashImpact(t, options = {}) {
+  if (!isCashAffectingTransaction(t, options)) return 0
   const amount = Number(t.amount) || 0
   return normalizeAscii(t.type) === 'receita' ? amount : -amount
 }
@@ -498,7 +516,7 @@ export function getInvestmentStats(allTransactions) {
 }
 
 // ── Cash / Patrimônio helpers ──────────────────────────────
-export function getClosingCash(allTransactions, targetMonth) {
+export function getClosingCash(allTransactions, targetMonth, options = {}) {
   let cashCents = 0
   const months = new Set()
   allTransactions.forEach(t => {
@@ -518,19 +536,19 @@ export function getClosingCash(allTransactions, targetMonth) {
   sortedMonths.forEach(m => {
     const expanded = getMonthlyTransactions(allTransactions, m)
     expanded.forEach(t => {
-      cashCents += toCents(getSignedCashImpact(t))
+      cashCents += toCents(getSignedCashImpact(t, options))
     })
   })
   return fromCents(cashCents)
 }
 
-export function getMonthlySummaryMap(allTransactions, selectedMonth) {
+export function getMonthlySummaryMap(allTransactions, selectedMonth, options = {}) {
   const map = new Map()
   const historyMonths = getMonthSequence(selectedMonth, -5, 0)
   historyMonths.forEach(m => {
     const expanded = getMonthlyTransactions(allTransactions, m)
     expanded.forEach(t => {
-      if (!isCashAffectingTransaction(t)) return
+      if (!isCashAffectingTransaction(t, options)) return
       const c = map.get(m) || { income: 0, expense: 0, investment: 0 }
       if (t.type === 'receita') c.income += t.amount
       else if (t.type === 'despesa') c.expense += t.amount
@@ -831,6 +849,84 @@ export function inferCategoryFromDescription(desc, context = {}) {
   if (isPix && type === 'receita') return 'Outros'
   if (isPix) return 'Transferência'
   return 'Outros'
+}
+
+const B3_TICKER_REGEX = /\b([A-Z]{4}\d{1,2})(?:\.SA)?\b/
+const EXPLICIT_TICKER_REGEX = /\b(?:ticker|ativo|papel|a[çc][aã]o|etf|fii|stock|symbol)\s*[:\-]?\s*([A-Z]{1,6})(?:\.SA)?\b/i
+
+function inferAssetTypeFromHint(descAscii, ticker) {
+  if (/\b(fii|fundo\s*imobiliario)\b/.test(descAscii)) return 'fii'
+  if (/\betf\b/.test(descAscii)) return 'etf'
+  if (/\b(cripto|bitcoin|btc|ethereum|eth|solana|sol)\b/.test(descAscii)) return 'cripto'
+  if (/\b(tesouro|cdb|rdb|lci|lca|cri|cra|debenture|previdencia|poupanca|renda\s*fixa)\b/.test(descAscii)) return 'renda_fixa'
+  if (ticker) {
+    if (ticker.endsWith('11') && /\bfii\b/.test(descAscii)) return 'fii'
+    return 'acao'
+  }
+  if (/\b(fundo)\b/.test(descAscii)) return 'fundo'
+  return 'outro'
+}
+
+function inferAssetNameFromHint(descAscii, ticker, category) {
+  if (ticker) return ticker
+  if (/\btesouro\b/.test(descAscii)) return 'Tesouro Direto'
+  if (/\bcdb\b|\brdb\b/.test(descAscii)) return 'CDB/RDB'
+  if (/\blci\b|\blca\b/.test(descAscii)) return 'LCI/LCA'
+  if (/\bprevidencia\b/.test(descAscii)) return 'Previdencia'
+  if (/\bpoupanca\b/.test(descAscii)) return 'Poupanca'
+  if (/\betf\b/.test(descAscii)) return 'ETF'
+  if (/\bfii\b/.test(descAscii)) return 'FII'
+  if (/\bfundo\b/.test(descAscii)) return 'Fundo'
+  if (/\bbitcoin\b|\bbtc\b/.test(descAscii)) return 'Bitcoin'
+  if (/\bethereum\b|\beth\b/.test(descAscii)) return 'Ethereum'
+  return normalizeCategory(category || 'Investimentos')
+}
+
+function normalizeTickerHint(rawTicker = '') {
+  return normalizeString(String(rawTicker || '')).toUpperCase().replace(/\s+/g, '')
+}
+
+export function extractInvestmentAssetHint(description, context = {}) {
+  const rawDesc = normalizeString(description)
+  if (!rawDesc) return null
+
+  const descAscii = normalizeAscii(rawDesc)
+  const category = normalizeString(context.category || '')
+  const categoryAscii = normalizeAscii(category)
+  const type = normalizeAscii(context.type)
+  const looksInvestment = type === 'investimento'
+    || categoryAscii === 'investimento'
+    || /\b(investimento|aplicacao|resgate|rendimento|dividendo|juros|tesouro|cdb|rdb|lci|lca|cri|cra|debenture|fii|etf|acao|acoes|fundo|cripto|bitcoin|btc|ethereum|eth)\b/.test(descAscii)
+  if (!looksInvestment) return null
+
+  const upperDesc = rawDesc.toUpperCase()
+  let ticker = ''
+  const b3Match = upperDesc.match(B3_TICKER_REGEX)
+  if (b3Match?.[1]) ticker = normalizeTickerHint(b3Match[1])
+  if (!ticker) {
+    const explicit = upperDesc.match(EXPLICIT_TICKER_REGEX)
+    if (explicit?.[1]) ticker = normalizeTickerHint(explicit[1])
+  }
+  if (!ticker) {
+    if (/\bbitcoin\b|\bbtc\b/.test(descAscii)) ticker = 'BTC-USD'
+    else if (/\bethereum\b|\beth\b/.test(descAscii)) ticker = 'ETH-USD'
+  }
+
+  const assetType = inferAssetTypeFromHint(descAscii, ticker)
+  const pricingSource = ticker ? 'market' : 'manual'
+  const name = inferAssetNameFromHint(descAscii, ticker, category)
+  const confidence = ticker
+    ? 'high'
+    : (assetType === 'renda_fixa' || assetType === 'fundo' ? 'medium' : 'low')
+
+  return {
+    name,
+    assetType,
+    ticker,
+    pricingSource,
+    category: category || 'Investimentos',
+    confidence,
+  }
 }
 
 export function isSubscriptionDescription(desc) {

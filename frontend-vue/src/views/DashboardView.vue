@@ -81,6 +81,12 @@ const data = useDataStore()
 const app = useAppStore()
 const triggerCsvImport = inject('triggerCsvImport', () => {})
 
+function isCashForKpi(t) {
+  return isCashAffectingTransaction(t, {
+    excludeInternalTransfers: app.neutralizeInternalTransfersInKpis === true,
+  })
+}
+
 // ── Dismissible Banners ───────────────────────────────
 const BANNERS_STORAGE_KEY = 'gofund_hidden_banners'
 
@@ -151,7 +157,7 @@ const allAlerts = computed(() => {
   const month = app.currentMonth
   const monthly = data.monthlyTransactions(month)
   const expenses = {}
-  monthly.filter(t => isCashAffectingTransaction(t) && (t.type === 'despesa' || t.type === 'investimento'))
+  monthly.filter(t => isCashForKpi(t) && (t.type === 'despesa' || t.type === 'investimento'))
     .forEach(t => { expenses[t.category.toLowerCase()] = (expenses[t.category.toLowerCase()] || 0) + t.amount })
 
   // Budget alerts
@@ -186,8 +192,8 @@ const allAlerts = computed(() => {
     if (t.recurrenceEnd && t.recurrenceEnd.slice(0, 7) < month) return false
     return true
   })
-  const recurringExpenses = upcomingRecurring.filter(t => isCashAffectingTransaction(t) && t.type === 'despesa')
-  const recurringIncome = upcomingRecurring.filter(t => isCashAffectingTransaction(t) && t.type === 'receita')
+  const recurringExpenses = upcomingRecurring.filter(t => isCashForKpi(t) && t.type === 'despesa')
+  const recurringIncome = upcomingRecurring.filter(t => isCashForKpi(t) && t.type === 'receita')
   if (recurringExpenses.length > 0) {
     const total = recurringExpenses.reduce((s, t) => s + t.amount, 0)
     alerts.push({ id: 'recurring-expenses', type: 'info', icon: '<i class="fa-solid fa-rotate"></i>', text: `${recurringExpenses.length} despesas recorrentes este mês (${formatCurrency(total)})` })
@@ -213,7 +219,7 @@ function renderCashFlowChart() {
   transactions.forEach(t => {
     const d = Number(t.date.slice(8, 10)) - 1
     if (d >= 0 && d < days) {
-      if (!isCashAffectingTransaction(t)) return
+      if (!isCashForKpi(t)) return
       const isRedempt = isInvestmentRedemption(t, invCats)
       daily[d] += (t.type === 'receita' ? 1 : -1) * t.amount
       // Investment round-trips (application / redemption) don't change patrimônio
@@ -224,7 +230,9 @@ function renderCashFlowChart() {
   const labels = []; const cumulative = []; const patriCumulative = []
   // Start from previous month's closing cash to carry over balance
   const prevMonth = getMonthShift(app.currentMonth, -1)
-  const prevClosing = getClosingCash(data.transactions, prevMonth)
+  const prevClosing = getClosingCash(data.transactions, prevMonth, {
+    excludeInternalTransfers: app.neutralizeInternalTransfersInKpis === true,
+  })
   let running = prevClosing; let patriRunning = prevClosing
   const investStats = getInvestmentStats(data.transactions)
   const dailyYield = days > 0 ? investStats.estimatedMonthlyYield / days : 0
@@ -268,7 +276,7 @@ function renderExpenseByCategoryChart() {
   if (expenseChart) expenseChart.destroy()
   const theme = getChartTheme()
   const monthly = data.monthlyTransactions(app.currentMonth)
-  const expenses = monthly.filter(t => t.type === 'despesa' && isCashAffectingTransaction(t))
+  const expenses = monthly.filter(t => t.type === 'despesa' && isCashForKpi(t))
   const groups = {}
   expenses.forEach(t => { groups[t.category] = (groups[t.category] || 0) + t.amount })
   const sorted = Object.entries(groups).sort((a, b) => b[1] - a[1])

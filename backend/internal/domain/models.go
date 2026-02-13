@@ -179,6 +179,42 @@ type ProjectionDTO struct {
 	UpdatedAt  string   `json:"updatedAt"`
 }
 
+type InvestmentAssetPayload struct {
+	ID              string   `json:"id,omitempty"`
+	Name            string   `json:"name"`
+	AssetType       string   `json:"assetType"`
+	Category        string   `json:"category,omitempty"`
+	Ticker          string   `json:"ticker,omitempty"`
+	PricingSource   string   `json:"pricingSource,omitempty"`
+	Quantity        float64  `json:"quantity"`
+	AveragePrice    float64  `json:"averagePrice"`
+	CurrentPrice    *float64 `json:"currentPrice,omitempty"`
+	AnnualYieldRate *float64 `json:"annualYieldRate,omitempty"`
+	ExpectedProfile string   `json:"expectedProfile,omitempty"`
+	Currency        string   `json:"currency,omitempty"`
+	Notes           string   `json:"notes,omitempty"`
+}
+
+type InvestmentAssetDTO struct {
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	AssetType       string   `json:"assetType"`
+	Category        string   `json:"category"`
+	Ticker          string   `json:"ticker,omitempty"`
+	PricingSource   string   `json:"pricingSource"`
+	Quantity        float64  `json:"quantity"`
+	AveragePrice    float64  `json:"averagePrice"`
+	CurrentPrice    *float64 `json:"currentPrice,omitempty"`
+	AnnualYieldRate *float64 `json:"annualYieldRate,omitempty"`
+	ExpectedProfile string   `json:"expectedProfile"`
+	Currency        string   `json:"currency"`
+	Notes           string   `json:"notes,omitempty"`
+	LastQuoteAt     string   `json:"lastQuoteAt,omitempty"`
+	LastQuoteChange *float64 `json:"lastQuoteChange,omitempty"`
+	CreatedAt       string   `json:"createdAt"`
+	UpdatedAt       string   `json:"updatedAt"`
+}
+
 // ── Category ─────────────────────────────────────────────────
 
 type CategoryPayload struct {
@@ -219,13 +255,14 @@ type AccountDTO struct {
 // ── Bootstrap ────────────────────────────────────────────────
 
 type BootstrapDTO struct {
-	User         UserDTO          `json:"user"`
-	Transactions []TransactionDTO `json:"transactions"`
-	Budgets      []BudgetDTO      `json:"budgets"`
-	Goals        []GoalDTO        `json:"goals"`
-	Projection   ProjectionDTO    `json:"projection"`
-	Categories   []CategoryDTO    `json:"categories"`
-	Accounts     []AccountDTO     `json:"accounts"`
+	User             UserDTO              `json:"user"`
+	Transactions     []TransactionDTO     `json:"transactions"`
+	Budgets          []BudgetDTO          `json:"budgets"`
+	Goals            []GoalDTO            `json:"goals"`
+	Projection       ProjectionDTO        `json:"projection"`
+	Categories       []CategoryDTO        `json:"categories"`
+	Accounts         []AccountDTO         `json:"accounts"`
+	InvestmentAssets []InvestmentAssetDTO `json:"investmentAssets"`
 }
 
 // ── Pagination ───────────────────────────────────────────────

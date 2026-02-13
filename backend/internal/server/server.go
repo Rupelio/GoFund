@@ -10,6 +10,7 @@ import (
 	"gestao/backend/internal/config"
 	"gestao/backend/internal/email"
 	"gestao/backend/internal/handler"
+	"gestao/backend/internal/market"
 	mw "gestao/backend/internal/middleware"
 	"gestao/backend/internal/postgres"
 	"gestao/backend/internal/reminder"
@@ -38,6 +39,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 	projRepo := postgres.NewProjectionRepo(pool)
 	catRepo := postgres.NewCategoryRepo(pool)
 	accRepo := postgres.NewAccountRepo(pool)
+	investmentRepo := postgres.NewInvestmentAssetRepo(pool)
 	tokenRepo := postgres.NewTokenRepo(pool)
 	importJobRepo := postgres.NewImportJobRepo(pool)
 
@@ -64,7 +66,9 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 	projH := handler.NewProjectionHandler(projRepo, timeout)
 	catH := handler.NewCategoryHandler(catRepo, timeout)
 	accH := handler.NewAccountHandler(accRepo, txnRepo, timeout)
-	bootstrapH := handler.NewBootstrapHandler(userRepo, txnRepo, budgetRepo, goalRepo, projRepo, catRepo, accRepo, timeout)
+	quoteProvider := market.NewYahooQuoteProvider(nil)
+	investmentH := handler.NewInvestmentHandler(investmentRepo, quoteProvider, timeout)
+	bootstrapH := handler.NewBootstrapHandler(userRepo, txnRepo, budgetRepo, goalRepo, projRepo, catRepo, accRepo, investmentRepo, timeout)
 	healthH := handler.NewHealthHandler(pool, timeout, "gestao-api", cfg.AppVersion)
 	meH := handler.NewMeHandler(userRepo, timeout)
 	logH := handler.NewLogHandler(logger)
@@ -164,6 +168,14 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 				ra.Post("/", accH.Create)
 				ra.Put("/{id}", accH.Update)
 				ra.Delete("/{id}", accH.Delete)
+			})
+
+			priv.Route("/investments", func(ri chi.Router) {
+				ri.Get("/assets", investmentH.ListAssets)
+				ri.Post("/assets", investmentH.CreateAsset)
+				ri.Put("/assets/{id}", investmentH.UpdateAsset)
+				ri.Delete("/assets/{id}", investmentH.DeleteAsset)
+				ri.Post("/assets/{id}/quote", investmentH.RefreshAssetQuote)
 			})
 		})
 	})

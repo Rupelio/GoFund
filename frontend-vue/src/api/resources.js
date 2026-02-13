@@ -62,3 +62,21 @@ export const summaryApi = {
     return api.post(`/api/summary/send?month=${month}`, undefined, { token })
   },
 }
+
+export const investmentsApi = {
+  list(token) {
+    return api.get('/api/investments/assets', { token })
+  },
+  create(token, payload) {
+    return api.post('/api/investments/assets', payload, { token })
+  },
+  update(token, id, payload) {
+    return api.put(`/api/investments/assets/${encodeURIComponent(id)}`, payload, { token })
+  },
+  remove(token, id) {
+    return api.del(`/api/investments/assets/${encodeURIComponent(id)}`, { token })
+  },
+  refreshQuote(token, id) {
+    return api.post(`/api/investments/assets/${encodeURIComponent(id)}/quote`, undefined, { token })
+  },
+}

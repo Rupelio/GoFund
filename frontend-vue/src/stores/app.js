@@ -10,6 +10,7 @@ export const useAppStore = defineStore('app', () => {
 
   // Theme
   const theme = ref(localStorage.getItem('gf_theme') || 'dark')
+  const neutralizeInternalTransfersInKpis = ref(localStorage.getItem('gf_kpi_neutralize_internal_transfers') === '1')
 
   // Sidebar collapsed (mobile)
   const sidebarOpen = ref(false)
@@ -48,6 +49,12 @@ export const useAppStore = defineStore('app', () => {
     document.body.setAttribute('data-theme', theme.value)
   }
 
+  function setNeutralizeInternalTransfersInKpis(enabled) {
+    const next = Boolean(enabled)
+    neutralizeInternalTransfersInKpis.value = next
+    localStorage.setItem('gf_kpi_neutralize_internal_transfers', next ? '1' : '0')
+  }
+
   function toggleSidebar() {
     sidebarOpen.value = !sidebarOpen.value
   }
@@ -68,9 +75,10 @@ export const useAppStore = defineStore('app', () => {
   document.body.setAttribute('data-theme', theme.value)
 
   return {
-    currentMonth, theme, sidebarOpen,
+    currentMonth, theme, sidebarOpen, neutralizeInternalTransfersInKpis,
     message, messageType, monthLabel,
     prevMonth, nextMonth, setMonth,
+    setNeutralizeInternalTransfersInKpis,
     toggleTheme, toggleSidebar, closeSidebar,
     showMessage,
   }

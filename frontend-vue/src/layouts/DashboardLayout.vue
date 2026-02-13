@@ -309,7 +309,7 @@ async function confirmImport() {
   csvImportJob.value = null
   let shouldResetImportState = false
   try {
-    const { result, upgradeResult, job } = await data.executeImportJob(
+    const { result, upgradeResult, pairingResult, assetSyncResult, job } = await data.executeImportJob(
       csvPendingFile.value,
       csvPreview.value,
       csvAccountId.value || undefined,
@@ -320,8 +320,14 @@ async function confirmImport() {
     const invalid = Number(result?.invalid || 0)
     const failed = Number(result?.failed || 0)
     const upgraded = upgradeResult?.updated || 0
+    const pairedTransfers = Number(pairingResult?.paired || 0)
+    const createdAssets = Number(assetSyncResult?.created || 0)
+    const quotedAssets = Number(assetSyncResult?.quoted || 0)
     let msg = imported > 0 ? `${imported} movimentacao(oes) importada(s).` : 'Nenhuma nova movimentacao foi adicionada.'
     if (upgraded > 0) msg += ` ${upgraded} atualizada(s).`
+    if (pairedTransfers > 0) msg += ` ${pairedTransfers} transferencia(s) interna(s) pareada(s).`
+    if (createdAssets > 0) msg += ` ${createdAssets} ativo(s) criado(s) automaticamente.`
+    if (quotedAssets > 0) msg += ` ${quotedAssets} cotacao(oes) atualizada(s).`
     if (duplicates > 0) msg += ` ${duplicates} duplicata(s) ignorada(s).`
     if (invalid > 0) msg += ` ${invalid} linha(s) invalida(s).`
     if (failed > 0) msg += ` ${failed} linha(s) com erro.`

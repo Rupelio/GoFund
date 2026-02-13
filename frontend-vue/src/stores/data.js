@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useAuthStore } from './auth.js'
 import { useAppStore } from './app.js'
 import { transactionsApi } from '../api/transactions.js'
-import { budgetsApi, goalsApi, accountsApi, categoriesApi, projectionApi, summaryApi } from '../api/resources.js'
+import { budgetsApi, goalsApi, accountsApi, categoriesApi, projectionApi, summaryApi, investmentsApi } from '../api/resources.js'
 import { fetchBootstrap } from '../api/bootstrap.js'
 import {
   normalizeTransaction, normalizeBudget, normalizeGoal, normalizeProjection,
@@ -17,8 +17,30 @@ import {
   isSubscriptionDescription, shouldInferMonthlyBankRecurrence,
   inferCategoryFromDescription, inferTransferDirection, inferTransferCounterparty, normalizeTransferDirection, CARD_BILL_REGEX, SUBSCRIPTION_REGEX,
   txnFingerprint, txnMonthlyFingerprint, txnInstallmentFingerprint, normalizeDescriptionForFingerprint, toPayload, isValidDate,
-  getProjectionBasis, getAccountBalance, isCashAffectingTransaction,
+  getProjectionBasis, getAccountBalance, isCashAffectingTransaction, isTransferLikeTransaction, getTransferEndpointIds, extractInvestmentAssetHint,
 } from '../helpers.js'
+
+function normalizeInvestmentAsset(item = {}) {
+  return {
+    id: normalizeString(String(item.id || '')),
+    name: normalizeString(String(item.name || '')),
+    assetType: normalizeString(String(item.assetType || 'outro')).toLowerCase() || 'outro',
+    category: normalizeString(String(item.category || 'Investimentos')) || 'Investimentos',
+    ticker: normalizeString(String(item.ticker || '')).toUpperCase(),
+    pricingSource: normalizeString(String(item.pricingSource || 'manual')).toLowerCase() || 'manual',
+    quantity: Number(item.quantity || 0),
+    averagePrice: Number(item.averagePrice || 0),
+    currentPrice: item.currentPrice === null || item.currentPrice === undefined ? null : Number(item.currentPrice || 0),
+    annualYieldRate: item.annualYieldRate === null || item.annualYieldRate === undefined ? null : Number(item.annualYieldRate || 0),
+    expectedProfile: normalizeString(String(item.expectedProfile || 'base')).toLowerCase() || 'base',
+    currency: normalizeString(String(item.currency || 'BRL')).toUpperCase() || 'BRL',
+    notes: normalizeString(String(item.notes || '')),
+    lastQuoteAt: normalizeString(String(item.lastQuoteAt || '')),
+    lastQuoteChange: item.lastQuoteChange === null || item.lastQuoteChange === undefined ? null : Number(item.lastQuoteChange || 0),
+    createdAt: normalizeString(String(item.createdAt || '')),
+    updatedAt: normalizeString(String(item.updatedAt || '')),
+  }
+}
 
 export const useDataStore = defineStore('data', () => {
   const auth = useAuthStore()
@@ -30,6 +52,7 @@ export const useDataStore = defineStore('data', () => {
   const goals = ref([])
   const accounts = ref([])
   const categories = ref([])
+  const investmentAssets = ref([])
   const projection = ref(normalizeProjection({}))
   const importSnapshotTransactions = ref([])
   const csvSourceMapVersion = ref(0)
@@ -66,6 +89,7 @@ export const useDataStore = defineStore('data', () => {
       goals.value = (data.goals || []).map(normalizeGoal)
       accounts.value = data.accounts || []
       categories.value = data.categories || []
+      investmentAssets.value = (data.investmentAssets || []).map(normalizeInvestmentAsset).filter(item => item.id && item.name)
       projection.value = normalizeProjection(data.projection || {})
       return true
     } catch (e) {
@@ -101,22 +125,30 @@ export const useDataStore = defineStore('data', () => {
   // ── Dashboard computed ─────────────────────────────────
   const investCategories = computed(() => getInvestmentCategories(transactions.value))
 
+  function kpiCashOptions() {
+    return { excludeInternalTransfers: app.neutralizeInternalTransfersInKpis === true }
+  }
+
+  function isKpiCashTransaction(t) {
+    return isCashAffectingTransaction(t, kpiCashOptions())
+  }
+
   const dashboardData = computed(() => {
     const monthly = monthlyTransactions(app.currentMonth)
-    const cashBasis = monthly.filter(isCashAffectingTransaction)
+    const cashBasis = monthly.filter(isKpiCashTransaction)
     const income = cashBasis.filter(t => t.type === 'receita').reduce((s, t) => s + t.amount, 0)
     const expense = cashBasis.filter(t => t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
     const investment = cashBasis.filter(t => t.type === 'investimento').reduce((s, t) => s + t.amount, 0)
     const totalOut = round2(expense + investment)
     const creditCard = monthly.filter(t => t.method === 'credito' && t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
-    const balance = getClosingCash(transactions.value, app.currentMonth)
+    const balance = getClosingCash(transactions.value, app.currentMonth, kpiCashOptions())
     return { income, expense, investment, totalOut, creditCard, balance, monthly }
   })
 
   const investmentStats = computed(() => getInvestmentStats(transactions.value))
 
   const netWorth = computed(() => {
-    const real = transactions.value.filter(isCashAffectingTransaction)
+    const real = transactions.value.filter(isKpiCashTransaction)
     const totalIncome = real.filter(t => t.type === 'receita').reduce((s, t) => s + t.amount, 0)
     const totalExpense = real.filter(t => t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
     const totalInvestment = real.filter(t => t.type === 'investimento').reduce((s, t) => s + t.amount, 0)
@@ -129,19 +161,25 @@ export const useDataStore = defineStore('data', () => {
   async function saveTransaction(payload) {
     const id = editingTransactionId.value
     try {
+      let persisted = null
       if (id) {
         const updated = normalizeTransaction(
           await transactionsApi.update(auth.token, id, payload)
         )
         const idx = transactions.value.findIndex(t => t.id === id)
         if (idx >= 0) transactions.value[idx] = updated
+        persisted = updated
         app.showMessage('Movimentação atualizada.', 'success')
       } else {
         const created = normalizeTransaction(
           await transactionsApi.create(auth.token, payload)
         )
         transactions.value.push(created)
+        persisted = created
         app.showMessage('Movimentação criada.', 'success')
+      }
+      if (persisted && isTransferLikeTransaction(persisted)) {
+        await autoPairInternalTransfers({ silent: true })
       }
       editingTransactionId.value = null
       return true
@@ -338,6 +376,215 @@ export const useDataStore = defineStore('data', () => {
   }
 
   // ── Projection ─────────────────────────────────────────
+  async function saveInvestmentAsset(payload, options = {}) {
+    const silent = options?.silent === true
+    const id = normalizeString(String(payload?.id || ''))
+    const requestPayload = {
+      name: normalizeString(String(payload?.name || '')),
+      assetType: normalizeString(String(payload?.assetType || 'outro')).toLowerCase() || 'outro',
+      category: normalizeString(String(payload?.category || 'Investimentos')) || 'Investimentos',
+      ticker: normalizeString(String(payload?.ticker || '')).toUpperCase(),
+      pricingSource: normalizeString(String(payload?.pricingSource || 'manual')).toLowerCase() || 'manual',
+      quantity: Number(payload?.quantity || 0),
+      averagePrice: Number(payload?.averagePrice || 0),
+      currentPrice: payload?.currentPrice === null || payload?.currentPrice === undefined || payload?.currentPrice === '' ? null : Number(payload.currentPrice),
+      annualYieldRate: payload?.annualYieldRate === null || payload?.annualYieldRate === undefined || payload?.annualYieldRate === '' ? null : Number(payload.annualYieldRate),
+      expectedProfile: normalizeString(String(payload?.expectedProfile || 'base')).toLowerCase() || 'base',
+      currency: normalizeString(String(payload?.currency || 'BRL')).toUpperCase() || 'BRL',
+      notes: normalizeString(String(payload?.notes || '')),
+    }
+    try {
+      const dto = id
+        ? normalizeInvestmentAsset(await investmentsApi.update(auth.token, id, requestPayload))
+        : normalizeInvestmentAsset(await investmentsApi.create(auth.token, requestPayload))
+      const idx = investmentAssets.value.findIndex(item => item.id === dto.id)
+      if (idx >= 0) investmentAssets.value[idx] = dto
+      else investmentAssets.value.push(dto)
+      investmentAssets.value.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+      if (!silent) app.showMessage(id ? 'Ativo atualizado.' : 'Ativo criado.', 'success')
+      return dto
+    } catch (e) {
+      if (!silent) app.showMessage(`Falha ao salvar ativo. (${e.message || ''})`, 'error')
+      return null
+    }
+  }
+
+  async function deleteInvestmentAsset(id) {
+    const normalizedID = normalizeString(String(id || ''))
+    if (!normalizedID) return false
+    try {
+      await investmentsApi.remove(auth.token, normalizedID)
+      investmentAssets.value = investmentAssets.value.filter(item => item.id !== normalizedID)
+      app.showMessage('Ativo removido.', 'success')
+      return true
+    } catch (e) {
+      app.showMessage(`Falha ao excluir ativo. (${e.message || ''})`, 'error')
+      return false
+    }
+  }
+
+  async function refreshInvestmentAssetQuote(id, options = {}) {
+    const normalizedID = normalizeString(String(id || ''))
+    if (!normalizedID) return null
+    const silent = options?.silent === true
+    try {
+      const dto = normalizeInvestmentAsset(await investmentsApi.refreshQuote(auth.token, normalizedID))
+      const idx = investmentAssets.value.findIndex(item => item.id === dto.id)
+      if (idx >= 0) investmentAssets.value[idx] = dto
+      else investmentAssets.value.push(dto)
+      if (!silent) app.showMessage(`Cotacao atualizada para ${dto.name}.`, 'success')
+      return dto
+    } catch (e) {
+      if (!silent) app.showMessage(`Falha ao atualizar cotacao. (${e.message || ''})`, 'error')
+      return null
+    }
+  }
+
+  async function refreshAllInvestmentQuotes() {
+    const marketAssets = investmentAssets.value.filter(item => item.pricingSource === 'market' && item.ticker)
+    if (!marketAssets.length) return { total: 0, updated: 0, failed: 0 }
+    let updated = 0
+    let failed = 0
+    for (const item of marketAssets) {
+      const result = await refreshInvestmentAssetQuote(item.id, { silent: true })
+      if (result) updated += 1
+      else failed += 1
+    }
+    return { total: marketAssets.length, updated, failed }
+  }
+
+  function round6(value) {
+    return Math.round((Number(value || 0) + Number.EPSILON) * 1_000_000) / 1_000_000
+  }
+
+  function classifyAssetCandidateTransactions(items) {
+    const groups = new Map()
+    for (const txn of items) {
+      const type = normalizeString(txn?.type || '').toLowerCase()
+      if (type !== 'investimento' && type !== 'receita') continue
+      const hint = extractInvestmentAssetHint(txn?.description || '', {
+        category: txn?.category || '',
+        type,
+        method: txn?.method || '',
+        amount: Number(txn?.amount || 0),
+      })
+      if (!hint) continue
+      const key = hint.ticker
+        ? `ticker:${hint.ticker}`
+        : `name:${normalizeString(hint.name).toLowerCase()}`
+      const entry = groups.get(key) || {
+        hint,
+        invested: 0,
+        redeemed: 0,
+        count: 0,
+      }
+      const amount = Number(txn?.amount || 0)
+      if (type === 'investimento') entry.invested += amount
+      if (type === 'receita') entry.redeemed += amount
+      entry.count += 1
+      groups.set(key, entry)
+    }
+    return [...groups.values()]
+  }
+
+  async function syncInvestmentAssetsFromTransactions(options = {}) {
+    const silent = options?.silent === true
+    const sourceItems = Array.isArray(options?.transactions)
+      ? options.transactions
+      : transactions.value
+    const candidates = classifyAssetCandidateTransactions(sourceItems)
+    if (!candidates.length) {
+      return { detected: 0, created: 0, quoted: 0, estimated: 0, failed: 0 }
+    }
+
+    const byTicker = new Map()
+    const byName = new Map()
+    investmentAssets.value.forEach(asset => {
+      const ticker = normalizeString(asset?.ticker || '').toUpperCase()
+      const name = normalizeString(asset?.name || '').toLowerCase()
+      if (ticker) byTicker.set(ticker, asset)
+      if (name) byName.set(name, asset)
+    })
+
+    let created = 0
+    let quoted = 0
+    let estimated = 0
+    let failed = 0
+
+    for (const candidate of candidates) {
+      const hint = candidate.hint
+      const tickerKey = normalizeString(hint?.ticker || '').toUpperCase()
+      const nameKey = normalizeString(hint?.name || '').toLowerCase()
+      const existing = (tickerKey && byTicker.get(tickerKey)) || byName.get(nameKey)
+      if (existing) continue
+
+      const netInvested = Math.max(0, round2(candidate.invested - candidate.redeemed))
+      const payload = {
+        name: hint.name,
+        assetType: hint.assetType,
+        category: hint.category || 'Investimentos',
+        ticker: hint.ticker || '',
+        pricingSource: hint.pricingSource || 'manual',
+        quantity: netInvested > 0 && hint.pricingSource !== 'market' ? 1 : 0,
+        averagePrice: netInvested > 0 && hint.pricingSource !== 'market' ? netInvested : 0,
+        currentPrice: netInvested > 0 && hint.pricingSource !== 'market' ? netInvested : null,
+        annualYieldRate: null,
+        expectedProfile: 'base',
+        currency: 'BRL',
+        notes: 'Criado automaticamente pelo CSV. Revise quantidade e preco medio.',
+      }
+
+      const createdAsset = await saveInvestmentAsset(payload, { silent: true })
+      if (!createdAsset) {
+        failed += 1
+        continue
+      }
+
+      created += 1
+      if (tickerKey) byTicker.set(tickerKey, createdAsset)
+      if (nameKey) byName.set(nameKey, createdAsset)
+
+      if (createdAsset.pricingSource === 'market' && createdAsset.ticker) {
+        const quotedAsset = await refreshInvestmentAssetQuote(createdAsset.id, { silent: true })
+        if (quotedAsset) {
+          quoted += 1
+          const currentPrice = Number(quotedAsset.currentPrice || 0)
+          if (netInvested > 0 && currentPrice > 0 && Number(quotedAsset.quantity || 0) <= 0) {
+            const estimatedQty = round6(netInvested / currentPrice)
+            if (estimatedQty > 0) {
+              const updatedAsset = await saveInvestmentAsset({
+                id: quotedAsset.id,
+                name: quotedAsset.name,
+                assetType: quotedAsset.assetType,
+                category: quotedAsset.category,
+                ticker: quotedAsset.ticker,
+                pricingSource: quotedAsset.pricingSource,
+                quantity: estimatedQty,
+                averagePrice: currentPrice,
+                currentPrice: quotedAsset.currentPrice,
+                annualYieldRate: quotedAsset.annualYieldRate,
+                expectedProfile: quotedAsset.expectedProfile,
+                currency: quotedAsset.currency,
+                notes: quotedAsset.notes || 'Quantidade estimada automaticamente pelo valor importado.',
+              }, { silent: true })
+              if (updatedAsset) estimated += 1
+            }
+          }
+        }
+      }
+    }
+
+    const summary = { detected: candidates.length, created, quoted, estimated, failed }
+    if (!silent && (created > 0 || quoted > 0 || estimated > 0 || failed > 0)) {
+      let msg = `${created} ativo(s) criado(s) automaticamente a partir do CSV.`
+      if (quoted > 0) msg += ` ${quoted} cotacao(oes) atualizada(s).`
+      if (estimated > 0) msg += ` ${estimated} ativo(s) com quantidade estimada.`
+      if (failed > 0) msg += ` ${failed} falha(s).`
+      app.showMessage(msg, failed > 0 ? 'info' : 'success')
+    }
+    return summary
+  }
+
   async function saveProjection(payload) {
     try {
       const updated = normalizeProjection(await projectionApi.update(auth.token, payload))
@@ -354,7 +601,7 @@ export const useDataStore = defineStore('data', () => {
     const p = normalizeProjection(projection.value)
     const historyMonths = getMonthSequence(app.currentMonth, -5, 0)
     const futureMonths = getMonthSequence(app.currentMonth, 1, p.months)
-    const monthlyMap = getMonthlySummaryMap(transactions.value, app.currentMonth)
+    const monthlyMap = getMonthlySummaryMap(transactions.value, app.currentMonth, kpiCashOptions())
     const avgMonths = getMonthSequence(app.currentMonth, -2, 0)
     const avg = getAverageMonthlyFlow(monthlyMap, avgMonths)
 
@@ -367,13 +614,13 @@ export const useDataStore = defineStore('data', () => {
     const rate = stats.avgMonthlyRate
 
     const labels = historyMonths.concat(futureMonths).map(formatMonthLabel)
-    const actual = historyMonths.map(m => round2(getClosingCash(transactions.value, m)))
+    const actual = historyMonths.map(m => round2(getClosingCash(transactions.value, m, kpiCashOptions())))
     futureMonths.forEach(() => actual.push(null))
 
     const projected = new Array(labels.length).fill(null)
     const projectedPatrimonio = new Array(labels.length).fill(null)
     const startIdx = historyMonths.length - 1
-    let rolling = round2(getClosingCash(transactions.value, app.currentMonth))
+    let rolling = round2(getClosingCash(transactions.value, app.currentMonth, kpiCashOptions()))
     projected[startIdx] = rolling
 
     let investedCapital = stats.totalInvested
@@ -394,7 +641,7 @@ export const useDataStore = defineStore('data', () => {
       expectedIncome, expectedExpense, expectedInvestment, expectedNet,
       projectedEndCash: rolling,
       projectedEndPatrimonio: projectedPatrimonio[projectedPatrimonio.length - 1] || round2(rolling + investedCapital),
-      currentCash: round2(getClosingCash(transactions.value, app.currentMonth)),
+      currentCash: round2(getClosingCash(transactions.value, app.currentMonth, kpiCashOptions())),
       currentPatrimonio: round2(rolling + stats.totalInvested),
       investedCapital: stats.totalInvested,
       avgYieldRate: round2(rate * 10000) / 100,
@@ -449,6 +696,227 @@ export const useDataStore = defineStore('data', () => {
   const IMPORT_RECOVERY_PASSES = 4
   const IMPORT_JOB_POLL_INTERVAL_MS = 1200
   const IMPORT_JOB_MAX_WAIT_MS = 8 * 60 * 1000
+  const TRANSFER_PAIRING_MAX_DAY_DIFF = 3
+  const TRANSFER_PAIRING_MIN_SCORE = 10
+
+  function createTransferGroupId() {
+    if (window?.crypto?.randomUUID) return `trf_${window.crypto.randomUUID()}`
+    return `trf_${Date.now()}_${Math.random().toString(16).slice(2)}`
+  }
+
+  function normalizeCounterpartyKey(value) {
+    return normalizeString(String(value || ''))
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '')
+  }
+
+  function extractTaxIdentifiers(value) {
+    const raw = String(value || '')
+    const matches = raw.match(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}|\d{3}\.?\d{3}\.?\d{3}-?\d{2}/g) || []
+    return new Set(
+      matches
+        .map(v => v.replace(/\D/g, ''))
+        .filter(v => v.length === 11 || v.length === 14)
+    )
+  }
+
+  function hasSharedTaxIdentifier(setA, setB) {
+    if (!setA?.size || !setB?.size) return false
+    for (const value of setA) {
+      if (setB.has(value)) return true
+    }
+    return false
+  }
+
+  function toUtcDayStamp(dateValue) {
+    if (!isValidDate(dateValue)) return NaN
+    const [year, month, day] = String(dateValue).split('-').map(Number)
+    return Math.floor(Date.UTC(year, month - 1, day) / 86400000)
+  }
+
+  function getCandidateGroupId(tx) {
+    return normalizeString(tx.transferGroupId || tx.transfer_group_id || '')
+  }
+
+  function buildTransferPairCandidates(sourceTransactions = transactions.value) {
+    const accountIds = new Set(accounts.value.map(a => a.id))
+    const candidates = []
+    for (const tx of sourceTransactions || []) {
+      if (!tx?.id) continue
+      if (!isTransferLikeTransaction(tx)) continue
+      if (normalizeString(tx.method).toLowerCase() === 'credito') continue
+
+      const direction = normalizeTransferDirection(tx.transferDirection || tx.transfer_direction)
+      if (direction !== 'in' && direction !== 'out') continue
+
+      const amount = Number(tx.amount)
+      if (!Number.isFinite(amount) || amount <= 0) continue
+      const amountCents = Math.round(amount * 100)
+      if (amountCents <= 0) continue
+
+      const dayStamp = toUtcDayStamp(tx.date)
+      if (!Number.isFinite(dayStamp)) continue
+
+      const { from, to } = getTransferEndpointIds(tx)
+      if (direction === 'out' && (!from || !accountIds.has(from))) continue
+      if (direction === 'in' && (!to || !accountIds.has(to))) continue
+
+      const groupId = getCandidateGroupId(tx)
+      if (groupId && from && to && from !== to) continue
+
+      const counterparty = normalizeCounterpartyKey(tx.transferCounterparty || tx.transfer_counterparty || '')
+      const taxIdentifiers = extractTaxIdentifiers(`${tx.description || ''} ${tx.transferCounterparty || tx.transfer_counterparty || ''}`)
+      candidates.push({
+        tx,
+        id: tx.id,
+        direction,
+        amountCents,
+        dayStamp,
+        from,
+        to,
+        groupId,
+        counterparty,
+        taxIdentifiers,
+      })
+    }
+    return candidates
+  }
+
+  function scoreTransferPair(outCandidate, inCandidate) {
+    if (!outCandidate || !inCandidate) return -1
+    if (outCandidate.amountCents !== inCandidate.amountCents) return -1
+    if (!outCandidate.from || !inCandidate.to) return -1
+    if (outCandidate.from === inCandidate.to) return -1
+    if (outCandidate.to && inCandidate.to && outCandidate.to !== inCandidate.to) return -1
+    if (outCandidate.from && inCandidate.from && outCandidate.from !== inCandidate.from) return -1
+
+    const dayDiff = Math.abs(outCandidate.dayStamp - inCandidate.dayStamp)
+    if (dayDiff > TRANSFER_PAIRING_MAX_DAY_DIFF) return -1
+
+    let score = 0
+    if (dayDiff === 0) score += 20
+    else if (dayDiff === 1) score += 14
+    else if (dayDiff === 2) score += 8
+    else score += 4
+
+    if (outCandidate.counterparty && inCandidate.counterparty) {
+      score += outCandidate.counterparty === inCandidate.counterparty ? 18 : -10
+    }
+
+    if (hasSharedTaxIdentifier(outCandidate.taxIdentifiers, inCandidate.taxIdentifiers)) score += 12
+    if (outCandidate.to && inCandidate.to && outCandidate.to === inCandidate.to) score += 35
+    if (outCandidate.from && inCandidate.from && outCandidate.from === inCandidate.from) score += 35
+    if (outCandidate.groupId && inCandidate.groupId && outCandidate.groupId === inCandidate.groupId) score += 50
+
+    return score
+  }
+
+  function hasTransferPairChanges(tx, desired) {
+    const currentDirection = normalizeTransferDirection(tx.transferDirection || tx.transfer_direction)
+    const currentGroupId = normalizeString(tx.transferGroupId || tx.transfer_group_id || '')
+    const currentFrom = normalizeString(tx.transferFromAccountId || tx.transfer_from_account_id || '')
+    const currentTo = normalizeString(tx.transferToAccountId || tx.transfer_to_account_id || '')
+    return currentDirection !== desired.direction
+      || currentGroupId !== desired.groupId
+      || currentFrom !== desired.fromAccountId
+      || currentTo !== desired.toAccountId
+  }
+
+  function applyTransactionUpdateLocal(dto) {
+    const normalized = normalizeTransaction(dto)
+    const idx = transactions.value.findIndex(t => t.id === normalized.id)
+    if (idx >= 0) transactions.value[idx] = normalized
+    else transactions.value.push(normalized)
+  }
+
+  async function autoPairInternalTransfers(options = {}) {
+    const silent = options.silent === true
+    const candidates = buildTransferPairCandidates()
+    const outCandidates = candidates
+      .filter(candidate => candidate.direction === 'out')
+      .sort((a, b) => a.dayStamp - b.dayStamp || a.amountCents - b.amountCents)
+    const inByAmount = new Map()
+    candidates.filter(candidate => candidate.direction === 'in').forEach(candidate => {
+      const bucket = inByAmount.get(candidate.amountCents) || []
+      bucket.push(candidate)
+      inByAmount.set(candidate.amountCents, bucket)
+    })
+
+    const usedIn = new Set()
+    const updatePlanById = new Map()
+    let paired = 0
+
+    for (const outCandidate of outCandidates) {
+      const inboundCandidates = (inByAmount.get(outCandidate.amountCents) || [])
+        .filter(candidate => !usedIn.has(candidate.id) && candidate.id !== outCandidate.id)
+      if (!inboundCandidates.length) continue
+
+      const scored = inboundCandidates
+        .map(candidate => ({
+          candidate,
+          score: scoreTransferPair(outCandidate, candidate),
+          dayDiff: Math.abs(outCandidate.dayStamp - candidate.dayStamp),
+        }))
+        .filter(row => row.score >= TRANSFER_PAIRING_MIN_SCORE)
+        .sort((a, b) => b.score - a.score || a.dayDiff - b.dayDiff)
+
+      if (!scored.length) continue
+      if (scored.length > 1 && scored[0].score === scored[1].score && scored[0].score < 25) continue
+
+      const match = scored[0].candidate
+      usedIn.add(match.id)
+
+      const fromAccountId = outCandidate.from || match.from
+      const toAccountId = match.to || outCandidate.to
+      if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) continue
+
+      const groupId = outCandidate.groupId || match.groupId || createTransferGroupId()
+      const desiredOut = { direction: 'out', groupId, fromAccountId, toAccountId }
+      const desiredIn = { direction: 'in', groupId, fromAccountId, toAccountId }
+
+      if (hasTransferPairChanges(outCandidate.tx, desiredOut)) {
+        updatePlanById.set(outCandidate.id, { tx: outCandidate.tx, desired: desiredOut })
+      }
+      if (hasTransferPairChanges(match.tx, desiredIn)) {
+        updatePlanById.set(match.id, { tx: match.tx, desired: desiredIn })
+      }
+      paired++
+    }
+
+    const updatePlan = Array.from(updatePlanById.values())
+    if (!updatePlan.length) return { paired, updated: 0, failed: 0 }
+
+    let updated = 0
+    let failed = 0
+    for (const step of updatePlan) {
+      try {
+        const payload = toPayload({
+          ...step.tx,
+          transferDirection: step.desired.direction,
+          transferGroupId: step.desired.groupId,
+          transferFromAccountId: step.desired.fromAccountId,
+          transferToAccountId: step.desired.toAccountId,
+        }, false)
+        const dto = await transactionsApi.update(auth.token, step.tx.id, payload)
+        applyTransactionUpdateLocal(dto)
+        updated++
+      } catch (_) {
+        failed++
+      }
+    }
+
+    if (!silent) {
+      if (paired > 0 && updated > 0) {
+        app.showMessage(`${paired} transferência(s) interna(s) pareada(s).`, 'success')
+      } else if (failed > 0) {
+        app.showMessage('Algumas transferências não puderam ser pareadas automaticamente.', 'error')
+      }
+    }
+
+    return { paired, updated, failed }
+  }
 
   function isTransientImportError(err) {
     const status = Number(err?.status || 0)
@@ -1022,6 +1490,9 @@ export const useDataStore = defineStore('data', () => {
         importSnapshotTransactions.value = normalized
         transactions.value = normalized.filter(isValidTransaction)
       }
+      if (Array.isArray(data.investmentAssets)) {
+        investmentAssets.value = data.investmentAssets.map(normalizeInvestmentAsset).filter(item => item.id && item.name)
+      }
     } catch (_) { /* keep current */ }
   }
 
@@ -1158,7 +1629,9 @@ export const useDataStore = defineStore('data', () => {
     const finalJob = await waitForImportJob(createdJob.id, onProgress)
     const upgradeResult = await applyImportMetadataUpgrades(preview?.toUpgrade)
     await refreshSnapshot()
-    return { result: finalJob.result || {}, upgradeResult, job: finalJob }
+    const assetSyncResult = await syncInvestmentAssetsFromTransactions({ silent: true })
+    const pairingResult = await autoPairInternalTransfers({ silent: true })
+    return { result: finalJob.result || {}, upgradeResult, pairingResult, assetSyncResult, job: finalJob }
   }
 
   async function undoImportBatch(batchId) {
@@ -1212,7 +1685,9 @@ export const useDataStore = defineStore('data', () => {
 
     const upgradeResult = await applyImportMetadataUpgrades(preview.toUpgrade)
     await refreshSnapshot()
-    return { result, upgradeResult }
+    const assetSyncResult = await syncInvestmentAssetsFromTransactions({ silent: true })
+    const pairingResult = await autoPairInternalTransfers({ silent: true })
+    return { result, upgradeResult, pairingResult, assetSyncResult }
   }
 
   // ── Password Change ────────────────────────────────────
@@ -1238,7 +1713,7 @@ export const useDataStore = defineStore('data', () => {
 
     return {
     // state
-    transactions, budgets, goals, accounts, categories, projection,
+    transactions, budgets, goals, accounts, categories, investmentAssets, projection,
     loading, importSnapshotTransactions,
     // editing
     editingTransactionId, editingBudgetId, editingGoalId, editingAccountId, editingCategoryId,
@@ -1253,10 +1728,12 @@ export const useDataStore = defineStore('data', () => {
     saveGoal, deleteGoal, addGoalContribution,
     saveAccount, deleteAccount, saveAccountDirect,
     saveCategory, deleteCategory,
+    saveInvestmentAsset, deleteInvestmentAsset, refreshInvestmentAssetQuote, refreshAllInvestmentQuotes,
+    syncInvestmentAssetsFromTransactions,
     saveProjection, buildProjectionModel,
     sendMonthlySummary, exportCsv,
     parseTransactionsFromCsv, buildExistingFingerprints, buildImportPreview,
-    importCsvCore, importCsvBatchCore, executeImport, executeImportJob, undoImportBatch, refreshSnapshot,
+    importCsvCore, importCsvBatchCore, executeImport, executeImportJob, undoImportBatch, refreshSnapshot, autoPairInternalTransfers,
     getAccountCsvSource, setAccountCsvSource, clearAccountCsvSource,
     validateCsvBatchForAccount, suggestAccountForBatch,
     changePassword,

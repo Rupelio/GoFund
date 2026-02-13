@@ -12,6 +12,26 @@
       </article>
 
       <!-- Categories — exact legacy HTML (line 246-249) + renderCategories() output -->
+      <article class="panel"><header class="panel-head"><h2>KPIs</h2></header>
+        <div class="kpi-tools">
+          <div class="info-banner kpi-info">
+            <p><strong><i class="fa-solid fa-chart-line"></i> Impacto das transferencias nos KPIs</strong></p>
+            <p>Desligado: modo CSV real (entrada/saida exatamente como no extrato).</p>
+            <p>Ligado: transferencias internas pareadas deixam de inflar receita/despesa.</p>
+          </div>
+          <label class="banner-dont-show kpi-toggle">
+            <input v-model="neutralizeInternalTransfersInKpis" type="checkbox" />
+            <span>Neutralizar transferencias internas entre contas proprias nos KPIs</span>
+          </label>
+          <div class="row-actions">
+            <button class="btn ghost tiny" type="button" :disabled="pairingTransfers" @click="handlePairOldTransfers">
+              <i class="fa-solid fa-shuffle"></i>
+              {{ pairingTransfers ? 'Pareando...' : 'Parear transferencias antigas' }}
+            </button>
+          </div>
+        </div>
+      </article>
+
       <article class="panel"><header class="panel-head"><h2>Categorias</h2></header>
         <form class="form-stack" @submit.prevent="handleCategorySubmit">
           <div class="row-2">
@@ -84,6 +104,42 @@ const confirm = inject('confirm')
 
 const typeLabels = { receita: 'Receita', despesa: 'Despesa', investimento: 'Investimento', todas: 'Todas' }
 
+const neutralizeInternalTransfersInKpis = computed({
+  get: () => app.neutralizeInternalTransfersInKpis,
+  set: value => app.setNeutralizeInternalTransfersInKpis(value),
+})
+const pairingTransfers = ref(false)
+
+async function handlePairOldTransfers() {
+  if (pairingTransfers.value) return
+  const ok = await confirm({
+    title: 'Parear transferencias antigas',
+    message: 'Deseja tentar parear transferencias antigas entre contas proprias agora?',
+    confirmLabel: 'Parear',
+    tone: 'info',
+  })
+  if (!ok) return
+
+  pairingTransfers.value = true
+  try {
+    await data.refreshSnapshot()
+    const result = await data.autoPairInternalTransfers({ silent: true })
+    const paired = Number(result?.paired || 0)
+    const updated = Number(result?.updated || 0)
+    const failed = Number(result?.failed || 0)
+    let msg = paired > 0
+      ? `${paired} transferencia(s) interna(s) identificada(s).`
+      : 'Nenhum novo par de transferencia interna encontrado.'
+    if (updated > 0) msg += ` ${updated} registro(s) atualizado(s).`
+    if (failed > 0) msg += ` ${failed} falha(s) ao atualizar.`
+    app.showMessage(msg, failed > 0 ? 'info' : (updated > 0 ? 'success' : 'info'))
+  } catch (e) {
+    app.showMessage(`Falha ao parear transferencias antigas. (${e.message || ''})`, 'error')
+  } finally {
+    pairingTransfers.value = false
+  }
+}
+
 // Password change
 const pw = ref({ current: '', newPw: '', confirm: '' })
 function handleChangePassword() {
@@ -149,3 +205,24 @@ async function deleteCategory(c) {
   data.deleteCategory(c.id)
 }
 </script>
+
+<style scoped>
+.kpi-tools {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.kpi-toggle {
+  margin-top: 0.15rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.kpi-info p + p {
+  margin-top: 0.35rem;
+}
+
+.kpi-tools .row-actions {
+  padding-top: 0;
+}
+</style>

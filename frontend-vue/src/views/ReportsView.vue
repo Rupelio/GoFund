@@ -164,6 +164,16 @@ import {
 const data = useDataStore()
 const app = useAppStore()
 
+function isCashForKpi(t) {
+  return isCashAffectingTransaction(t, {
+    excludeInternalTransfers: app.neutralizeInternalTransfersInKpis === true,
+  })
+}
+
+function kpiCashOptions() {
+  return { excludeInternalTransfers: app.neutralizeInternalTransfersInKpis === true }
+}
+
 const reportPanel = ref(null)
 const patrimonioCanvas = ref(null)
 let patrimonioChart = null
@@ -204,8 +214,8 @@ function arrow(cls) { return cls === 'up' ? '↑' : cls === 'down' ? '↓' : '�
 
 const curTxAll = computed(() => getMonthlyTransactions(data.transactions, app.currentMonth))
 const prevTxAll = computed(() => getMonthlyTransactions(data.transactions, getMonthShift(app.currentMonth, -1)))
-const curTx = computed(() => curTxAll.value.filter(isCashAffectingTransaction))
-const prevTx = computed(() => prevTxAll.value.filter(isCashAffectingTransaction))
+const curTx = computed(() => curTxAll.value.filter(isCashForKpi))
+const prevTx = computed(() => prevTxAll.value.filter(isCashForKpi))
 
 const cur = computed(() => {
   const income = sumByType(curTx.value, 'receita')
@@ -213,7 +223,7 @@ const cur = computed(() => {
   const investment = sumByType(curTx.value, 'investimento')
   const totalOut = round2(expense + investment)
   const creditCard = curTxAll.value.filter(t => t.method === 'credito' && t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
-  return { income, expense, investment, totalOut, creditCard, balance: getClosingCash(data.transactions, app.currentMonth) }
+  return { income, expense, investment, totalOut, creditCard, balance: getClosingCash(data.transactions, app.currentMonth, kpiCashOptions()) }
 })
 
 const prev = computed(() => {
@@ -223,7 +233,7 @@ const prev = computed(() => {
   const totalOut = round2(expense + investment)
   const prevMonth = getMonthShift(app.currentMonth, -1)
   const creditCard = prevTxAll.value.filter(t => t.method === 'credito' && t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
-  return { income, expense, investment, totalOut, creditCard, balance: getClosingCash(data.transactions, prevMonth) }
+  return { income, expense, investment, totalOut, creditCard, balance: getClosingCash(data.transactions, prevMonth, kpiCashOptions()) }
 })
 
 const incChange = computed(() => changeInfo(cur.value.income, prev.value.income))
@@ -302,7 +312,7 @@ function renderPatrimonioChart() {
   const months = getMonthSequence(app.currentMonth, -11, 0)
   const labels = months.map(formatMonthLabel)
   const invStats = getInvestmentStats(data.transactions)
-  const chartData = months.map(m => round2(getClosingCash(data.transactions, m) + invStats.totalInvested))
+  const chartData = months.map(m => round2(getClosingCash(data.transactions, m, kpiCashOptions()) + invStats.totalInvested))
   patrimonioChart = new Chart(patrimonioCanvas.value, {
     type: 'line',
     data: {
@@ -329,13 +339,13 @@ function renderPatrimonioChart() {
 // ── Comparative Mode ─────────────────────────
 function buildSums(month) {
   const all = getMonthlyTransactions(data.transactions, month)
-  const cash = all.filter(isCashAffectingTransaction)
+  const cash = all.filter(isCashForKpi)
   const income = sumByType(cash, 'receita')
   const expense = sumByType(cash, 'despesa')
   const investment = sumByType(cash, 'investimento')
   const totalOut = round2(expense + investment)
   const creditCard = all.filter(t => t.method === 'credito' && t.type === 'despesa').reduce((s, t) => s + t.amount, 0)
-  const balance = getClosingCash(data.transactions, month)
+  const balance = getClosingCash(data.transactions, month, kpiCashOptions())
   return { income, expense, investment, totalOut, creditCard, balance, all, cash }
 }
 

@@ -37,6 +37,27 @@ var allowedAccountTypes = map[string]struct{}{
 	"credito":      {},
 }
 
+var allowedInvestmentAssetTypes = map[string]struct{}{
+	"renda_fixa": {},
+	"acao":       {},
+	"etf":        {},
+	"fii":        {},
+	"fundo":      {},
+	"cripto":     {},
+	"outro":      {},
+}
+
+var allowedInvestmentPricingSources = map[string]struct{}{
+	"manual": {},
+	"market": {},
+}
+
+var allowedInvestmentProfiles = map[string]struct{}{
+	"conservador": {},
+	"base":        {},
+	"agressivo":   {},
+}
+
 // ── String helpers ───────────────────────────────────────────
 
 // NormalizeString trims and collapses whitespace.
@@ -243,6 +264,72 @@ func ValidateProjectionPayload(p ProjectionPayload) (ProjectionPayload, error) {
 	return n, nil
 }
 
+// ValidateInvestmentAssetPayload validates and normalises an investment asset payload.
+func ValidateInvestmentAssetPayload(p InvestmentAssetPayload) (InvestmentAssetPayload, error) {
+	n := InvestmentAssetPayload{
+		ID:              NormalizeString(p.ID),
+		Name:            NormalizeString(p.Name),
+		AssetType:       NormalizeLower(p.AssetType),
+		Category:        NormalizeString(p.Category),
+		Ticker:          normalizeTicker(p.Ticker),
+		PricingSource:   NormalizeLower(p.PricingSource),
+		Quantity:        p.Quantity,
+		AveragePrice:    p.AveragePrice,
+		CurrentPrice:    p.CurrentPrice,
+		AnnualYieldRate: p.AnnualYieldRate,
+		ExpectedProfile: NormalizeLower(p.ExpectedProfile),
+		Currency:        strings.ToUpper(NormalizeString(p.Currency)),
+		Notes:           NormalizeString(p.Notes),
+	}
+
+	if n.Name == "" {
+		return InvestmentAssetPayload{}, NewValidationError("name is required")
+	}
+	if _, ok := allowedInvestmentAssetTypes[n.AssetType]; !ok {
+		return InvestmentAssetPayload{}, NewValidationError("assetType must be renda_fixa, acao, etf, fii, fundo, cripto or outro")
+	}
+	if n.Category == "" {
+		n.Category = "Investimentos"
+	}
+	if n.PricingSource == "" {
+		if n.AssetType == "acao" || n.AssetType == "etf" || n.AssetType == "fii" {
+			n.PricingSource = "market"
+		} else {
+			n.PricingSource = "manual"
+		}
+	}
+	if _, ok := allowedInvestmentPricingSources[n.PricingSource]; !ok {
+		return InvestmentAssetPayload{}, NewValidationError("pricingSource must be manual or market")
+	}
+	if n.PricingSource == "market" && n.Ticker == "" {
+		return InvestmentAssetPayload{}, NewValidationError("ticker is required when pricingSource is market")
+	}
+	if n.Quantity < 0 {
+		return InvestmentAssetPayload{}, NewValidationError("quantity cannot be negative")
+	}
+	if n.AveragePrice < 0 {
+		return InvestmentAssetPayload{}, NewValidationError("averagePrice cannot be negative")
+	}
+	if n.CurrentPrice != nil && *n.CurrentPrice < 0 {
+		return InvestmentAssetPayload{}, NewValidationError("currentPrice cannot be negative")
+	}
+	if n.AnnualYieldRate != nil {
+		if *n.AnnualYieldRate < 0 || *n.AnnualYieldRate > 500 {
+			return InvestmentAssetPayload{}, NewValidationError("annualYieldRate must be between 0 and 500")
+		}
+	}
+	if n.ExpectedProfile == "" {
+		n.ExpectedProfile = "base"
+	}
+	if _, ok := allowedInvestmentProfiles[n.ExpectedProfile]; !ok {
+		return InvestmentAssetPayload{}, NewValidationError("expectedProfile must be conservador, base or agressivo")
+	}
+	if n.Currency == "" {
+		n.Currency = "BRL"
+	}
+	return n, nil
+}
+
 // ValidateCategoryPayload validates and normalises a category payload.
 func ValidateCategoryPayload(p CategoryPayload) (CategoryPayload, error) {
 	n := CategoryPayload{
@@ -285,4 +372,8 @@ func ValidateAccountPayload(p AccountPayload) (AccountPayload, error) {
 		n.Color = "#5e7fff"
 	}
 	return n, nil
+}
+
+func normalizeTicker(value string) string {
+	return strings.ToUpper(strings.ReplaceAll(NormalizeString(value), " ", ""))
 }

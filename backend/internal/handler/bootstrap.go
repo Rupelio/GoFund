@@ -19,6 +19,7 @@ type BootstrapHandler struct {
 	projections  *postgres.ProjectionRepo
 	categories   *postgres.CategoryRepo
 	accounts     *postgres.AccountRepo
+	investments  *postgres.InvestmentAssetRepo
 	queryTimeout time.Duration
 }
 
@@ -30,12 +31,13 @@ func NewBootstrapHandler(
 	projections *postgres.ProjectionRepo,
 	categories *postgres.CategoryRepo,
 	accounts *postgres.AccountRepo,
+	investments *postgres.InvestmentAssetRepo,
 	timeout time.Duration,
 ) *BootstrapHandler {
 	return &BootstrapHandler{
 		users: users, transactions: transactions, budgets: budgets,
 		goals: goals, projections: projections, categories: categories,
-		accounts: accounts, queryTimeout: timeout,
+		accounts: accounts, investments: investments, queryTimeout: timeout,
 	}
 }
 
@@ -59,6 +61,7 @@ func (h *BootstrapHandler) Handle(w http.ResponseWriter, r *http.Request) {
 			Months:    6,
 			UpdatedAt: domain.FormatTimeUTC(time.Now()),
 		},
+		InvestmentAssets: make([]domain.InvestmentAssetDTO, 0),
 	}
 
 	// Load user profile
@@ -124,6 +127,15 @@ func (h *BootstrapHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	bootstrap.Accounts = accs
+
+	// Load investment assets
+	assets, err := h.investments.ListAll(ctx, user.ID)
+	if err != nil {
+		slog.Error("bootstrap: investment assets", "error", err)
+		WriteError(w, http.StatusInternalServerError, "could not load investment assets")
+		return
+	}
+	bootstrap.InvestmentAssets = assets
 
 	WriteJSON(w, http.StatusOK, bootstrap)
 }
