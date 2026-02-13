@@ -64,6 +64,21 @@ func (p *YahooQuoteProvider) FetchQuote(ctx context.Context, symbol string) (Quo
 }
 
 func (p *YahooQuoteProvider) fetchOne(ctx context.Context, symbol string) (Quote, error) {
+	quote, err := p.fetchOneFromQuoteAPI(ctx, symbol)
+	if err == nil {
+		return quote, nil
+	}
+
+	// Fallback: Yahoo quote endpoint can return Unauthorized for some regions.
+	chartQuote, chartErr := p.fetchOneFromChartAPI(ctx, symbol)
+	if chartErr == nil {
+		return chartQuote, nil
+	}
+
+	return Quote{}, fmt.Errorf("quote fetch failed (%v); chart fallback failed (%w)", err, chartErr)
+}
+
+func (p *YahooQuoteProvider) fetchOneFromQuoteAPI(ctx context.Context, symbol string) (Quote, error) {
 	endpoint := "https://query1.finance.yahoo.com/v7/finance/quote?symbols=" + url.QueryEscape(symbol)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -119,6 +134,78 @@ func (p *YahooQuoteProvider) fetchOne(ctx context.Context, symbol string) (Quote
 		Currency:      currency,
 		Price:         result.RegularMarketPrice,
 		ChangePercent: result.RegularMarketChangePct,
+		FetchedAt:     fetchedAt,
+	}, nil
+}
+
+func (p *YahooQuoteProvider) fetchOneFromChartAPI(ctx context.Context, symbol string) (Quote, error) {
+	endpoint := "https://query1.finance.yahoo.com/v8/finance/chart/" + url.PathEscape(symbol) + "?interval=1d&range=1d"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return Quote{}, err
+	}
+	req.Header.Set("User-Agent", "gofund-backend/1.0")
+
+	res, err := p.client.Do(req)
+	if err != nil {
+		return Quote{}, err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode < 200 || res.StatusCode > 299 {
+		return Quote{}, fmt.Errorf("chart provider returned status %d", res.StatusCode)
+	}
+
+	var payload struct {
+		Chart struct {
+			Result []struct {
+				Meta struct {
+					Symbol                   string  `json:"symbol"`
+					Currency                 string  `json:"currency"`
+					RegularMarketPrice       float64 `json:"regularMarketPrice"`
+					RegularMarketTimeSeconds int64   `json:"regularMarketTime"`
+					ChartPreviousClose       float64 `json:"chartPreviousClose"`
+				} `json:"meta"`
+			} `json:"result"`
+		} `json:"chart"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		return Quote{}, err
+	}
+	if len(payload.Chart.Result) == 0 {
+		return Quote{}, errors.New("symbol not found")
+	}
+
+	meta := payload.Chart.Result[0].Meta
+	if meta.RegularMarketPrice <= 0 {
+		return Quote{}, errors.New("invalid market price")
+	}
+
+	fetchedAt := time.Now().UTC()
+	if meta.RegularMarketTimeSeconds > 0 {
+		fetchedAt = time.Unix(meta.RegularMarketTimeSeconds, 0).UTC()
+	}
+
+	currency := strings.ToUpper(strings.TrimSpace(meta.Currency))
+	if currency == "" {
+		currency = "BRL"
+	}
+
+	changePercent := 0.0
+	if meta.ChartPreviousClose > 0 {
+		changePercent = ((meta.RegularMarketPrice - meta.ChartPreviousClose) / meta.ChartPreviousClose) * 100
+	}
+
+	outSymbol := strings.ToUpper(strings.TrimSpace(meta.Symbol))
+	if outSymbol == "" {
+		outSymbol = strings.ToUpper(strings.TrimSpace(symbol))
+	}
+
+	return Quote{
+		Symbol:        outSymbol,
+		Currency:      currency,
+		Price:         meta.RegularMarketPrice,
+		ChangePercent: changePercent,
 		FetchedAt:     fetchedAt,
 	}, nil
 }
