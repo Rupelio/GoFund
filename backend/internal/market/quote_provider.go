@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -19,8 +20,17 @@ type Quote struct {
 	FetchedAt     time.Time
 }
 
+type SymbolSearchResult struct {
+	Symbol    string
+	Name      string
+	Exchange  string
+	QuoteType string
+	Currency  string
+}
+
 type QuoteProvider interface {
 	FetchQuote(ctx context.Context, symbol string) (Quote, error)
+	SearchSymbols(ctx context.Context, query string, limit int) ([]SymbolSearchResult, error)
 }
 
 type YahooQuoteProvider struct {
@@ -110,6 +120,105 @@ func (p *YahooQuoteProvider) fetchOne(ctx context.Context, symbol string) (Quote
 		ChangePercent: result.RegularMarketChangePct,
 		FetchedAt:     fetchedAt,
 	}, nil
+}
+
+func (p *YahooQuoteProvider) SearchSymbols(ctx context.Context, query string, limit int) ([]SymbolSearchResult, error) {
+	search := strings.TrimSpace(query)
+	if len(search) < 2 {
+		return nil, errors.New("query must have at least 2 characters")
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 25 {
+		limit = 25
+	}
+
+	endpoint := "https://query1.finance.yahoo.com/v1/finance/search?" + url.Values{
+		"q":           {search},
+		"quotesCount": {strconv.Itoa(limit)},
+		"newsCount":   {"0"},
+	}.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "gofund-backend/1.0")
+
+	res, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode < 200 || res.StatusCode > 299 {
+		return nil, fmt.Errorf("search provider returned status %d", res.StatusCode)
+	}
+
+	var payload struct {
+		Quotes []struct {
+			Symbol    string `json:"symbol"`
+			ShortName string `json:"shortname"`
+			LongName  string `json:"longname"`
+			Exchange  string `json:"exchange"`
+			QuoteType string `json:"quoteType"`
+			Currency  string `json:"currency"`
+		} `json:"quotes"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+
+	seen := make(map[string]struct{}, len(payload.Quotes))
+	results := make([]SymbolSearchResult, 0, len(payload.Quotes))
+	for _, item := range payload.Quotes {
+		symbol := strings.ToUpper(strings.TrimSpace(item.Symbol))
+		if symbol == "" {
+			continue
+		}
+		if _, ok := seen[symbol]; ok {
+			continue
+		}
+		seen[symbol] = struct{}{}
+
+		name := strings.TrimSpace(item.ShortName)
+		if name == "" {
+			name = strings.TrimSpace(item.LongName)
+		}
+		if name == "" {
+			name = symbol
+		}
+
+		quoteType := strings.ToLower(strings.TrimSpace(item.QuoteType))
+		if !isSupportedQuoteType(quoteType) {
+			continue
+		}
+
+		results = append(results, SymbolSearchResult{
+			Symbol:    symbol,
+			Name:      name,
+			Exchange:  strings.TrimSpace(item.Exchange),
+			QuoteType: quoteType,
+			Currency:  strings.ToUpper(strings.TrimSpace(item.Currency)),
+		})
+		if len(results) >= limit {
+			break
+		}
+	}
+
+	if len(results) == 0 {
+		return nil, errors.New("no symbols found")
+	}
+	return results, nil
+}
+
+func isSupportedQuoteType(quoteType string) bool {
+	switch quoteType {
+	case "", "equity", "etf", "cryptocurrency", "mutualfund", "fund":
+		return true
+	default:
+		return false
+	}
 }
 
 func buildSymbolCandidates(raw string) []string {

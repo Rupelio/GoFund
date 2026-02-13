@@ -16,6 +16,7 @@ import {
   readFileAsText, normalizeCsvDate, extractInstallmentInfo, adjustToInstallmentStartDate,
   isSubscriptionDescription, shouldInferMonthlyBankRecurrence,
   inferCategoryFromDescription, inferTransferDirection, inferTransferCounterparty, normalizeTransferDirection, CARD_BILL_REGEX, SUBSCRIPTION_REGEX,
+  classifyInvestmentReceiptKind,
   txnFingerprint, txnMonthlyFingerprint, txnInstallmentFingerprint, normalizeDescriptionForFingerprint, toPayload, isValidDate,
   getProjectionBasis, getAccountBalance, isCashAffectingTransaction, isTransferLikeTransaction, getTransferEndpointIds, extractInvestmentAssetHint,
 } from '../helpers.js'
@@ -453,8 +454,67 @@ export const useDataStore = defineStore('data', () => {
     return { total: marketAssets.length, updated, failed }
   }
 
+  function normalizeMarketSearchSuggestion(item = {}) {
+    const symbol = normalizeString(String(item.symbol || '')).toUpperCase()
+    const name = normalizeString(String(item.name || '')) || symbol
+    const exchange = normalizeString(String(item.exchange || ''))
+    const currency = normalizeString(String(item.currency || '')).toUpperCase() || 'BRL'
+    const quoteType = normalizeString(String(item.quoteType || '')).toLowerCase()
+    const suggestedAssetType = normalizeString(String(item.suggestedAssetType || 'outro')).toLowerCase() || 'outro'
+    const suggestedCategory = normalizeString(String(item.suggestedCategory || 'Investimentos')) || 'Investimentos'
+    const suggestedPricingSource = normalizeString(String(item.suggestedPricingSource || 'market')).toLowerCase() || 'market'
+    const key = `${symbol}::${exchange}::${quoteType}`
+    return {
+      key,
+      symbol,
+      name,
+      exchange,
+      currency,
+      quoteType,
+      suggestedAssetType,
+      suggestedCategory,
+      suggestedPricingSource,
+      label: exchange ? `${symbol} - ${name} (${exchange})` : `${symbol} - ${name}`,
+    }
+  }
+
+  async function searchMarketInvestmentAssets(query, options = {}) {
+    const silent = options?.silent === true
+    const q = normalizeString(String(query || ''))
+    if (q.length < 2) return []
+
+    try {
+      const raw = await investmentsApi.searchMarket(auth.token, q, Number(options?.limit || 10))
+      if (!Array.isArray(raw)) return []
+      return raw.map(item => normalizeMarketSearchSuggestion(item)).filter(item => item.symbol)
+    } catch (e) {
+      if (!silent) app.showMessage(`Falha ao buscar ativos de mercado. (${e.message || ''})`, 'error')
+      return []
+    }
+  }
+
   function round6(value) {
     return Math.round((Number(value || 0) + Number.EPSILON) * 1_000_000) / 1_000_000
+  }
+
+  function parseFixedIncomeAnnualRate(value) {
+    if (value === null || value === undefined || value === '') return null
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) return null
+    if (parsed < 0 || parsed > 500) return null
+    return round2(parsed)
+  }
+
+  function resolveFixedIncomeAnnualRateForHint(hint, rates = {}) {
+    if (!hint || hint.assetType !== 'renda_fixa' || hint.pricingSource === 'market') return null
+    const name = normalizeString(String(hint.name || '')).toLowerCase()
+    const turboRate = parseFixedIncomeAnnualRate(rates?.nubankBoxTurboAnnualRate)
+    const normalRate = parseFixedIncomeAnnualRate(rates?.nubankBoxAnnualRate)
+    const defaultRate = parseFixedIncomeAnnualRate(rates?.fixedIncomeAnnualRate)
+
+    if (name.includes('caixinha') && name.includes('turbo') && turboRate !== null) return turboRate
+    if (name.includes('caixinha') && name.includes('nubank') && normalRate !== null) return normalRate
+    return defaultRate
   }
 
   function classifyAssetCandidateTransactions(items) {
@@ -476,11 +536,19 @@ export const useDataStore = defineStore('data', () => {
         hint,
         invested: 0,
         redeemed: 0,
+        yields: 0,
         count: 0,
       }
       const amount = Number(txn?.amount || 0)
       if (type === 'investimento') entry.invested += amount
-      if (type === 'receita') entry.redeemed += amount
+      if (type === 'receita') {
+        const receiptKind = classifyInvestmentReceiptKind(txn?.description || '', {
+          category: txn?.category || '',
+          method: txn?.method || '',
+        })
+        if (receiptKind === 'redemption') entry.redeemed += amount
+        else entry.yields += amount
+      }
       entry.count += 1
       groups.set(key, entry)
     }
@@ -489,12 +557,17 @@ export const useDataStore = defineStore('data', () => {
 
   async function syncInvestmentAssetsFromTransactions(options = {}) {
     const silent = options?.silent === true
+    const annualRateConfig = {
+      fixedIncomeAnnualRate: options?.fixedIncomeAnnualRate,
+      nubankBoxAnnualRate: options?.nubankBoxAnnualRate,
+      nubankBoxTurboAnnualRate: options?.nubankBoxTurboAnnualRate,
+    }
     const sourceItems = Array.isArray(options?.transactions)
       ? options.transactions
       : transactions.value
     const candidates = classifyAssetCandidateTransactions(sourceItems)
     if (!candidates.length) {
-      return { detected: 0, created: 0, quoted: 0, estimated: 0, failed: 0 }
+      return { detected: 0, created: 0, quoted: 0, estimated: 0, fixedIncomeRated: 0, failed: 0 }
     }
 
     const byTicker = new Map()
@@ -509,6 +582,7 @@ export const useDataStore = defineStore('data', () => {
     let created = 0
     let quoted = 0
     let estimated = 0
+    let fixedIncomeRated = 0
     let failed = 0
 
     for (const candidate of candidates) {
@@ -519,6 +593,7 @@ export const useDataStore = defineStore('data', () => {
       if (existing) continue
 
       const netInvested = Math.max(0, round2(candidate.invested - candidate.redeemed))
+      const resolvedAnnualRate = resolveFixedIncomeAnnualRateForHint(hint, annualRateConfig)
       const payload = {
         name: hint.name,
         assetType: hint.assetType,
@@ -528,8 +603,8 @@ export const useDataStore = defineStore('data', () => {
         quantity: netInvested > 0 && hint.pricingSource !== 'market' ? 1 : 0,
         averagePrice: netInvested > 0 && hint.pricingSource !== 'market' ? netInvested : 0,
         currentPrice: netInvested > 0 && hint.pricingSource !== 'market' ? netInvested : null,
-        annualYieldRate: null,
-        expectedProfile: 'base',
+        annualYieldRate: resolvedAnnualRate,
+        expectedProfile: hint.assetType === 'renda_fixa' ? 'conservador' : 'base',
         currency: 'BRL',
         notes: 'Criado automaticamente pelo CSV. Revise quantidade e preco medio.',
       }
@@ -541,6 +616,7 @@ export const useDataStore = defineStore('data', () => {
       }
 
       created += 1
+      if (payload.annualYieldRate !== null) fixedIncomeRated += 1
       if (tickerKey) byTicker.set(tickerKey, createdAsset)
       if (nameKey) byName.set(nameKey, createdAsset)
 
@@ -574,11 +650,12 @@ export const useDataStore = defineStore('data', () => {
       }
     }
 
-    const summary = { detected: candidates.length, created, quoted, estimated, failed }
+    const summary = { detected: candidates.length, created, quoted, estimated, fixedIncomeRated, failed }
     if (!silent && (created > 0 || quoted > 0 || estimated > 0 || failed > 0)) {
       let msg = `${created} ativo(s) criado(s) automaticamente a partir do CSV.`
       if (quoted > 0) msg += ` ${quoted} cotacao(oes) atualizada(s).`
       if (estimated > 0) msg += ` ${estimated} ativo(s) com quantidade estimada.`
+      if (fixedIncomeRated > 0) msg += ` ${fixedIncomeRated} ativo(s) de renda fixa com taxa anual preenchida.`
       if (failed > 0) msg += ` ${failed} falha(s).`
       app.showMessage(msg, failed > 0 ? 'info' : 'success')
     }
@@ -1609,7 +1686,7 @@ export const useDataStore = defineStore('data', () => {
     }
   }
 
-  async function executeImportJob(batchData, preview, accountId, onProgress) {
+  async function executeImportJob(batchData, preview, accountId, onProgress, options = {}) {
     const filesPayload = buildImportJobFiles(batchData?.parsedByFile, accountId)
     if (!filesPayload.length) throw new Error('Nenhuma movimentacao valida para importar.')
 
@@ -1620,7 +1697,7 @@ export const useDataStore = defineStore('data', () => {
     } catch (err) {
       // Backward compatibility with deployments that still only expose /import sync.
       if (Number(err?.status || 0) === 404 || Number(err?.status || 0) === 405) {
-        const legacy = await executeImport(preview, accountId)
+        const legacy = await executeImport(preview, accountId, options)
         return { ...legacy, job: null }
       }
       throw err
@@ -1629,7 +1706,12 @@ export const useDataStore = defineStore('data', () => {
     const finalJob = await waitForImportJob(createdJob.id, onProgress)
     const upgradeResult = await applyImportMetadataUpgrades(preview?.toUpgrade)
     await refreshSnapshot()
-    const assetSyncResult = await syncInvestmentAssetsFromTransactions({ silent: true })
+    const assetSyncResult = await syncInvestmentAssetsFromTransactions({
+      silent: true,
+      fixedIncomeAnnualRate: options?.fixedIncomeAnnualRate,
+      nubankBoxAnnualRate: options?.nubankBoxAnnualRate,
+      nubankBoxTurboAnnualRate: options?.nubankBoxTurboAnnualRate,
+    })
     const pairingResult = await autoPairInternalTransfers({ silent: true })
     return { result: finalJob.result || {}, upgradeResult, pairingResult, assetSyncResult, job: finalJob }
   }
@@ -1642,7 +1724,7 @@ export const useDataStore = defineStore('data', () => {
     return result
   }
 
-  async function executeImport(preview, accountId) {
+  async function executeImport(preview, accountId, options = {}) {
     let result = { imported: 0, duplicates: 0, invalid: 0 }
     let pending = Array.isArray(preview?.toImport) ? preview.toImport.slice() : []
     let chunkSize = IMPORT_CHUNK_SIZE
@@ -1685,7 +1767,12 @@ export const useDataStore = defineStore('data', () => {
 
     const upgradeResult = await applyImportMetadataUpgrades(preview.toUpgrade)
     await refreshSnapshot()
-    const assetSyncResult = await syncInvestmentAssetsFromTransactions({ silent: true })
+    const assetSyncResult = await syncInvestmentAssetsFromTransactions({
+      silent: true,
+      fixedIncomeAnnualRate: options?.fixedIncomeAnnualRate,
+      nubankBoxAnnualRate: options?.nubankBoxAnnualRate,
+      nubankBoxTurboAnnualRate: options?.nubankBoxTurboAnnualRate,
+    })
     const pairingResult = await autoPairInternalTransfers({ silent: true })
     return { result, upgradeResult, pairingResult, assetSyncResult }
   }
@@ -1729,6 +1816,7 @@ export const useDataStore = defineStore('data', () => {
     saveAccount, deleteAccount, saveAccountDirect,
     saveCategory, deleteCategory,
     saveInvestmentAsset, deleteInvestmentAsset, refreshInvestmentAssetQuote, refreshAllInvestmentQuotes,
+    searchMarketInvestmentAssets,
     syncInvestmentAssetsFromTransactions,
     saveProjection, buildProjectionModel,
     sendMonthlySummary, exportCsv,

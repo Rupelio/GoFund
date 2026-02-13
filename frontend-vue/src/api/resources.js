@@ -64,6 +64,12 @@ export const summaryApi = {
 }
 
 export const investmentsApi = {
+  searchMarket(token, query, limit = 10) {
+    return api.get('/api/investments/market/search', {
+      token,
+      params: { q: query, limit },
+    })
+  },
   list(token) {
     return api.get('/api/investments/assets', { token })
   },

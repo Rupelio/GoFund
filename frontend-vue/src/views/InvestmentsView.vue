@@ -58,6 +58,7 @@
           <p>Lancamento rapido: voce registra aporte/resgate sem sair desta tela.</p>
           <p>Carteira por ativo: voce acompanha custo, valor de mercado, P/L e variacao.</p>
           <p>Renda variavel usa cotacao de mercado (ticker). Renda fixa usa taxa anual opcional.</p>
+          <p>Aportes no mes mostram fluxo. Custo da carteira mostra posicao/custo dos ativos (pode ser diferente do aporte bruto).</p>
         </div>
 
         <p v-if="nonBRLAssetsCount > 0" class="empty-state" style="margin-bottom: 1rem;">
@@ -131,9 +132,45 @@
         <section class="investment-section">
           <header class="section-head">
             <h3>{{ editingAssetId ? 'Editar ativo' : 'Novo ativo da carteira' }}</h3>
-            <p>Ativos de mercado puxam cotacao por ticker. Ativos manuais aceitam preco informado.</p>
+            <p>Use a busca para selecionar o ativo e preencher campos automaticamente.</p>
           </header>
           <form class="form-stack" @submit.prevent="handleSubmitAsset">
+            <div class="row-3">
+              <label>
+                Buscar ativo de mercado
+                <input
+                  v-model="assetLookup.query"
+                  type="text"
+                  maxlength="60"
+                  placeholder="Ex: PETR4, Apple, Bitcoin"
+                  @keydown.enter.prevent="handleSearchAssetOptions"
+                />
+              </label>
+              <label>
+                Ativo sugerido
+                <select v-model="assetLookup.selectedKey" @change="handleApplySelectedAssetOption">
+                  <option value="">Selecione para auto-preencher</option>
+                  <optgroup label="Resultados da busca" v-if="assetLookup.options.length">
+                    <option v-for="opt in assetLookup.options" :key="opt.optionKey" :value="opt.optionKey">
+                      {{ opt.label }}
+                    </option>
+                  </optgroup>
+                  <optgroup label="Sugestoes rapidas">
+                    <option v-for="opt in presetAssetOptions" :key="opt.optionKey" :value="opt.optionKey">
+                      {{ opt.label }}
+                    </option>
+                  </optgroup>
+                </select>
+              </label>
+              <label class="asset-search-action">
+                Acao
+                <button class="btn ghost" type="button" :disabled="assetLookup.loading" @click="handleSearchAssetOptions">
+                  <i class="fa-solid fa-magnifying-glass"></i>
+                  {{ assetLookup.loading ? 'Buscando...' : 'Buscar no mercado' }}
+                </button>
+              </label>
+            </div>
+
             <div class="row-2">
               <label>
                 Nome do ativo
@@ -155,7 +192,14 @@
             <div class="row-3">
               <label>
                 Categoria
-                <input v-model="assetForm.category" type="text" maxlength="40" placeholder="Ex: Acoes, Renda fixa" />
+                <select v-model="assetForm.category">
+                  <option v-for="category in investmentCategoryOptions" :key="category" :value="category">{{ category }}</option>
+                  <option value="__custom__">Personalizada</option>
+                </select>
+              </label>
+              <label v-if="assetForm.category === '__custom__'">
+                Categoria personalizada
+                <input v-model="customCategoryValue" type="text" maxlength="50" placeholder="Ex: Bolsa de valores internacional" />
               </label>
               <label>
                 Fonte de preco
@@ -324,7 +368,7 @@
 import { computed, inject, onMounted, reactive, ref } from 'vue'
 import { useDataStore } from '../stores/data.js'
 import { useAppStore } from '../stores/app.js'
-import { formatCurrency, normalizeString } from '../helpers.js'
+import { classifyInvestmentReceiptKind, formatCurrency, normalizeString } from '../helpers.js'
 
 const data = useDataStore()
 const app = useAppStore()
@@ -356,6 +400,131 @@ const PROFILE_ANNUAL_RATES = {
   base: 10,
   agressivo: 18,
 }
+
+const DEFAULT_CATEGORY_BY_ASSET_TYPE = {
+  renda_fixa: 'Renda fixa',
+  acao: 'Acoes',
+  etf: 'ETFs',
+  fii: 'Fundos Imobiliarios (FIIs)',
+  fundo: 'Fundos',
+  cripto: 'Criptoativos',
+  outro: 'Investimentos',
+}
+
+const BASE_INVESTMENT_CATEGORIES = [
+  'Investimentos',
+  'Renda fixa',
+  'CDB/RDB',
+  'Tesouro Direto',
+  'LCI/LCA',
+  'Debentures/CRI/CRA',
+  'Acoes',
+  'Acoes internacionais',
+  'ETFs',
+  'Fundos Imobiliarios (FIIs)',
+  'Fundos',
+  'Previdencia',
+  'Criptoativos',
+  'Caixa de investimento',
+  'Outros investimentos',
+]
+
+const presetAssetOptions = [
+  {
+    optionKey: 'preset:PETR4',
+    label: 'PETR4 - Petrobras PN',
+    symbol: 'PETR4.SA',
+    name: 'PETR4',
+    assetType: 'acao',
+    category: 'Acoes',
+    pricingSource: 'market',
+    currency: 'BRL',
+  },
+  {
+    optionKey: 'preset:VALE3',
+    label: 'VALE3 - Vale ON',
+    symbol: 'VALE3.SA',
+    name: 'VALE3',
+    assetType: 'acao',
+    category: 'Acoes',
+    pricingSource: 'market',
+    currency: 'BRL',
+  },
+  {
+    optionKey: 'preset:BOVA11',
+    label: 'BOVA11 - ETF Ibovespa',
+    symbol: 'BOVA11.SA',
+    name: 'BOVA11',
+    assetType: 'etf',
+    category: 'ETFs',
+    pricingSource: 'market',
+    currency: 'BRL',
+  },
+  {
+    optionKey: 'preset:IVVB11',
+    label: 'IVVB11 - ETF S&P 500',
+    symbol: 'IVVB11.SA',
+    name: 'IVVB11',
+    assetType: 'etf',
+    category: 'ETFs',
+    pricingSource: 'market',
+    currency: 'BRL',
+  },
+  {
+    optionKey: 'preset:HGLG11',
+    label: 'HGLG11 - FII',
+    symbol: 'HGLG11.SA',
+    name: 'HGLG11',
+    assetType: 'fii',
+    category: 'Fundos Imobiliarios (FIIs)',
+    pricingSource: 'market',
+    currency: 'BRL',
+  },
+  {
+    optionKey: 'preset:BTC',
+    label: 'BTC - Bitcoin',
+    symbol: 'BTC-USD',
+    name: 'Bitcoin',
+    assetType: 'cripto',
+    category: 'Criptoativos',
+    pricingSource: 'market',
+    currency: 'USD',
+  },
+  {
+    optionKey: 'preset:ETH',
+    label: 'ETH - Ethereum',
+    symbol: 'ETH-USD',
+    name: 'Ethereum',
+    assetType: 'cripto',
+    category: 'Criptoativos',
+    pricingSource: 'market',
+    currency: 'USD',
+  },
+  {
+    optionKey: 'preset:TESOURO_SELIC',
+    label: 'Tesouro Selic (manual)',
+    symbol: '',
+    name: 'Tesouro Selic',
+    assetType: 'renda_fixa',
+    category: 'Tesouro Direto',
+    pricingSource: 'manual',
+    currency: 'BRL',
+    annualYieldRate: 10,
+    expectedProfile: 'conservador',
+  },
+  {
+    optionKey: 'preset:CDB',
+    label: 'CDB/RDB (manual)',
+    symbol: '',
+    name: 'CDB/RDB',
+    assetType: 'renda_fixa',
+    category: 'CDB/RDB',
+    pricingSource: 'manual',
+    currency: 'BRL',
+    annualYieldRate: 10,
+    expectedProfile: 'conservador',
+  },
+]
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10)
@@ -390,6 +559,13 @@ const quickTxn = ref({
 
 const editingAssetId = ref('')
 const assetForm = ref(defaultAssetForm())
+const customCategoryValue = ref('')
+const assetLookup = reactive({
+  query: '',
+  loading: false,
+  selectedKey: '',
+  options: [],
+})
 const refreshingQuotes = reactive({})
 const refreshingAllQuotes = ref(false)
 const syncingAssetsFromCsv = ref(false)
@@ -438,6 +614,44 @@ const assetCategories = computed(() => {
   return new Set(data.investmentAssets.map(item => normalizeString(String(item.category || '')).toLowerCase()).filter(Boolean))
 })
 
+const investmentCategoryOptions = computed(() => {
+  const merged = new Map()
+  BASE_INVESTMENT_CATEGORIES.forEach(category => {
+    const normalized = normalizeString(category)
+    if (!normalized) return
+    merged.set(normalized.toLowerCase(), normalized)
+  })
+  data.categories
+    .filter(item => normalizeString(item?.type || '').toLowerCase() === 'investimento')
+    .forEach(item => {
+      const normalized = normalizeString(item?.name || '')
+      if (!normalized) return
+      merged.set(normalized.toLowerCase(), normalized)
+    })
+  data.investmentAssets.forEach(item => {
+    const normalized = normalizeString(item?.category || '')
+    if (!normalized) return
+    merged.set(normalized.toLowerCase(), normalized)
+  })
+  return Array.from(merged.values()).sort((a, b) => a.localeCompare(b, 'pt-BR'))
+})
+
+const marketLookupOptionByKey = computed(() => {
+  const map = new Map()
+  assetLookup.options.forEach(item => {
+    map.set(item.optionKey, item)
+  })
+  return map
+})
+
+const presetOptionByKey = computed(() => {
+  const map = new Map()
+  presetAssetOptions.forEach(item => {
+    map.set(item.optionKey, item)
+  })
+  return map
+})
+
 const monthlyInvested = computed(() => {
   const monthly = data.monthlyTransactions(app.currentMonth)
   return monthly.filter(t => t.type === 'investimento').reduce((sum, t) => sum + Number(t.amount || 0), 0)
@@ -449,6 +663,7 @@ const monthlyRedeemed = computed(() => {
   const monthly = data.monthlyTransactions(app.currentMonth)
   return monthly
     .filter(t => t.type === 'receita' && cats.has(normalizeString(String(t.category || '')).toLowerCase()))
+    .filter(t => classifyInvestmentReceiptKind(t.description || '', { category: t.category, method: t.method }) === 'redemption')
     .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 })
 
@@ -499,13 +714,107 @@ function profileLabel(profile) {
   return PROFILE_LABELS[profile] || 'Base'
 }
 
+function resolveCategoryFromForm() {
+  if (assetForm.value.category === '__custom__') {
+    const custom = normalizeString(customCategoryValue.value)
+    return custom || 'Investimentos'
+  }
+  return normalizeString(assetForm.value.category || '') || 'Investimentos'
+}
+
+function setCategoryOnForm(category) {
+  const normalized = normalizeString(category || '')
+  if (!normalized) {
+    assetForm.value.category = 'Investimentos'
+    customCategoryValue.value = ''
+    return
+  }
+  const known = investmentCategoryOptions.value.find(item => item.toLowerCase() === normalized.toLowerCase())
+  if (known) {
+    assetForm.value.category = known
+    customCategoryValue.value = ''
+    return
+  }
+  assetForm.value.category = '__custom__'
+  customCategoryValue.value = normalized
+}
+
 function handleAssetTypeChange() {
-  if (assetForm.value.assetType === 'acao' || assetForm.value.assetType === 'etf' || assetForm.value.assetType === 'fii') {
+  const nextType = assetForm.value.assetType
+  if (nextType === 'acao' || nextType === 'etf' || nextType === 'fii' || nextType === 'cripto') {
     assetForm.value.pricingSource = 'market'
+    assetForm.value.currentPrice = null
+  } else if (nextType === 'renda_fixa' && assetForm.value.pricingSource !== 'manual') {
+    assetForm.value.pricingSource = 'manual'
   }
-  if (assetForm.value.assetType === 'renda_fixa' && !assetForm.value.category) {
-    assetForm.value.category = 'Renda fixa'
+  const currentCategory = resolveCategoryFromForm().toLowerCase()
+  if (currentCategory === 'investimentos' || currentCategory === '') {
+    setCategoryOnForm(DEFAULT_CATEGORY_BY_ASSET_TYPE[nextType] || 'Investimentos')
   }
+}
+
+function buildMarketLookupOption(item = {}) {
+  const symbol = normalizeString(String(item.symbol || '')).toUpperCase()
+  const name = normalizeString(String(item.name || '')) || symbol
+  const exchange = normalizeString(String(item.exchange || ''))
+  const label = exchange ? `${symbol} - ${name} (${exchange})` : `${symbol} - ${name}`
+  return {
+    optionKey: `market:${item.key || symbol}`,
+    label,
+    symbol,
+    name,
+    assetType: normalizeString(String(item.suggestedAssetType || 'outro')).toLowerCase() || 'outro',
+    category: normalizeString(String(item.suggestedCategory || 'Investimentos')) || 'Investimentos',
+    pricingSource: normalizeString(String(item.suggestedPricingSource || 'market')).toLowerCase() || 'market',
+    currency: normalizeString(String(item.currency || 'BRL')).toUpperCase() || 'BRL',
+    expectedProfile: 'base',
+  }
+}
+
+function applyAssetSuggestion(option) {
+  if (!option) return
+  assetForm.value.name = normalizeString(option.name || option.symbol || assetForm.value.name || '')
+  assetForm.value.assetType = normalizeString(option.assetType || 'outro').toLowerCase() || 'outro'
+  assetForm.value.pricingSource = normalizeString(option.pricingSource || (option.symbol ? 'market' : 'manual')).toLowerCase() || 'manual'
+  assetForm.value.ticker = normalizeString(option.symbol || option.ticker || '').toUpperCase()
+  assetForm.value.currency = normalizeString(option.currency || 'BRL').toUpperCase() || 'BRL'
+  assetForm.value.expectedProfile = normalizeString(option.expectedProfile || assetForm.value.expectedProfile || 'base').toLowerCase() || 'base'
+  if (assetForm.value.pricingSource === 'market') {
+    assetForm.value.currentPrice = null
+  }
+  if ((assetForm.value.assetType === 'renda_fixa') && (assetForm.value.annualYieldRate === null || assetForm.value.annualYieldRate === undefined) && Number.isFinite(Number(option.annualYieldRate))) {
+    assetForm.value.annualYieldRate = Number(option.annualYieldRate)
+  }
+  const defaultCategory = option.category || DEFAULT_CATEGORY_BY_ASSET_TYPE[assetForm.value.assetType] || 'Investimentos'
+  setCategoryOnForm(defaultCategory)
+}
+
+async function handleSearchAssetOptions() {
+  const query = normalizeString(assetLookup.query)
+  if (query.length < 2) {
+    app.showMessage('Digite pelo menos 2 caracteres para buscar ativo.', 'info')
+    return
+  }
+  assetLookup.loading = true
+  try {
+    const found = await data.searchMarketInvestmentAssets(query, { silent: true, limit: 12 })
+    assetLookup.options = found.map(item => buildMarketLookupOption(item))
+    if (!assetLookup.options.length) {
+      app.showMessage('Nenhum ativo encontrado para essa busca.', 'info')
+    }
+  } finally {
+    assetLookup.loading = false
+  }
+}
+
+function handleApplySelectedAssetOption() {
+  const key = normalizeString(assetLookup.selectedKey)
+  if (!key) return
+  const fromMarket = marketLookupOptionByKey.value.get(key)
+  const fromPreset = presetOptionByKey.value.get(key)
+  const option = fromMarket || fromPreset
+  if (!option) return
+  applyAssetSuggestion(option)
 }
 
 function buildQuickTransactionPayload() {
@@ -540,9 +849,15 @@ async function handleSubmitQuickTransaction() {
 }
 
 async function handleSubmitAsset() {
+  const category = resolveCategoryFromForm()
+  if (!category) {
+    app.showMessage('Informe uma categoria valida para o ativo.', 'error')
+    return
+  }
   const payload = {
     id: editingAssetId.value || undefined,
     ...assetForm.value,
+    category,
   }
   const saved = await data.saveInvestmentAsset(payload)
   if (!saved) return
@@ -552,6 +867,8 @@ async function handleSubmitAsset() {
 function resetAssetForm() {
   editingAssetId.value = ''
   assetForm.value = defaultAssetForm()
+  customCategoryValue.value = ''
+  assetLookup.selectedKey = ''
 }
 
 function handleEditAsset(asset) {
@@ -559,7 +876,7 @@ function handleEditAsset(asset) {
   assetForm.value = {
     name: asset.name,
     assetType: asset.assetType,
-    category: asset.category,
+    category: 'Investimentos',
     ticker: asset.ticker || '',
     pricingSource: asset.pricingSource,
     quantity: asset.quantity,
@@ -570,6 +887,7 @@ function handleEditAsset(asset) {
     currency: asset.currency || 'BRL',
     notes: asset.notes || '',
   }
+  setCategoryOnForm(asset.category || 'Investimentos')
 }
 
 async function handleDeleteAsset(asset) {
@@ -618,6 +936,7 @@ async function handleSyncAssetsFromCsv() {
     const created = Number(summary?.created || 0)
     const quoted = Number(summary?.quoted || 0)
     const estimated = Number(summary?.estimated || 0)
+    const fixedIncomeRated = Number(summary?.fixedIncomeRated || 0)
     const failed = Number(summary?.failed || 0)
     let msg = detected > 0
       ? `Detectados ${detected} padrao(oes) de ativos nos lancamentos.`
@@ -625,6 +944,7 @@ async function handleSyncAssetsFromCsv() {
     if (created > 0) msg += ` ${created} ativo(s) criado(s).`
     if (quoted > 0) msg += ` ${quoted} cotacao(oes) atualizada(s).`
     if (estimated > 0) msg += ` ${estimated} ativo(s) com quantidade estimada.`
+    if (fixedIncomeRated > 0) msg += ` ${fixedIncomeRated} ativo(s) de renda fixa com taxa anual preenchida.`
     if (failed > 0) msg += ` ${failed} falha(s).`
     app.showMessage(msg, failed > 0 ? 'info' : (created > 0 || quoted > 0 ? 'success' : 'info'))
   } finally {
@@ -685,6 +1005,16 @@ onMounted(() => {
   margin: 0.2rem 0 0;
   color: var(--text-secondary);
   font-size: 0.84rem;
+}
+
+.asset-search-action {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.asset-search-action .btn {
+  width: 100%;
 }
 
 .assets-grid {

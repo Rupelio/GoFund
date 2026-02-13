@@ -869,6 +869,10 @@ function inferAssetTypeFromHint(descAscii, ticker) {
 
 function inferAssetNameFromHint(descAscii, ticker, category) {
   if (ticker) return ticker
+  if (/\b(nubank|nu)\b/.test(descAscii) && /\bcaixinha\b/.test(descAscii) && /\bturbo\b/.test(descAscii) && /\b(cdb|rdb)\b/.test(descAscii)) return 'Caixinha Nubank Turbo (RDB)'
+  if (/\bcaixinha\b/.test(descAscii) && /\bturbo\b/.test(descAscii) && /\b(cdb|rdb)\b/.test(descAscii)) return 'Caixinha Turbo (RDB)'
+  if (/\b(nubank|nu)\b/.test(descAscii) && /\bcaixinha\b/.test(descAscii) && /\b(cdb|rdb)\b/.test(descAscii)) return 'Caixinha Nubank (RDB)'
+  if (/\bcaixinha\b/.test(descAscii) && /\b(cdb|rdb)\b/.test(descAscii)) return 'Caixinha (RDB)'
   if (/\btesouro\b/.test(descAscii)) return 'Tesouro Direto'
   if (/\bcdb\b|\brdb\b/.test(descAscii)) return 'CDB/RDB'
   if (/\blci\b|\blca\b/.test(descAscii)) return 'LCI/LCA'
@@ -880,6 +884,21 @@ function inferAssetNameFromHint(descAscii, ticker, category) {
   if (/\bbitcoin\b|\bbtc\b/.test(descAscii)) return 'Bitcoin'
   if (/\bethereum\b|\beth\b/.test(descAscii)) return 'Ethereum'
   return normalizeCategory(category || 'Investimentos')
+}
+
+function inferAssetCategoryFromHint(descAscii, assetType, fallbackCategory) {
+  if (assetType === 'renda_fixa') {
+    if (/\btesouro\b/.test(descAscii)) return 'Tesouro Direto'
+    if (/\blci\b|\blca\b/.test(descAscii)) return 'LCI/LCA'
+    if (/\b(cdb|rdb)\b/.test(descAscii)) return 'CDB/RDB'
+    return 'Renda fixa'
+  }
+  if (assetType === 'acao') return 'Acoes'
+  if (assetType === 'etf') return 'ETFs'
+  if (assetType === 'fii') return 'Fundos Imobiliarios (FIIs)'
+  if (assetType === 'cripto') return 'Criptoativos'
+  if (assetType === 'fundo') return 'Fundos'
+  return normalizeCategory(fallbackCategory || 'Investimentos')
 }
 
 function normalizeTickerHint(rawTicker = '') {
@@ -915,6 +934,7 @@ export function extractInvestmentAssetHint(description, context = {}) {
   const assetType = inferAssetTypeFromHint(descAscii, ticker)
   const pricingSource = ticker ? 'market' : 'manual'
   const name = inferAssetNameFromHint(descAscii, ticker, category)
+  const inferredCategory = inferAssetCategoryFromHint(descAscii, assetType, category)
   const confidence = ticker
     ? 'high'
     : (assetType === 'renda_fixa' || assetType === 'fundo' ? 'medium' : 'low')
@@ -924,9 +944,26 @@ export function extractInvestmentAssetHint(description, context = {}) {
     assetType,
     ticker,
     pricingSource,
-    category: category || 'Investimentos',
+    category: inferredCategory || 'Investimentos',
     confidence,
   }
+}
+
+export function classifyInvestmentReceiptKind(description, context = {}) {
+  const descAscii = normalizeAscii(description)
+  const categoryAscii = normalizeAscii(context.category || '')
+  const methodAscii = normalizeAscii(context.method || '')
+
+  if (!descAscii && categoryAscii !== 'investimento') return 'unknown'
+
+  if (/\b(resgate|retirada|saque|liquidacao|venda|amortizacao|desinvest)\b/.test(descAscii)) return 'redemption'
+  if (/\b(rendimento|rendimentos|juros|dividendo|provento|rentabilidade|correcao|atualizacao\s*monetaria|yield|cupom)\b/.test(descAscii)) return 'yield'
+
+  if ((methodAscii === 'transferencia' || methodAscii === 'pix') && /\b(recebid[ao]|creditad[ao]|entrada)\b/.test(descAscii)) {
+    return 'redemption'
+  }
+  if (categoryAscii === 'investimento') return 'yield'
+  return 'unknown'
 }
 
 export function isSubscriptionDescription(desc) {

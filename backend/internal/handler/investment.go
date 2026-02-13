@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"gestao/backend/internal/domain"
@@ -24,6 +26,17 @@ type InvestmentHandler struct {
 	assets       investmentAssetStore
 	quotes       market.QuoteProvider
 	queryTimeout time.Duration
+}
+
+type marketSearchDTO struct {
+	Symbol             string `json:"symbol"`
+	Name               string `json:"name"`
+	Exchange           string `json:"exchange,omitempty"`
+	Currency           string `json:"currency,omitempty"`
+	QuoteType          string `json:"quoteType,omitempty"`
+	SuggestedAssetType string `json:"suggestedAssetType"`
+	SuggestedCategory  string `json:"suggestedCategory"`
+	SuggestedPricing   string `json:"suggestedPricingSource"`
 }
 
 func NewInvestmentHandler(repo investmentAssetStore, quotes market.QuoteProvider, timeout time.Duration) *InvestmentHandler {
@@ -202,4 +215,80 @@ func (h *InvestmentHandler) RefreshAssetQuote(w http.ResponseWriter, r *http.Req
 		return
 	}
 	WriteJSON(w, http.StatusOK, dto)
+}
+
+func (h *InvestmentHandler) SearchMarketSymbols(w http.ResponseWriter, r *http.Request) {
+	_, ok := MustCurrentUser(w, r)
+	if !ok {
+		return
+	}
+
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len(query) < 2 {
+		WriteError(w, http.StatusBadRequest, "query must have at least 2 characters")
+		return
+	}
+
+	limit := 10
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			WriteError(w, http.StatusBadRequest, "limit must be a positive integer")
+			return
+		}
+		if parsed > 25 {
+			parsed = 25
+		}
+		limit = parsed
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), h.queryTimeout)
+	defer cancel()
+
+	results, err := h.quotes.SearchSymbols(ctx, query, limit)
+	if err != nil {
+		slog.Error("searchMarketSymbols failed", "error", err, "query", query)
+		WriteError(w, http.StatusBadGateway, "could not search market symbols")
+		return
+	}
+
+	out := make([]marketSearchDTO, 0, len(results))
+	for _, item := range results {
+		assetType, category := classifyMarketSearchSuggestion(item)
+		out = append(out, marketSearchDTO{
+			Symbol:             item.Symbol,
+			Name:               item.Name,
+			Exchange:           item.Exchange,
+			Currency:           item.Currency,
+			QuoteType:          item.QuoteType,
+			SuggestedAssetType: assetType,
+			SuggestedCategory:  category,
+			SuggestedPricing:   "market",
+		})
+	}
+
+	WriteJSON(w, http.StatusOK, out)
+}
+
+func classifyMarketSearchSuggestion(item market.SymbolSearchResult) (string, string) {
+	symbol := strings.ToUpper(strings.TrimSpace(item.Symbol))
+	symbolBase := strings.TrimSuffix(symbol, ".SA")
+	quoteType := strings.ToLower(strings.TrimSpace(item.QuoteType))
+	exchange := strings.ToUpper(strings.TrimSpace(item.Exchange))
+
+	switch quoteType {
+	case "cryptocurrency":
+		return "cripto", "Criptoativos"
+	case "etf":
+		return "etf", "ETFs"
+	case "mutualfund", "fund":
+		return "fundo", "Fundos"
+	case "equity":
+		if strings.HasSuffix(symbolBase, "11") && strings.Contains(exchange, "SAO") {
+			return "fii", "Fundos Imobiliarios (FIIs)"
+		}
+		return "acao", "Acoes"
+	default:
+		return "outro", "Investimentos"
+	}
 }

@@ -41,6 +41,9 @@ const csvSuggestedAccount = ref(null)
 const csvImportNotice = ref(null)
 const csvImportJob = ref(null)
 const csvLastImportBatch = ref('')
+const csvFixedIncomeAnnualRate = ref('')
+const csvNubankBoxAnnualRate = ref('')
+const csvNubankBoxTurboAnnualRate = ref('')
 
 const csvFormattedEarliestDate = computed(() => {
   if (!csvEarliestDate.value) return 'o extrato'
@@ -80,6 +83,14 @@ function clearCsvImportNotice() {
 
 function setCsvImportNotice(tone, text) {
   csvImportNotice.value = { tone, text }
+}
+
+function normalizeOptionalAnnualRate(value) {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  if (!Number.isFinite(n)) return null
+  if (n < 0 || n > 500) return null
+  return Math.round((n + Number.EPSILON) * 100) / 100
 }
 
 async function handleDeleteAll() {
@@ -190,6 +201,9 @@ async function startCsvImportBatch(files) {
   try {
     clearCsvImportNotice()
     csvImportJob.value = null
+    csvFixedIncomeAnnualRate.value = ''
+    csvNubankBoxAnnualRate.value = ''
+    csvNubankBoxTurboAnnualRate.value = ''
     // Read and parse CSV files without account ID yet
     const result = await data.importCsvBatchCore(files, undefined)
     csvPendingFile.value = result
@@ -291,6 +305,9 @@ function csvAccountCancel() {
   csvPendingFile.value = null
   csvSuggestedAccount.value = null
   csvImportJob.value = null
+  csvFixedIncomeAnnualRate.value = ''
+  csvNubankBoxAnnualRate.value = ''
+  csvNubankBoxTurboAnnualRate.value = ''
   clearCsvImportNotice()
 }
 
@@ -304,6 +321,15 @@ async function recomputeCsvPreviewFromParsed() {
 
 async function confirmImport() {
   if (!csvPreview.value) return
+  const fixedIncomeAnnualRate = normalizeOptionalAnnualRate(csvFixedIncomeAnnualRate.value)
+  const nubankBoxAnnualRate = normalizeOptionalAnnualRate(csvNubankBoxAnnualRate.value)
+  const nubankBoxTurboAnnualRate = normalizeOptionalAnnualRate(csvNubankBoxTurboAnnualRate.value)
+  if ((csvFixedIncomeAnnualRate.value !== '' && fixedIncomeAnnualRate === null)
+    || (csvNubankBoxAnnualRate.value !== '' && nubankBoxAnnualRate === null)
+    || (csvNubankBoxTurboAnnualRate.value !== '' && nubankBoxTurboAnnualRate === null)) {
+    app.showMessage('Informe taxas anuais validas (0 a 500).', 'error')
+    return
+  }
   csvImporting.value = true
   clearCsvImportNotice()
   csvImportJob.value = null
@@ -313,7 +339,8 @@ async function confirmImport() {
       csvPendingFile.value,
       csvPreview.value,
       csvAccountId.value || undefined,
-      (currentJob) => { csvImportJob.value = currentJob }
+      (currentJob) => { csvImportJob.value = currentJob },
+      { fixedIncomeAnnualRate, nubankBoxAnnualRate, nubankBoxTurboAnnualRate }
     )
     const imported = Number(result?.imported || 0)
     const duplicates = Number(result?.duplicates || 0)
@@ -323,11 +350,13 @@ async function confirmImport() {
     const pairedTransfers = Number(pairingResult?.paired || 0)
     const createdAssets = Number(assetSyncResult?.created || 0)
     const quotedAssets = Number(assetSyncResult?.quoted || 0)
+    const fixedIncomeRated = Number(assetSyncResult?.fixedIncomeRated || 0)
     let msg = imported > 0 ? `${imported} movimentacao(oes) importada(s).` : 'Nenhuma nova movimentacao foi adicionada.'
     if (upgraded > 0) msg += ` ${upgraded} atualizada(s).`
     if (pairedTransfers > 0) msg += ` ${pairedTransfers} transferencia(s) interna(s) pareada(s).`
     if (createdAssets > 0) msg += ` ${createdAssets} ativo(s) criado(s) automaticamente.`
     if (quotedAssets > 0) msg += ` ${quotedAssets} cotacao(oes) atualizada(s).`
+    if (fixedIncomeRated > 0) msg += ` ${fixedIncomeRated} ativo(s) de renda fixa com taxa anual preenchida.`
     if (duplicates > 0) msg += ` ${duplicates} duplicata(s) ignorada(s).`
     if (invalid > 0) msg += ` ${invalid} linha(s) invalida(s).`
     if (failed > 0) msg += ` ${failed} linha(s) com erro.`
@@ -367,6 +396,9 @@ async function confirmImport() {
       csvPendingFile.value = null
       csvSuggestedAccount.value = null
       csvImportJob.value = null
+      csvFixedIncomeAnnualRate.value = ''
+      csvNubankBoxAnnualRate.value = ''
+      csvNubankBoxTurboAnnualRate.value = ''
       clearCsvImportNotice()
     }
   }
@@ -562,6 +594,25 @@ async function undoLastImportBatch() {
           </div>
           <p v-if="csvPendingFilesSummary.length > 1"><strong>{{ csvPendingFilesSummary.length }}</strong> arquivos no lote.</p>
           <p v-if="csvAccountId"><strong>Conta:</strong> {{ (data.accounts.find(a => a.id === csvAccountId) || {}).name }}</p>
+          <div style="padding:0.55rem 0.7rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-card, var(--surface-alt));margin-bottom:0.6rem;display:flex;flex-direction:column;gap:0.45rem">
+            <p style="margin:0;font-size:0.8rem;color:var(--text-secondary)">
+              Taxas anuais opcionais para ativos de renda fixa criados automaticamente do CSV.
+            </p>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.5rem">
+              <label style="font-size:0.78rem;color:var(--text-secondary)">
+                Taxa padrao renda fixa (%)
+                <input v-model.number="csvFixedIncomeAnnualRate" type="number" min="0" max="500" step="0.01" placeholder="Opcional" style="width:100%;margin-top:0.15rem" />
+              </label>
+              <label style="font-size:0.78rem;color:var(--text-secondary)">
+                Caixinha Nubank (%)
+                <input v-model.number="csvNubankBoxAnnualRate" type="number" min="0" max="500" step="0.01" placeholder="Opcional" style="width:100%;margin-top:0.15rem" />
+              </label>
+              <label style="font-size:0.78rem;color:var(--text-secondary)">
+                Caixinha Turbo (%)
+                <input v-model.number="csvNubankBoxTurboAnnualRate" type="number" min="0" max="500" step="0.01" placeholder="Opcional" style="width:100%;margin-top:0.15rem" />
+              </label>
+            </div>
+          </div>
           <div v-if="csvImportProgress" style="padding:0.55rem 0.7rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-card, var(--surface-alt));margin-bottom:0.6rem">
             <p style="margin:0 0 0.35rem 0;font-size:0.82rem;color:var(--text-secondary)">
               Status: <strong>{{ csvImportJob?.status || 'running' }}</strong> - {{ csvImportProgress.processed }}/{{ csvImportProgress.total }} ({{ csvImportProgress.pct }}%)
