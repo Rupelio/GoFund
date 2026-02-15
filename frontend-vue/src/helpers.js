@@ -687,12 +687,49 @@ export function findHeaderIdx(headers, aliases) {
 }
 
 export function parseFlexibleNumber(v) {
-  const t = String(v ?? '').replace(/[^\d,.\-]/g, '').trim()
-  if (!t) return NaN
-  let n = t
-  if (t.includes(',') && t.includes('.')) n = t.replace(/\./g, '').replace(',', '.')
-  else if (t.includes(',') && !t.includes('.')) n = t.replace(',', '.')
-  return Number(n)
+  let raw = String(v ?? '').trim()
+  if (!raw) return NaN
+
+  let negative = false
+  if (/^\(.*\)$/.test(raw)) {
+    negative = true
+    raw = raw.slice(1, -1)
+  }
+  if (/^\s*-\s*/.test(raw)) {
+    negative = true
+    raw = raw.replace(/^\s*-\s*/, '')
+  }
+  if (/-\s*$/.test(raw)) {
+    negative = true
+    raw = raw.replace(/-\s*$/, '')
+  }
+
+  raw = raw.replace(/[^\d,.\s]/g, '').replace(/\s+/g, '')
+  if (!raw) return NaN
+
+  const commaPos = raw.lastIndexOf(',')
+  const dotPos = raw.lastIndexOf('.')
+  let normalized = raw
+
+  if (commaPos >= 0 && dotPos >= 0) {
+    if (commaPos > dotPos) {
+      // 1.234,56
+      normalized = raw.replace(/\./g, '').replace(',', '.')
+    } else {
+      // 1,234.56
+      normalized = raw.replace(/,/g, '')
+    }
+  } else if (commaPos >= 0) {
+    // 1234,56
+    normalized = raw.replace(/\./g, '').replace(',', '.')
+  } else {
+    // 1234.56 or 1234
+    normalized = raw.replace(/,/g, '')
+  }
+
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed)) return NaN
+  return negative ? -Math.abs(parsed) : parsed
 }
 
 export function detectCsvDelimiter(headerLine) {

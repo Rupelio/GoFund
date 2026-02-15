@@ -1116,7 +1116,7 @@ export const useDataStore = defineStore('data', () => {
     const aggregate = { imported: 0, duplicates: 0, invalid: 0 }
     for (let start = 0; start < items.length; start += chunkSize) {
       const chunk = items.slice(start, start + chunkSize)
-      const payload = chunk.map(item => toPayload(item, false))
+      const payload = chunk.map(item => toPayload(item, true))
       try {
         const result = await importChunkWithRetry(payload)
         aggregate.imported += Number(result?.imported || 0)
@@ -1134,6 +1134,121 @@ export const useDataStore = defineStore('data', () => {
   const ACCOUNT_CSV_SOURCE_MAP_KEY = 'gofund_account_csv_source_map_v1'
   const CSV_TRANSACTION_TYPES = new Set(['receita', 'despesa', 'investimento', 'transferencia'])
   const CSV_TRANSACTION_METHODS = new Set(['pix', 'debito', 'credito', 'boleto', 'transferencia', 'dinheiro', 'cheque'])
+  const CSV_HEADER_ALIASES = {
+    id: [
+      'id', 'identificador', 'codigodatransacao', 'codigodetransacao', 'codigomovimentacao',
+      'codigolancamento', 'transactionid', 'txid', 'numerolancamento', 'numerotransacao', 'nsu',
+    ],
+    date: [
+      'date', 'data', 'datalancamento', 'datadelancamento', 'dataoperacao', 'dataefetiva',
+      'dataefetivacao', 'datamovimento', 'datadomovimento', 'datatransacao', 'transactiondate',
+      'datetime', 'dataehora', 'datahora', 'dtmovto', 'dtlancamento',
+    ],
+    type: [
+      'type', 'tipo', 'tipolancamento', 'tipomovimento', 'tipodemovimento', 'natureza',
+      'naturezadolancamento', 'operacao', 'transacao',
+    ],
+    category: [
+      'category', 'categoria', 'classificacao', 'grupocategoria', 'subcategoria',
+    ],
+    method: [
+      'method', 'metodo', 'metododepagamento', 'pagamento', 'meiodepagamento', 'canal',
+      'formadepagamento', 'tipodepagamento',
+    ],
+    description: [
+      'description', 'descricao', 'title', 'titulo', 'historico', 'historicolancamento',
+      'detalhes', 'estabelecimento', 'favorecido', 'memo', 'lancamento', 'narrativa',
+      'complemento', 'observacao', 'observacoes', 'origem', 'destino', 'nome',
+      'nomedofavorecido', 'contraparte', 'beneficiario',
+    ],
+    amount: [
+      'amount', 'valor', 'valorr', 'valorliquido', 'valoroperacao', 'valorlancamento',
+      'valordomovimento', 'valordatransacao', 'valorfinal', 'montante', 'total', 'valorbrl',
+    ],
+    debit: [
+      'debit', 'debito', 'debitor', 'saida', 'saidas', 'saidar', 'withdrawal',
+      'valorsaida', 'valordebito', 'debitos',
+    ],
+    credit: [
+      'credit', 'credito', 'creditor', 'entrada', 'entradas', 'entradar', 'deposit',
+      'valorentrada', 'valorcredito', 'creditos',
+    ],
+    recurrence: ['recurrence', 'recorrencia'],
+    recurrenceEnd: ['recurrenceend', 'recurrence_end', 'fimrecorrencia'],
+    installments: ['installments', 'parcelas', 'parcelamento', 'numerodeparcelas'],
+    transferDirection: [
+      'transferdirection', 'transfer_direction', 'direcaotransferencia', 'direction', 'direcao',
+      'sentidotransferencia',
+    ],
+    transferCounterparty: [
+      'transfercounterparty', 'transfer_counterparty', 'contrapartetransferencia', 'favorecido',
+      'counterparty', 'contraparte', 'beneficiario',
+    ],
+    createdAt: ['createdat', 'created_at'],
+  }
+  const CSV_SOURCE_SIGNATURES = [
+    {
+      key: 'pagbank_account',
+      label: 'PagBank Conta',
+      confidence: 'high',
+      required: ['codigodatransacao', 'data', 'tipo', 'descricao', 'valor'],
+    },
+    {
+      key: 'nubank_credit',
+      label: 'Nubank Cartao',
+      confidence: 'high',
+      required: ['title', 'amount', 'date'],
+    },
+    {
+      key: 'nubank_account',
+      label: 'Nubank Conta',
+      confidence: 'high',
+      required: ['identificador', 'data', 'valor'],
+      oneOf: ['descricao', 'description'],
+    },
+    {
+      key: 'itau_account',
+      label: 'Itau Conta',
+      confidence: 'medium',
+      required: ['data', 'lancamento', 'valor'],
+      oneOf: ['agenciaorigem', 'saldo'],
+    },
+    {
+      key: 'banco_do_brasil_account',
+      label: 'Banco do Brasil Conta',
+      confidence: 'medium',
+      required: ['data', 'historico', 'valor'],
+      oneOf: ['dependenciaorigem', 'lote'],
+    },
+    {
+      key: 'bank_historico_documento',
+      label: 'Extrato bancario (historico/documento)',
+      confidence: 'medium',
+      required: ['data', 'historico', 'valor'],
+      oneOf: ['documento', 'saldo'],
+    },
+    {
+      key: 'caixa_account',
+      label: 'Caixa Conta',
+      confidence: 'medium',
+      required: ['datamovimento', 'historico', 'valor'],
+      oneOf: ['documento', 'saldo'],
+    },
+    {
+      key: 'mercado_pago_account',
+      label: 'Mercado Pago Conta',
+      confidence: 'medium',
+      required: ['dataehora', 'descricao', 'valor'],
+      oneOf: ['tipo', 'saldo'],
+    },
+    {
+      key: 'bank_split_amount',
+      label: 'Extrato bancario (debito/credito)',
+      confidence: 'medium',
+      required: ['data'],
+      oneOf: ['debito', 'debit', 'credito', 'credit'],
+    },
+  ]
 
   function normalizeCsvHintText(value) {
     return normalizeString(String(value || ''))
@@ -1191,20 +1306,27 @@ export const useDataStore = defineStore('data', () => {
     return ''
   }
 
-  function detectCsvSource(headers) {
-    const has = (...aliases) => aliases.some(a => headers.includes(a))
-    if (has('title') && has('amount') && has('date')) {
-      return { key: 'nubank_credit', label: 'Nubank Cartao', confidence: 'high' }
+  function detectCsvSource(headers, sampleLines = []) {
+    const headerSet = new Set(headers)
+    const has = (alias) => headerSet.has(alias)
+    const hasAny = (aliases = []) => aliases.some(alias => has(alias))
+    const hasAll = (aliases = []) => aliases.every(alias => has(alias))
+
+    for (const signature of CSV_SOURCE_SIGNATURES) {
+      if (!hasAll(signature.required || [])) continue
+      if (Array.isArray(signature.oneOf) && signature.oneOf.length && !hasAny(signature.oneOf)) continue
+      return { key: signature.key, label: signature.label, confidence: signature.confidence }
     }
-    if (has('identificador') && has('data') && has('valor') && has('descricao', 'description')) {
-      return { key: 'nubank_account', label: 'Nubank Conta', confidence: 'high' }
-    }
-    if (has('debit', 'debito') && has('credit', 'credito') && has('date', 'data')) {
-      return { key: 'bank_split_amount', label: 'Extrato bancario (debito/credito)', confidence: 'medium' }
-    }
-    if (has('amount', 'valor') && has('date', 'data') && has('title', 'description', 'descricao', 'historico')) {
+
+    if (hasAny(['amount', 'valor']) && hasAny(['date', 'data']) && hasAny(CSV_HEADER_ALIASES.description)) {
       return { key: 'bank_single_amount', label: 'Extrato bancario', confidence: 'medium' }
     }
+
+    const sampleText = normalizeCsvHintText((sampleLines || []).join(' '))
+    if (sampleText.includes('pix enviado') || sampleText.includes('pix recebido') || sampleText.includes('qr code pix')) {
+      return { key: 'bank_single_amount', label: 'Extrato bancario', confidence: 'low' }
+    }
+
     return { key: 'unknown', label: 'Origem nao identificada', confidence: 'low' }
   }
 
@@ -1372,28 +1494,33 @@ export const useDataStore = defineStore('data', () => {
     const delimiter = detectCsvDelimiter(lines[0])
     const headers = parseCsvLine(lines[0], delimiter).map(normalizeHeader)
     const idx = {
-      id: findHeaderIdx(headers, ['id', 'identificador', 'codigodatransacao', 'codigodetransacao']),
-      date: findHeaderIdx(headers, ['date', 'data', 'datalancamento', 'datamovimento', 'datatransacao', 'transactiondate']),
-      type: findHeaderIdx(headers, ['type', 'tipo']),
-      category: findHeaderIdx(headers, ['category', 'categoria']),
-      method: findHeaderIdx(headers, ['method', 'metodo', 'metododepagamento', 'pagamento', 'meiodepagamento']),
-      description: findHeaderIdx(headers, ['description', 'descricao', 'title', 'titulo', 'historico', 'detalhes', 'estabelecimento', 'favorecido', 'memo']),
-      amount: findHeaderIdx(headers, ['amount', 'valor', 'valorr', 'valorliquido', 'valoroperacao']),
-      debit: findHeaderIdx(headers, ['debit', 'debito', 'saida', 'saidas', 'withdrawal', 'valorsaida']),
-      credit: findHeaderIdx(headers, ['credit', 'credito', 'entrada', 'entradas', 'deposit', 'valorentrada']),
-      recurrence: findHeaderIdx(headers, ['recurrence', 'recorrencia']),
-      recurrenceEnd: findHeaderIdx(headers, ['recurrenceend', 'recurrence_end', 'fimrecorrencia']),
-      installments: findHeaderIdx(headers, ['installments', 'parcelas']),
-      transferDirection: findHeaderIdx(headers, ['transferdirection', 'transfer_direction', 'direcaotransferencia', 'direction', 'direcao']),
-      transferCounterparty: findHeaderIdx(headers, ['transfercounterparty', 'transfer_counterparty', 'contrapartetransferencia', 'favorecido', 'counterparty']),
-      createdAt: findHeaderIdx(headers, ['createdat', 'created_at']),
+      id: findHeaderIdx(headers, CSV_HEADER_ALIASES.id),
+      date: findHeaderIdx(headers, CSV_HEADER_ALIASES.date),
+      type: findHeaderIdx(headers, CSV_HEADER_ALIASES.type),
+      category: findHeaderIdx(headers, CSV_HEADER_ALIASES.category),
+      method: findHeaderIdx(headers, CSV_HEADER_ALIASES.method),
+      description: findHeaderIdx(headers, CSV_HEADER_ALIASES.description),
+      amount: findHeaderIdx(headers, CSV_HEADER_ALIASES.amount),
+      debit: findHeaderIdx(headers, CSV_HEADER_ALIASES.debit),
+      credit: findHeaderIdx(headers, CSV_HEADER_ALIASES.credit),
+      recurrence: findHeaderIdx(headers, CSV_HEADER_ALIASES.recurrence),
+      recurrenceEnd: findHeaderIdx(headers, CSV_HEADER_ALIASES.recurrenceEnd),
+      installments: findHeaderIdx(headers, CSV_HEADER_ALIASES.installments),
+      transferDirection: findHeaderIdx(headers, CSV_HEADER_ALIASES.transferDirection),
+      transferCounterparty: findHeaderIdx(headers, CSV_HEADER_ALIASES.transferCounterparty),
+      createdAt: findHeaderIdx(headers, CSV_HEADER_ALIASES.createdAt),
     }
     const hasAmountColumn = idx.amount >= 0
     const hasSplitAmountColumns = idx.debit >= 0 || idx.credit >= 0
     if (idx.date < 0 || idx.description < 0 || (!hasAmountColumn && !hasSplitAmountColumns)) {
-      throw new Error('Cabeçalho CSV inválido. Mínimo: Data, Descrição e Valor (ou Débito/Crédito).')
+      const missing = []
+      if (idx.date < 0) missing.push('Data')
+      if (idx.description < 0) missing.push('Descricao')
+      if (!hasAmountColumn && !hasSplitAmountColumns) missing.push('Valor (ou Debito/Credito)')
+      const headerPreview = headers.slice(0, 10).join(', ') || '(nenhuma)'
+      throw new Error(`Cabecalho CSV invalido. Faltando: ${missing.join(', ')}. Colunas detectadas: ${headerPreview}.`)
     }
-    const source = detectCsvSource(headers)
+    const source = detectCsvSource(headers, lines.slice(1, 6))
     const isBankCsv = idx.type < 0 || idx.category < 0 || idx.method < 0
     const isCreditCardCsv = isBankCsv && headers.includes('title')
     const items = []; let skipped = 0
@@ -1515,7 +1642,14 @@ export const useDataStore = defineStore('data', () => {
       if (isValidDate(originalParsedDate)) item._csvOriginalDate = originalParsedDate
       isValidTransaction(item) ? items.push(item) : skipped++
     })
-    return { items, skipped, source, fileName: normalizeString(fileName) || 'arquivo.csv' }
+    return {
+      items,
+      skipped,
+      source,
+      fileName: normalizeString(fileName) || 'arquivo.csv',
+      headers,
+      totalRows: Math.max(lines.length - 1, 0),
+    }
   }
 
   function buildExistingFingerprints() {
@@ -1562,18 +1696,23 @@ export const useDataStore = defineStore('data', () => {
     for (const item of parsedItems) {
       if (!isValidTransaction(item)) { invalid++; continue }
       const fp = txnFingerprint(item.date, item.description, item.amount)
+      const sourceID = normalizeString(String(item?.id || '')).toLowerCase()
+      const inFileKey = sourceID ? `id:${sourceID}` : fp
       const existing = findExistingByAnyFingerprint(item, existingByFingerprint)
       if (existing) {
-        duplicatesExisting++
-        if (shouldUpgradeDuplicateTransaction(existing, item)) {
-          const prev = upgradeByTransactionId.get(existing.id)
-          const incoming = selectBestUpgradeCandidate(prev?.incoming, item)
-          upgradeByTransactionId.set(existing.id, { existing, incoming })
+        const existingID = normalizeString(String(existing?.id || '')).toLowerCase()
+        if (!(sourceID && existingID && sourceID !== existingID)) {
+          duplicatesExisting++
+          if (shouldUpgradeDuplicateTransaction(existing, item)) {
+            const prev = upgradeByTransactionId.get(existing.id)
+            const incoming = selectBestUpgradeCandidate(prev?.incoming, item)
+            upgradeByTransactionId.set(existing.id, { existing, incoming })
+          }
+          continue
         }
-        continue
       }
-      if (inFileFingerprints.has(fp)) { duplicatesInFile++; continue }
-      inFileFingerprints.add(fp)
+      if (inFileFingerprints.has(inFileKey)) { duplicatesInFile++; continue }
+      inFileFingerprints.add(inFileKey)
       toImport.push(item)
     }
 
@@ -1707,6 +1846,26 @@ export const useDataStore = defineStore('data', () => {
     } catch (_) { /* keep current */ }
   }
 
+  function buildNoValidCsvImportMessage(parsedByFile) {
+    const details = (parsedByFile || [])
+      .slice(0, 4)
+      .map(entry => {
+        const parsed = entry?.parsed || {}
+        const fileName = normalizeString(String(parsed.fileName || 'arquivo.csv')) || 'arquivo.csv'
+        const sourceLabel = normalizeString(String(parsed.source?.label || 'Origem nao identificada')) || 'Origem nao identificada'
+        const totalRows = Number(parsed.totalRows || 0)
+        const skipped = Number(parsed.skipped || 0)
+        const valid = Array.isArray(parsed.items) ? parsed.items.length : 0
+        const headerPreview = Array.isArray(parsed.headers) && parsed.headers.length
+          ? parsed.headers.slice(0, 6).join(', ')
+          : '(sem cabecalho reconhecido)'
+        return `${fileName}: origem "${sourceLabel}", validas ${valid}/${totalRows || skipped || 0}, ignoradas ${skipped}, colunas [${headerPreview}]`
+      })
+      .join(' | ')
+
+    return `Nenhuma movimentacao valida foi encontrada. Revise o layout do extrato (colunas Data, Descricao e Valor/Debito/Credito). Detalhes: ${details || 'sem detalhes adicionais'}.`
+  }
+
   async function importCsvBatchCore(files, accountId) {
     const list = Array.isArray(files) ? files : [files]
     const csvFiles = list.filter(file =>
@@ -1736,7 +1895,7 @@ export const useDataStore = defineStore('data', () => {
     }
 
     const parsedItems = parsedByFile.flatMap(entry => entry.parsed.items)
-    if (!parsedItems.length) throw new Error('Nenhuma movimentacao valida nos arquivos selecionados.')
+    if (!parsedItems.length) throw new Error(buildNoValidCsvImportMessage(parsedByFile))
 
     await refreshSnapshot()
     const existing = buildExistingFingerprints()
@@ -1783,7 +1942,7 @@ export const useDataStore = defineStore('data', () => {
             if (direction === 'out' && !withAccount.transferFromAccountId) withAccount.transferFromAccountId = accountId
             if (direction === 'in' && !withAccount.transferToAccountId) withAccount.transferToAccountId = accountId
           }
-          return toPayload(withAccount, false)
+          return toPayload(withAccount, true)
         }).filter(item => isValidDate(item.date) && Number(item.amount) > 0)
         return { name: fileName, items }
       })

@@ -16,27 +16,30 @@ var fingerprintSpaces = regexp.MustCompile(`\s+`)
 // TransactionDedupeKey returns a stable hash used for idempotent CSV imports.
 // The key intentionally ignores accents, punctuation and sign-only amount differences.
 //
-// Dedup strategy varies by transaction kind:
-//   - Installments (installments > 1): fully dateless key with installment suffix stripped.
-//     "Parcela 2/3" and "Parcela 3/3" of the same purchase share one key.
-//   - Recurring monthly: fully dateless key. A monthly recurrence already expands
-//     to every month, so importing the same salary/subscription from a different
-//     month's statement must be recognized as a duplicate.
-//   - One-time: uses full YYYY-MM-DD date.
-func TransactionDedupeKey(dateValue time.Time, description string, amount float64, recurrence string, installments int) string {
-	normDesc := normalizeDescriptionForDedupe(description)
+// Strategy:
+// - If externalID exists: dedupe by externalID.
+// - Otherwise:
+//   - installments > 1: dateless key with installment suffix stripped.
+//   - recurrence monthly: dateless key.
+//   - one-time: date + description + amount.
+func TransactionDedupeKey(dateValue time.Time, description string, amount float64, recurrence string, installments int, externalID string) string {
 	var base string
-	if installments > 1 {
-		// Fully dateless — all installments of the same purchase share one key.
-		clean := stripInstallmentSuffix(normDesc)
-		base = fmt.Sprintf("installment|%s|%d", clean, amountToCents(amount))
-	} else if recurrence == "monthly" {
-		// Fully dateless — a monthly recurrence covers every month,
-		// so the same subscription/salary from any statement is a duplicate.
-		base = fmt.Sprintf("monthly|%s|%d", normDesc, amountToCents(amount))
+
+	normExternalID := normalizeExternalIDForDedupe(externalID)
+	if normExternalID != "" {
+		base = fmt.Sprintf("external|%s", normExternalID)
 	} else {
-		base = fmt.Sprintf("%s|%s|%d", dateValue.Format("2006-01-02"), normDesc, amountToCents(amount))
+		normDesc := normalizeDescriptionForDedupe(description)
+		if installments > 1 {
+			clean := stripInstallmentSuffix(normDesc)
+			base = fmt.Sprintf("installment|%s|%d", clean, amountToCents(amount))
+		} else if recurrence == "monthly" {
+			base = fmt.Sprintf("monthly|%s|%d", normDesc, amountToCents(amount))
+		} else {
+			base = fmt.Sprintf("%s|%s|%d", dateValue.Format("2006-01-02"), normDesc, amountToCents(amount))
+		}
 	}
+
 	sum := sha256.Sum256([]byte(base))
 	return hex.EncodeToString(sum[:])
 }
@@ -74,6 +77,10 @@ func normalizeDescriptionForDedupe(value string) string {
 	return strings.TrimSpace(fingerprintSpaces.ReplaceAllString(b.String(), " "))
 }
 
+func normalizeExternalIDForDedupe(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
 func removeAccent(r rune) rune {
 	switch r {
 	case 'á', 'à', 'â', 'ã', 'ä':
@@ -96,3 +103,4 @@ func removeAccent(r rune) rune {
 func amountToCents(amount float64) int64 {
 	return int64(math.Round(math.Abs(amount) * 100))
 }
+

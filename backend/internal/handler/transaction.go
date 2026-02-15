@@ -272,7 +272,7 @@ func (h *TransactionHandler) Import(w http.ResponseWriter, r *http.Request) {
 		}
 
 		result.Valid++
-		dedupeKey := domain.TransactionDedupeKey(dateValue, normalized.Description, normalized.Amount, normalized.Recurrence, normalized.Installments)
+		dedupeKey := domain.TransactionDedupeKey(dateValue, normalized.Description, normalized.Amount, normalized.Recurrence, normalized.Installments, normalized.ID)
 		imported, err := h.transactions.CreateImported(ctx, user.ID, dateValue, recurrenceEnd, normalized, dedupeKey, nil)
 		if err != nil {
 			var validationErr *domain.ValidationError
@@ -457,7 +457,7 @@ func (h *TransactionHandler) runImportJob(userID, jobID, batchID string, files [
 			}
 
 			result.Valid++
-			dedupeKey := domain.TransactionDedupeKey(dateValue, normalized.Description, normalized.Amount, normalized.Recurrence, normalized.Installments)
+			dedupeKey := domain.TransactionDedupeKey(dateValue, normalized.Description, normalized.Amount, normalized.Recurrence, normalized.Installments, normalized.ID)
 			meta := &domain.TransactionImportMetadata{
 				BatchID:  batchID,
 				JobID:    jobID,
