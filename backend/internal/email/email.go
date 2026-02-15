@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -77,7 +78,7 @@ func (s *Sender) Send(to, subject, htmlBody string) error {
 
 // SendResetPasswordEmail sends a password reset link.
 func (s *Sender) SendResetPasswordEmail(to, token string) error {
-	resetURL := fmt.Sprintf("%s?reset-token=%s", s.cfg.AppURL, token)
+	resetURL := buildResetPasswordURL(s.cfg.AppURL, token)
 
 	// When Resend is not configured, log the reset link for local development
 	if !s.cfg.IsConfigured() {
@@ -106,6 +107,17 @@ func (s *Sender) SendResetPasswordEmail(to, token string) error {
 </html>`, resetURL)
 
 	return s.Send(to, "Redefinir Senha — GoFund", body)
+}
+
+func buildResetPasswordURL(appURL, token string) string {
+	base := strings.TrimRight(strings.TrimSpace(appURL), "/")
+	if base == "" {
+		return fmt.Sprintf("/reset-password?reset-token=%s", url.QueryEscape(token))
+	}
+	if !strings.HasSuffix(strings.ToLower(base), "/reset-password") {
+		base += "/reset-password"
+	}
+	return fmt.Sprintf("%s?reset-token=%s", base, url.QueryEscape(token))
 }
 
 // SendReminderEmail sends a bill/recurring transaction reminder.

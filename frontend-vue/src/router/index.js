@@ -92,6 +92,13 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
+  const queryResetToken = typeof to.query?.['reset-token'] === 'string'
+    ? to.query['reset-token']
+    : (typeof to.query?.token === 'string' ? to.query.token : '')
+  if (to.path === '/' && queryResetToken) {
+    return { name: 'reset-password', query: { 'reset-token': queryResetToken } }
+  }
+
   const auth = useAuthStore()
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     return { name: 'login' }

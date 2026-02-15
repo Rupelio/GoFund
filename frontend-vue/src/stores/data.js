@@ -1132,6 +1132,64 @@ export const useDataStore = defineStore('data', () => {
 
   // ── CSV Import ─────────────────────────────────────────
   const ACCOUNT_CSV_SOURCE_MAP_KEY = 'gofund_account_csv_source_map_v1'
+  const CSV_TRANSACTION_TYPES = new Set(['receita', 'despesa', 'investimento', 'transferencia'])
+  const CSV_TRANSACTION_METHODS = new Set(['pix', 'debito', 'credito', 'boleto', 'transferencia', 'dinheiro', 'cheque'])
+
+  function normalizeCsvHintText(value) {
+    return normalizeString(String(value || ''))
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+  }
+
+  function normalizeCsvTypeValue(rawType, rawDescription, rawAmount) {
+    const typeHint = normalizeCsvHintText(rawType)
+    if (!typeHint) return ''
+    if (CSV_TRANSACTION_TYPES.has(typeHint)) return typeHint
+
+    const descHint = normalizeCsvHintText(rawDescription)
+    const amount = Number(rawAmount) || 0
+
+    if (typeHint === 'entrada' || typeHint === 'credito' || typeHint === 'credit') return 'receita'
+    if (typeHint === 'saida' || typeHint === 'debito' || typeHint === 'debit') return 'despesa'
+    if (typeHint.includes('transfer') || typeHint.includes('ted') || typeHint.includes('doc')) return 'transferencia'
+    if (typeHint.includes('pix recebido') || typeHint.includes('recebido pelo pix')) return 'receita'
+    if (typeHint.includes('pix enviado') || typeHint.includes('qr code pix enviado')) return 'despesa'
+    if (typeHint.includes('pagamento de conta') || typeHint.includes('pagamento')) return 'despesa'
+    if (typeHint.includes('venda')) return amount >= 0 ? 'receita' : 'despesa'
+    if (typeHint.includes('invest') || typeHint.includes('aplicacao') || typeHint.includes('rendimento') || typeHint.includes('resgate')) {
+      return amount < 0 ? 'investimento' : 'receita'
+    }
+    if (descHint.includes('pix recebido')) return 'receita'
+    if (descHint.includes('pix enviado')) return 'despesa'
+    return ''
+  }
+
+  function normalizeCsvMethodValue(rawMethod, context = {}) {
+    const methodHint = normalizeCsvHintText(rawMethod)
+    const typeHint = normalizeCsvHintText(context.typeHint)
+    const descHint = normalizeCsvHintText(context.description)
+    const amount = Number(context.amount) || 0
+
+    if (CSV_TRANSACTION_METHODS.has(methodHint)) return methodHint
+
+    const mergedHint = `${methodHint} ${typeHint} ${descHint}`.trim()
+    if (!mergedHint) return ''
+    if (/\bpix\b/.test(mergedHint)) return 'pix'
+    if (mergedHint.includes('boleto')) return 'boleto'
+    if (mergedHint.includes('dinheiro')) return 'dinheiro'
+    if (mergedHint.includes('cheque')) return 'cheque'
+    if (mergedHint.includes('debito')) return 'debito'
+    if (mergedHint.includes('transfer') || mergedHint.includes('ted') || mergedHint.includes('doc') || mergedHint.includes('pagamento de conta')) {
+      return 'transferencia'
+    }
+    if (mergedHint.includes('credito')) {
+      const saleLike = typeHint.includes('venda') || descHint.includes('disponivel')
+      if (saleLike || amount > 0) return 'debito'
+      return 'credito'
+    }
+    return ''
+  }
 
   function detectCsvSource(headers) {
     const has = (...aliases) => aliases.some(a => headers.includes(a))
@@ -1314,7 +1372,7 @@ export const useDataStore = defineStore('data', () => {
     const delimiter = detectCsvDelimiter(lines[0])
     const headers = parseCsvLine(lines[0], delimiter).map(normalizeHeader)
     const idx = {
-      id: findHeaderIdx(headers, ['id', 'identificador']),
+      id: findHeaderIdx(headers, ['id', 'identificador', 'codigodatransacao', 'codigodetransacao']),
       date: findHeaderIdx(headers, ['date', 'data', 'datalancamento', 'datamovimento', 'datatransacao', 'transactiondate']),
       type: findHeaderIdx(headers, ['type', 'tipo']),
       category: findHeaderIdx(headers, ['category', 'categoria']),
@@ -1355,9 +1413,16 @@ export const useDataStore = defineStore('data', () => {
       let parsedDate = normalizeCsvDate(rawDate)
       const originalParsedDate = parsedDate
 
-      let inferredType = idx.type >= 0 ? String(cols[idx.type] || '') : ''
+      const rawTypeValue = idx.type >= 0 ? String(cols[idx.type] || '') : ''
+      const rawMethodValue = idx.method >= 0 ? String(cols[idx.method] || '') : ''
+
+      let inferredType = normalizeCsvTypeValue(rawTypeValue, rawDesc, rawAmount)
       let inferredCategory = idx.category >= 0 ? String(cols[idx.category] || '') : ''
-      let inferredMethod = idx.method >= 0 ? String(cols[idx.method] || '') : ''
+      let inferredMethod = normalizeCsvMethodValue(rawMethodValue, {
+        typeHint: rawTypeValue,
+        description: rawDesc,
+        amount: rawAmount,
+      })
 
       if (isCreditCardCsv) {
         const desc = rawDesc.toLowerCase()
@@ -1380,7 +1445,7 @@ export const useDataStore = defineStore('data', () => {
           if (CARD_BILL_REGEX.test(desc)) inferredMethod = 'transferencia'
           else if (desc.includes('pix')) inferredMethod = 'pix'
           else if (desc.includes('débito') || desc.includes('debito')) inferredMethod = 'debito'
-          else if (desc.includes('crédito') || desc.includes('credito')) inferredMethod = 'credito'
+          else if ((desc.includes('crédito') || desc.includes('credito')) && rawAmount < 0) inferredMethod = 'credito'
           else if (desc.includes('boleto')) inferredMethod = 'transferencia'
           else if (desc.includes('transferência') || desc.includes('transferencia')) inferredMethod = 'transferencia'
           else inferredMethod = 'pix'
