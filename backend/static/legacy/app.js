@@ -3166,7 +3166,7 @@
       // ── Fatura ──
       [/fatura|pgto\s*cart|cart[ãa]o\s*de\s*cr[ée]dito/, "Fatura"],
       // ── Impostos / Governo ──
-      [/receita\s*federal|imposto|darf|gps|inss|irpf|irpj|icms|iss\b|simples\s*nacional|das\b|gru\b|detran|dpvat|ipva|licenciamento/, "Impostos"],
+      [/\b(?:receita\s*federal|impostos?|darf(?:\s+numerado)?|gps|guia\s+da\s+previdencia\s+social|inss|irpf|irpj|icms|issqn?|simples\s*nacional|pgdas-?d?|das|doc(?:umento)?\s+de\s+arrecadacao\s+do\s+simples(?:\s+nacional)?|gru|guia\s+de\s+recolhimento\s+da\s+uniao|sefaz|detran|dpvat|ipva|iptu|licenciamento)\b/, "Impostos"],
       // ── Internet / Domínio / Hosting ──
       [/registrobr|registro\.br|hostgator|locaweb|godaddy|cloudflare|namecheap/, "Internet"],
       // ── Seguros ──

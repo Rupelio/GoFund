@@ -872,7 +872,7 @@ export function inferCategoryFromDescription(desc, context = {}) {
     [/aplica[çc][ãa]o|rdb|cdb|tesouro|investimento|poupan[çc]a|fundo|a[çc][ãa]o|etf|cri\b|cra\b|debenture|lci|lca|coe|previdencia/, 'Investimento'],
     [/sal[áa]rio|folha\s*de\s*pagamento|pro\s*labore|honorario|freelance|comiss[ãa]o|bonifica[çc][ãa]o/, 'Salário'],
     [/fatura|pgto\s*cart|cart[ãa]o\s*de\s*cr[ée]dito/, 'Fatura'],
-    [/receita\s*federal|imposto|darf|gps|inss|irpf|irpj|icms|iss\b|simples\s*nacional|das\b|gru\b|detran|dpvat|ipva|licenciamento/, 'Impostos'],
+    [/\b(?:receita\s*federal|impostos?|darf(?:\s+numerado)?|gps|guia\s+da\s+previdencia\s+social|inss|irpf|irpj|icms|issqn?|simples\s*nacional|pgdas-?d?|das|doc(?:umento)?\s+de\s+arrecadacao\s+do\s+simples(?:\s+nacional)?|gru|guia\s+de\s+recolhimento\s+da\s+uniao|sefaz|detran|dpvat|ipva|iptu|licenciamento)\b/, 'Impostos'],
     [/registrobr|registro\.br|hostgator|locaweb|godaddy|cloudflare|namecheap/, 'Internet'],
     [/seguro\s*(auto|vida|viagem)|porto\s*seguro|liberty|mapfre|zurich|tokio\s*marine|sulam[ée]rica\s*segur/, 'Seguros'],
     [/\b(?:transfer[êe]ncia|pix)\s*(?:recebid[ao]|enviad[ao])\b|\bdevolu(?:c|ç)[aã]o\s*(?:de\s*)?pix\b|\b(?:ted|doc)\b|\bchave\s*pix\b|\bag[eê]ncia:\b|\bconta:\b|\bnu\s*pagamentos\b|\binstitui[cç][aã]o\s*de\s*pagamento\b|\bip\s*\(\d{4}\)\b/, 'Transferência'],
