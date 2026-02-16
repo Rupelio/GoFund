@@ -904,12 +904,25 @@ function inferAssetTypeFromHint(descAscii, ticker) {
   return 'outro'
 }
 
-function inferAssetNameFromHint(descAscii, ticker, category) {
+function isNubankInvestmentContext(context = {}) {
+  const sourceKeyAscii = normalizeAscii(context.csvSourceKey || context.sourceKey || '')
+  if (sourceKeyAscii.includes('nubank')) return true
+  const sourceLabelAscii = normalizeAscii(context.csvSourceLabel || context.sourceLabel || '')
+  if (sourceLabelAscii.includes('nubank')) return true
+  const accountNameAscii = normalizeAscii(context.accountName || '')
+  if (/\bnubank\b/.test(accountNameAscii)) return true
+  return false
+}
+
+function inferAssetNameFromHint(descAscii, ticker, category, context = {}) {
   if (ticker) return ticker
   if (/\b(nubank|nu)\b/.test(descAscii) && /\bcaixinha\b/.test(descAscii) && /\bturbo\b/.test(descAscii) && /\b(cdb|rdb)\b/.test(descAscii)) return 'Caixinha Nubank Turbo (RDB)'
   if (/\bcaixinha\b/.test(descAscii) && /\bturbo\b/.test(descAscii) && /\b(cdb|rdb)\b/.test(descAscii)) return 'Caixinha Turbo (RDB)'
   if (/\b(nubank|nu)\b/.test(descAscii) && /\bcaixinha\b/.test(descAscii) && /\b(cdb|rdb)\b/.test(descAscii)) return 'Caixinha Nubank (RDB)'
   if (/\bcaixinha\b/.test(descAscii) && /\b(cdb|rdb)\b/.test(descAscii)) return 'Caixinha (RDB)'
+  if (isNubankInvestmentContext(context) && /\brdb\b/.test(descAscii) && /\b(aplicacao|resgate|rendimento|juros|investimento)\b/.test(descAscii)) {
+    return 'Caixinha Nubank (RDB)'
+  }
   if (/\btesouro\b/.test(descAscii)) return 'Tesouro Direto'
   if (/\bcdb\b|\brdb\b/.test(descAscii)) return 'CDB/RDB'
   if (/\blci\b|\blca\b/.test(descAscii)) return 'LCI/LCA'
@@ -970,8 +983,9 @@ export function extractInvestmentAssetHint(description, context = {}) {
 
   const assetType = inferAssetTypeFromHint(descAscii, ticker)
   const pricingSource = ticker ? 'market' : 'manual'
-  const name = inferAssetNameFromHint(descAscii, ticker, category)
+  const name = inferAssetNameFromHint(descAscii, ticker, category, context)
   const inferredCategory = inferAssetCategoryFromHint(descAscii, assetType, category)
+  const institution = isNubankInvestmentContext(context) ? 'nubank' : ''
   const confidence = ticker
     ? 'high'
     : (assetType === 'renda_fixa' || assetType === 'fundo' ? 'medium' : 'low')
@@ -982,6 +996,7 @@ export function extractInvestmentAssetHint(description, context = {}) {
     ticker,
     pricingSource,
     category: inferredCategory || 'Investimentos',
+    institution,
     confidence,
   }
 }

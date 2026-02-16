@@ -341,6 +341,52 @@ export const useDataStore = defineStore('data', () => {
     return created
   }
 
+  async function reconcileAccountBalance(accountId, targetBalance, options = {}) {
+    const normalizedAccountId = normalizeString(String(accountId || ''))
+    if (!normalizedAccountId) {
+      throw new Error('Conta invalida para conciliacao.')
+    }
+
+    const target = Number(targetBalance)
+    if (!Number.isFinite(target)) {
+      throw new Error('Saldo alvo invalido para conciliacao.')
+    }
+
+    const current = getAccountBalance(normalizedAccountId, accounts.value, transactions.value)
+    const diff = round2(target - current)
+    if (Math.abs(diff) < 0.01) {
+      return { adjusted: false, diff: 0, current, target }
+    }
+
+    let adjustmentDate = normalizeString(String(options?.date || ''))
+    if (!isValidDate(adjustmentDate)) {
+      const today = new Date()
+      adjustmentDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    }
+
+    const payload = {
+      date: adjustmentDate,
+      type: diff > 0 ? 'receita' : 'despesa',
+      category: 'Outros',
+      method: 'transferencia',
+      description: normalizeString(String(options?.description || 'Ajuste de saldo (importacao CSV)')) || 'Ajuste de saldo (importacao CSV)',
+      amount: Math.abs(diff),
+      recurrence: 'none',
+      recurrenceEnd: '',
+      installments: 0,
+      accountId: normalizedAccountId,
+    }
+
+    const created = normalizeTransaction(await transactionsApi.create(auth.token, payload))
+    transactions.value.push(created)
+
+    if (options?.silent !== true) {
+      app.showMessage(`Ajuste de saldo aplicado (${formatCurrency(Math.abs(diff))}).`, 'success')
+    }
+
+    return { adjusted: true, diff, current, target, transaction: created }
+  }
+
   // ── Category CRUD ──────────────────────────────────────
   async function saveCategory(payload) {
     const id = editingCategoryId.value
@@ -530,29 +576,237 @@ export const useDataStore = defineStore('data', () => {
     return round2(parsed)
   }
 
+  const CSV_SYNC_MONTHLY_RATES_STORAGE_KEY = 'gofund_csv_sync_monthly_rates'
+  const CSV_INVESTMENT_RULES_STORAGE_KEY = 'gofund_csv_investment_rules_v1'
+
+  function parseCsvSyncMonthlyRate(value) {
+    if (value === null || value === undefined || value === '') return null
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) return null
+    if (parsed < 0 || parsed > 100) return null
+    return round2(parsed)
+  }
+
+  function monthlyRateToAnnualRate(monthlyRate) {
+    const monthly = parseCsvSyncMonthlyRate(monthlyRate)
+    if (monthly === null) return null
+    const annual = (Math.pow(1 + (monthly / 100), 12) - 1) * 100
+    return round2(annual)
+  }
+
+  function normalizeCsvSyncMonthlyRates(raw = {}) {
+    return {
+      fixedIncomeMonthlyRate: parseCsvSyncMonthlyRate(raw?.fixedIncomeMonthlyRate),
+      nubankBoxMonthlyRate: parseCsvSyncMonthlyRate(raw?.nubankBoxMonthlyRate),
+      nubankBoxTurboMonthlyRate: parseCsvSyncMonthlyRate(raw?.nubankBoxTurboMonthlyRate),
+    }
+  }
+
+  function getCsvSyncMonthlyRates() {
+    if (typeof window === 'undefined') return normalizeCsvSyncMonthlyRates({})
+    try {
+      const raw = JSON.parse(localStorage.getItem(CSV_SYNC_MONTHLY_RATES_STORAGE_KEY) || '{}')
+      return normalizeCsvSyncMonthlyRates(raw)
+    } catch (_) {
+      return normalizeCsvSyncMonthlyRates({})
+    }
+  }
+
+  function setCsvSyncMonthlyRates(rates = {}) {
+    const normalized = normalizeCsvSyncMonthlyRates(rates)
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(CSV_SYNC_MONTHLY_RATES_STORAGE_KEY, JSON.stringify(normalized))
+      } catch (_) {
+        // ignore storage errors
+      }
+    }
+    return normalized
+  }
+
+  function createCsvInvestmentRuleId() {
+    const stamp = Date.now().toString(36)
+    const random = Math.random().toString(36).slice(2, 8)
+    return `csv_rule_${stamp}_${random}`
+  }
+
+  function normalizeCsvInvestmentRule(raw = {}) {
+    const pattern = normalizeString(String(raw?.descriptionPattern || raw?.pattern || ''))
+    const assetName = normalizeString(String(raw?.assetName || raw?.name || ''))
+    if (!pattern || !assetName) return null
+    const id = normalizeString(String(raw?.id || '')) || createCsvInvestmentRuleId()
+    const sourceKey = normalizeString(String(raw?.sourceKey || 'unknown')).toLowerCase()
+    const accountId = normalizeString(String(raw?.accountId || ''))
+    const assetType = normalizeString(String(raw?.assetType || 'renda_fixa')).toLowerCase() || 'renda_fixa'
+    const assetCategory = normalizeString(String(raw?.assetCategory || 'CDB/RDB')) || 'CDB/RDB'
+    const monthlyRate = parseCsvSyncMonthlyRate(raw?.monthlyRate)
+    return {
+      id,
+      descriptionPattern: pattern,
+      sourceKey: sourceKey === 'unknown' ? '' : sourceKey,
+      accountId,
+      assetName,
+      assetType,
+      assetCategory,
+      monthlyRate,
+    }
+  }
+
+  function normalizeCsvInvestmentRules(rules = []) {
+    if (!Array.isArray(rules)) return []
+    const normalized = []
+    const seen = new Set()
+    for (const item of rules) {
+      const rule = normalizeCsvInvestmentRule(item)
+      if (!rule || seen.has(rule.id)) continue
+      seen.add(rule.id)
+      normalized.push(rule)
+    }
+    return normalized
+  }
+
+  function getCsvInvestmentRules() {
+    if (typeof window === 'undefined') return []
+    try {
+      const raw = JSON.parse(localStorage.getItem(CSV_INVESTMENT_RULES_STORAGE_KEY) || '[]')
+      return normalizeCsvInvestmentRules(raw)
+    } catch (_) {
+      return []
+    }
+  }
+
+  function setCsvInvestmentRules(rules = []) {
+    const normalized = normalizeCsvInvestmentRules(rules)
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(CSV_INVESTMENT_RULES_STORAGE_KEY, JSON.stringify(normalized))
+      } catch (_) {
+        // ignore storage errors
+      }
+    }
+    return normalized
+  }
+
+  function matchCsvInvestmentRule(rule, transaction, context = {}) {
+    const pattern = normalizeCsvHintText(rule?.descriptionPattern || '')
+    if (!pattern) return false
+    const desc = normalizeCsvHintText(transaction?.description || '')
+    if (!desc || !desc.includes(pattern)) return false
+
+    const requiredSourceKey = normalizeString(String(rule?.sourceKey || '')).toLowerCase()
+    const currentSourceKey = normalizeString(String(context?.sourceKey || '')).toLowerCase()
+    if (requiredSourceKey && requiredSourceKey !== currentSourceKey) return false
+
+    const requiredAccountId = normalizeString(String(rule?.accountId || ''))
+    const currentAccountId = normalizeString(String(transaction?.accountId || ''))
+    if (requiredAccountId && requiredAccountId !== currentAccountId) return false
+    return true
+  }
+
+  function buildHintFromCsvInvestmentRule(rule) {
+    const assetName = normalizeString(String(rule?.assetName || ''))
+    if (!assetName) return null
+    return {
+      name: assetName,
+      assetType: normalizeString(String(rule?.assetType || 'renda_fixa')).toLowerCase() || 'renda_fixa',
+      ticker: '',
+      pricingSource: 'manual',
+      category: normalizeString(String(rule?.assetCategory || 'CDB/RDB')) || 'CDB/RDB',
+      confidence: 'high',
+      institution: '',
+      ruleId: normalizeString(String(rule?.id || '')),
+      ruleMonthlyRate: parseCsvSyncMonthlyRate(rule?.monthlyRate),
+    }
+  }
+
+  function resolveCsvSyncAnnualRates(options = {}) {
+    const optionsAnnual = {
+      fixedIncomeAnnualRate: parseFixedIncomeAnnualRate(options?.fixedIncomeAnnualRate),
+      nubankBoxAnnualRate: parseFixedIncomeAnnualRate(options?.nubankBoxAnnualRate),
+      nubankBoxTurboAnnualRate: parseFixedIncomeAnnualRate(options?.nubankBoxTurboAnnualRate),
+    }
+    const hasAnnualOverride = optionsAnnual.fixedIncomeAnnualRate !== null
+      || optionsAnnual.nubankBoxAnnualRate !== null
+      || optionsAnnual.nubankBoxTurboAnnualRate !== null
+    if (hasAnnualOverride) return optionsAnnual
+
+    const optionsMonthly = normalizeCsvSyncMonthlyRates({
+      fixedIncomeMonthlyRate: options?.fixedIncomeMonthlyRate,
+      nubankBoxMonthlyRate: options?.nubankBoxMonthlyRate,
+      nubankBoxTurboMonthlyRate: options?.nubankBoxTurboMonthlyRate,
+    })
+    const hasMonthlyOverride = optionsMonthly.fixedIncomeMonthlyRate !== null
+      || optionsMonthly.nubankBoxMonthlyRate !== null
+      || optionsMonthly.nubankBoxTurboMonthlyRate !== null
+
+    const sourceMonthly = hasMonthlyOverride ? optionsMonthly : getCsvSyncMonthlyRates()
+    return {
+      fixedIncomeAnnualRate: monthlyRateToAnnualRate(sourceMonthly.fixedIncomeMonthlyRate),
+      nubankBoxAnnualRate: monthlyRateToAnnualRate(sourceMonthly.nubankBoxMonthlyRate),
+      nubankBoxTurboAnnualRate: monthlyRateToAnnualRate(sourceMonthly.nubankBoxTurboMonthlyRate),
+    }
+  }
+
   function resolveFixedIncomeAnnualRateForHint(hint, rates = {}) {
     if (!hint || hint.assetType !== 'renda_fixa' || hint.pricingSource === 'market') return null
+    const ruleAnnualRate = monthlyRateToAnnualRate(hint?.ruleMonthlyRate)
+    if (ruleAnnualRate !== null) return ruleAnnualRate
     const name = normalizeString(String(hint.name || '')).toLowerCase()
     const turboRate = parseFixedIncomeAnnualRate(rates?.nubankBoxTurboAnnualRate)
     const normalRate = parseFixedIncomeAnnualRate(rates?.nubankBoxAnnualRate)
     const defaultRate = parseFixedIncomeAnnualRate(rates?.fixedIncomeAnnualRate)
 
     if (name.includes('caixinha') && name.includes('turbo') && turboRate !== null) return turboRate
-    if (name.includes('caixinha') && name.includes('nubank') && normalRate !== null) return normalRate
+    if (name.includes('caixinha') && name.includes('nubank')) {
+      if (normalRate !== null) return normalRate
+      if (turboRate !== null) return turboRate
+    }
     return defaultRate
+  }
+
+  function resolveAssetNameForHint(hint, rates = {}) {
+    if (!hint) return ''
+    const rawName = normalizeString(String(hint.name || ''))
+    if (!rawName) return ''
+    const name = rawName.toLowerCase()
+    if (!(name.includes('caixinha') && name.includes('nubank') && !name.includes('turbo'))) {
+      return rawName
+    }
+    const normalRate = parseFixedIncomeAnnualRate(rates?.nubankBoxAnnualRate)
+    const turboRate = parseFixedIncomeAnnualRate(rates?.nubankBoxTurboAnnualRate)
+    if (normalRate === null && turboRate !== null) return 'Caixinha Nubank Turbo (RDB)'
+    return rawName
   }
 
   function classifyAssetCandidateTransactions(items) {
     const groups = new Map()
+    const accountById = new Map(accounts.value.map(acc => [acc.id, acc]))
+    const accountSourceById = new Map()
+    const csvInvestmentRules = getCsvInvestmentRules()
     for (const txn of items) {
       const type = normalizeString(txn?.type || '').toLowerCase()
       if (type !== 'investimento' && type !== 'receita') continue
-      const hint = extractInvestmentAssetHint(txn?.description || '', {
-        category: txn?.category || '',
-        type,
-        method: txn?.method || '',
-        amount: Number(txn?.amount || 0),
-      })
+      const accountId = normalizeString(String(txn?.accountId || ''))
+      const account = accountId ? accountById.get(accountId) : null
+      if (accountId && !accountSourceById.has(accountId)) {
+        accountSourceById.set(accountId, getAccountCsvSource(accountId))
+      }
+      const accountSource = accountId ? accountSourceById.get(accountId) : null
+      const matchedRule = csvInvestmentRules.find(rule => (
+        matchCsvInvestmentRule(rule, txn, { sourceKey: accountSource?.key || '' })
+      ))
+      let hint = matchedRule ? buildHintFromCsvInvestmentRule(matchedRule) : null
+      if (!hint) {
+        hint = extractInvestmentAssetHint(txn?.description || '', {
+          category: txn?.category || '',
+          type,
+          method: txn?.method || '',
+          amount: Number(txn?.amount || 0),
+          accountName: account?.name || '',
+          csvSourceKey: accountSource?.key || '',
+          csvSourceLabel: accountSource?.label || '',
+        })
+      }
       if (!hint) continue
       const key = hint.ticker
         ? `ticker:${hint.ticker}`
@@ -626,11 +880,7 @@ export const useDataStore = defineStore('data', () => {
 
   async function syncInvestmentAssetsFromTransactions(options = {}) {
     const silent = options?.silent === true
-    const annualRateConfig = {
-      fixedIncomeAnnualRate: options?.fixedIncomeAnnualRate,
-      nubankBoxAnnualRate: options?.nubankBoxAnnualRate,
-      nubankBoxTurboAnnualRate: options?.nubankBoxTurboAnnualRate,
-    }
+    const annualRateConfig = resolveCsvSyncAnnualRates(options)
     const sourceItems = Array.isArray(options?.transactions)
       ? options.transactions
       : transactions.value
@@ -657,14 +907,25 @@ export const useDataStore = defineStore('data', () => {
     for (const candidate of candidates) {
       const hint = candidate.hint
       const tickerKey = normalizeString(hint?.ticker || '').toUpperCase()
-      const nameKey = normalizeString(hint?.name || '').toLowerCase()
-      const existing = (tickerKey && byTicker.get(tickerKey)) || byName.get(nameKey)
+      const resolvedName = resolveAssetNameForHint(hint, annualRateConfig)
+      const nameKey = normalizeString(resolvedName || hint?.name || '').toLowerCase()
+      let existing = (tickerKey && byTicker.get(tickerKey)) || byName.get(nameKey)
+      if (!existing
+        && normalizeString(hint?.institution || '').toLowerCase() === 'nubank'
+        && normalizeString(hint?.assetType || '').toLowerCase() === 'renda_fixa'
+        && nameKey.includes('caixinha')
+        && nameKey.includes('nubank')) {
+        const legacy = byName.get('cdb/rdb')
+        if (legacy && normalizeString(legacy?.assetType || '').toLowerCase() === 'renda_fixa') {
+          existing = legacy
+        }
+      }
       if (existing) continue
 
       const netInvested = Math.max(0, round2(candidate.principal ?? (candidate.invested - candidate.redeemed)))
       const resolvedAnnualRate = resolveFixedIncomeAnnualRateForHint(hint, annualRateConfig)
       const payload = {
-        name: hint.name,
+        name: resolvedName || hint.name,
         assetType: hint.assetType,
         category: hint.category || 'Investimentos',
         ticker: hint.ticker || '',
@@ -2106,11 +2367,13 @@ export const useDataStore = defineStore('data', () => {
     saveTransaction, deleteTransaction, deleteAllTransactions,
     saveBudget, deleteBudget,
     saveGoal, deleteGoal, addGoalContribution,
-    saveAccount, deleteAccount, saveAccountDirect,
+    saveAccount, deleteAccount, saveAccountDirect, reconcileAccountBalance,
     saveCategory, deleteCategory,
     saveInvestmentAsset, deleteInvestmentAsset, refreshInvestmentAssetQuote, refreshAllInvestmentQuotes,
     searchMarketInvestmentAssets, fetchMarketQuoteBySymbol,
     syncInvestmentAssetsFromTransactions,
+    getCsvSyncMonthlyRates, setCsvSyncMonthlyRates,
+    getCsvInvestmentRules, setCsvInvestmentRules,
     saveProjection, buildProjectionModel,
     sendMonthlySummary, exportCsv,
     parseTransactionsFromCsv, buildExistingFingerprints, buildImportPreview,

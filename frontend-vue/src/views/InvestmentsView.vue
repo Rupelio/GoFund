@@ -61,6 +61,140 @@
           <p>Aportes no mês mostram fluxo. Custo da carteira mostra posição/custo dos ativos (pode ser diferente do aporte bruto).</p>
         </div>
 
+        <section class="investment-section csv-sync-rates">
+          <header class="section-head">
+            <h3>Taxas mensais padrao para importacao CSV</h3>
+            <p>Essas taxas sao fallback para criacao automatica de ativos de renda fixa quando nenhuma regra especifica estiver configurada.</p>
+          </header>
+          <div class="row-3">
+            <label>
+              Renda fixa padrao (% a.m.)
+              <input v-model="csvSyncRatesForm.fixedIncomeMonthlyRate" type="number" min="0" max="100" step="0.01" placeholder="Opcional" />
+              <small class="field-help">Equivalente: {{ formatAnnualEquivalent(csvSyncRatesForm.fixedIncomeMonthlyRate) }}</small>
+            </label>
+            <label>
+              Caixinha padrao (% a.m.)
+              <input v-model="csvSyncRatesForm.nubankBoxMonthlyRate" type="number" min="0" max="100" step="0.01" placeholder="Opcional" />
+              <small class="field-help">Equivalente: {{ formatAnnualEquivalent(csvSyncRatesForm.nubankBoxMonthlyRate) }}</small>
+            </label>
+            <label>
+              Caixinha turbo (% a.m.)
+              <input v-model="csvSyncRatesForm.nubankBoxTurboMonthlyRate" type="number" min="0" max="100" step="0.01" placeholder="Opcional" />
+              <small class="field-help">Equivalente: {{ formatAnnualEquivalent(csvSyncRatesForm.nubankBoxTurboMonthlyRate) }}</small>
+            </label>
+          </div>
+          <div class="row-actions">
+            <button class="btn ghost tiny" type="button" @click="handleSaveCsvSyncRates">
+              <i class="fa-solid fa-floppy-disk"></i>
+              Salvar taxas do CSV
+            </button>
+          </div>
+        </section>
+
+        <section class="investment-section csv-sync-rules">
+          <header class="section-head">
+            <h3>Regras de mapeamento CSV (mundo real)</h3>
+            <p>Crie regras por descricao, conta e/ou origem para mapear qualquer lancamento de investimento para o ativo correto.</p>
+          </header>
+          <form class="form-stack" @submit.prevent="handleSaveCsvInvestmentRule">
+            <div class="row-3">
+              <label>
+                Descricao contem
+                <input
+                  v-model="csvRuleForm.descriptionPattern"
+                  type="text"
+                  placeholder="Ex: aplicacao rdb"
+                  maxlength="80"
+                />
+              </label>
+              <label>
+                Conta (opcional)
+                <select v-model="csvRuleForm.accountId">
+                  <option value="">Todas as contas</option>
+                  <option v-for="acc in sortedAccounts" :key="acc.id" :value="acc.id">{{ acc.name }}</option>
+                </select>
+              </label>
+              <label>
+                Origem CSV (opcional)
+                <select v-model="csvRuleForm.sourceKey">
+                  <option value="">Qualquer origem</option>
+                  <option v-for="source in csvSourceOptions" :key="source.key" :value="source.key">{{ source.label }}</option>
+                </select>
+              </label>
+            </div>
+            <div class="row-3">
+              <label>
+                Nome do ativo
+                <input
+                  v-model="csvRuleForm.assetName"
+                  type="text"
+                  placeholder="Ex: Reserva de emergencia Banco X"
+                  maxlength="80"
+                />
+              </label>
+              <label>
+                Categoria do ativo
+                <input
+                  v-model="csvRuleForm.assetCategory"
+                  type="text"
+                  placeholder="Ex: CDB/RDB"
+                  maxlength="50"
+                />
+              </label>
+              <label>
+                Taxa mensal do ativo (% a.m., opcional)
+                <input v-model="csvRuleForm.monthlyRate" type="number" min="0" max="100" step="0.01" placeholder="Opcional" />
+                <small class="field-help">Equivalente: {{ formatAnnualEquivalent(csvRuleForm.monthlyRate) }}</small>
+              </label>
+            </div>
+            <div class="row-actions">
+              <button class="btn ghost tiny" type="submit">
+                <i class="fa-solid fa-floppy-disk"></i>
+                {{ csvRuleForm.editingId ? 'Atualizar regra' : 'Adicionar regra' }}
+              </button>
+              <button
+                v-if="csvRuleForm.editingId"
+                class="btn ghost tiny"
+                type="button"
+                @click="handleCancelCsvRuleEdit"
+              >
+                <i class="fa-solid fa-xmark"></i>
+                Cancelar edicao
+              </button>
+            </div>
+          </form>
+
+          <div v-if="csvInvestmentRules.length" class="csv-rules-list">
+            <article v-for="rule in csvInvestmentRules" :key="rule.id" class="csv-rule-card">
+              <div>
+                <p class="csv-rule-title">
+                  <strong>{{ rule.assetName }}</strong>
+                  <span class="asset-chip muted">{{ rule.descriptionPattern }}</span>
+                </p>
+                <p class="csv-rule-meta">
+                  Conta: <strong>{{ csvRuleAccountLabel(rule) }}</strong> |
+                  Origem: <strong>{{ csvRuleSourceLabel(rule) }}</strong> |
+                  Taxa: <strong>{{ rule.monthlyRate === null || rule.monthlyRate === undefined ? 'padrao' : `${Number(rule.monthlyRate).toFixed(2)}% a.m.` }}</strong>
+                  <template v-if="rule.monthlyRate !== null && rule.monthlyRate !== undefined">
+                    ({{ formatAnnualEquivalent(rule.monthlyRate) }})
+                  </template>
+                </p>
+              </div>
+              <div class="asset-actions">
+                <button class="btn ghost tiny" type="button" @click="handleEditCsvInvestmentRule(rule)">
+                  <i class="fa-solid fa-pen"></i>
+                  Editar
+                </button>
+                <button class="btn ghost tiny danger-text" type="button" @click="handleDeleteCsvInvestmentRule(rule.id)">
+                  <i class="fa-solid fa-trash"></i>
+                  Remover
+                </button>
+              </div>
+            </article>
+          </div>
+          <p v-else class="empty-state">Nenhuma regra configurada. Sem regra, o sistema usa apenas heuristica automatica.</p>
+        </section>
+
         <p v-if="nonBRLAssetsCount > 0" class="empty-state" style="margin-bottom: 1rem;">
           {{ nonBRLAssetsCount }} ativo(s) em moeda diferente de BRL não entram nos KPIs agregados.
         </p>
@@ -573,6 +707,26 @@ const refreshingAllQuotes = ref(false)
 const syncingAssetsFromCsv = ref(false)
 const AUTO_QUOTE_REFRESH_KEY = 'gf_auto_quote_refresh_at'
 const AUTO_QUOTE_REFRESH_INTERVAL_MS = 30 * 60 * 1000
+const csvSyncRatesForm = ref({
+  fixedIncomeMonthlyRate: '',
+  nubankBoxMonthlyRate: '',
+  nubankBoxTurboMonthlyRate: '',
+})
+const csvInvestmentRules = ref([])
+
+function defaultCsvInvestmentRuleForm() {
+  return {
+    editingId: '',
+    descriptionPattern: '',
+    accountId: '',
+    sourceKey: '',
+    assetName: '',
+    assetCategory: 'CDB/RDB',
+    monthlyRate: '',
+  }
+}
+
+const csvRuleForm = ref(defaultCsvInvestmentRuleForm())
 
 const assetRows = computed(() => {
   return data.investmentAssets.map(asset => {
@@ -604,6 +758,29 @@ const assetRows = computed(() => {
 
 const sortedAssets = computed(() => {
   return [...assetRows.value].sort((a, b) => b.marketValue - a.marketValue)
+})
+
+const sortedAccounts = computed(() => data.accounts.slice().sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')))
+const accountNameById = computed(() => {
+  const map = new Map()
+  sortedAccounts.value.forEach(acc => map.set(acc.id, acc.name))
+  return map
+})
+const csvSourceOptions = computed(() => {
+  const map = new Map()
+  sortedAccounts.value.forEach(acc => {
+    const source = data.getAccountCsvSource(acc.id)
+    if (!source?.key) return
+    if (!map.has(source.key)) map.set(source.key, source.label || source.key)
+  })
+  return Array.from(map.entries())
+    .map(([key, label]) => ({ key, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
+})
+const csvSourceLabelByKey = computed(() => {
+  const map = new Map()
+  csvSourceOptions.value.forEach(item => map.set(item.key, item.label))
+  return map
 })
 
 const assetsByID = computed(() => {
@@ -679,6 +856,167 @@ const totalProjectedBRL = computed(() => brlAssets.value.reduce((sum, item) => s
 
 function round2(value) {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100
+}
+
+function parseOptionalCsvMonthlyRate(value) {
+  const raw = normalizeString(String(value ?? '')).replace(',', '.')
+  if (!raw) return null
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) return null
+  if (parsed < 0 || parsed > 100) return null
+  return round2(parsed)
+}
+
+function monthlyRateToAnnualEquivalent(monthlyRate) {
+  const monthly = parseOptionalCsvMonthlyRate(monthlyRate)
+  if (monthly === null) return null
+  const annual = (Math.pow(1 + (monthly / 100), 12) - 1) * 100
+  return round2(annual)
+}
+
+function formatAnnualEquivalent(monthlyRate) {
+  const annual = monthlyRateToAnnualEquivalent(monthlyRate)
+  return annual === null ? '-' : `${annual.toFixed(2)}% a.a.`
+}
+
+function loadCsvSyncRatesForm() {
+  const saved = data.getCsvSyncMonthlyRates()
+  csvSyncRatesForm.value = {
+    fixedIncomeMonthlyRate: saved.fixedIncomeMonthlyRate ?? '',
+    nubankBoxMonthlyRate: saved.nubankBoxMonthlyRate ?? '',
+    nubankBoxTurboMonthlyRate: saved.nubankBoxTurboMonthlyRate ?? '',
+  }
+}
+
+function buildCsvSyncRatesPayload(strict = false) {
+  const fixedIncomeMonthlyRate = parseOptionalCsvMonthlyRate(csvSyncRatesForm.value.fixedIncomeMonthlyRate)
+  const nubankBoxMonthlyRate = parseOptionalCsvMonthlyRate(csvSyncRatesForm.value.nubankBoxMonthlyRate)
+  const nubankBoxTurboMonthlyRate = parseOptionalCsvMonthlyRate(csvSyncRatesForm.value.nubankBoxTurboMonthlyRate)
+  if (strict) {
+    if (normalizeString(String(csvSyncRatesForm.value.fixedIncomeMonthlyRate ?? '')) && fixedIncomeMonthlyRate === null) {
+      throw new Error('Taxa mensal padrao de renda fixa invalida.')
+    }
+    if (normalizeString(String(csvSyncRatesForm.value.nubankBoxMonthlyRate ?? '')) && nubankBoxMonthlyRate === null) {
+      throw new Error('Taxa mensal da caixinha padrao invalida.')
+    }
+    if (normalizeString(String(csvSyncRatesForm.value.nubankBoxTurboMonthlyRate ?? '')) && nubankBoxTurboMonthlyRate === null) {
+      throw new Error('Taxa mensal da caixinha turbo invalida.')
+    }
+  }
+  return { fixedIncomeMonthlyRate, nubankBoxMonthlyRate, nubankBoxTurboMonthlyRate }
+}
+
+async function handleSaveCsvSyncRates() {
+  try {
+    const payload = buildCsvSyncRatesPayload(true)
+    data.setCsvSyncMonthlyRates(payload)
+    app.showMessage('Taxas mensais para sincronizacao CSV salvas.', 'success')
+  } catch (err) {
+    app.showMessage(err?.message || 'Falha ao salvar taxas mensais.', 'error')
+  }
+}
+
+function loadCsvInvestmentRules() {
+  csvInvestmentRules.value = data.getCsvInvestmentRules()
+}
+
+function buildCsvInvestmentRulePayload(strict = false) {
+  const editingId = normalizeString(String(csvRuleForm.value.editingId || ''))
+  const descriptionPattern = normalizeString(String(csvRuleForm.value.descriptionPattern || ''))
+  const accountId = normalizeString(String(csvRuleForm.value.accountId || ''))
+  const sourceKey = normalizeString(String(csvRuleForm.value.sourceKey || '')).toLowerCase()
+  const assetName = normalizeString(String(csvRuleForm.value.assetName || ''))
+  const assetCategory = normalizeString(String(csvRuleForm.value.assetCategory || '')) || 'CDB/RDB'
+  const monthlyRate = parseOptionalCsvMonthlyRate(csvRuleForm.value.monthlyRate)
+
+  if (strict) {
+    if (!descriptionPattern) throw new Error('Informe um padrao para descricao.')
+    if (!assetName) throw new Error('Informe o nome do ativo de destino.')
+    if (normalizeString(String(csvRuleForm.value.monthlyRate ?? '')) && monthlyRate === null) {
+      throw new Error('Taxa mensal da regra invalida.')
+    }
+  }
+
+  return {
+    id: editingId || '',
+    descriptionPattern,
+    accountId,
+    sourceKey,
+    assetName,
+    assetCategory,
+    assetType: 'renda_fixa',
+    monthlyRate,
+  }
+}
+
+function handleSaveCsvInvestmentRule() {
+  try {
+    const payload = buildCsvInvestmentRulePayload(true)
+    const next = [...csvInvestmentRules.value]
+    const normalizedPattern = payload.descriptionPattern.toLowerCase()
+    const normalizedSource = payload.sourceKey.toLowerCase()
+
+    if (payload.id) {
+      const editIndex = next.findIndex(item => item.id === payload.id)
+      if (editIndex >= 0) next[editIndex] = { ...next[editIndex], ...payload, id: next[editIndex].id }
+      else next.push(payload)
+    } else {
+      const duplicateIndex = next.findIndex(item => (
+        normalizeString(String(item.descriptionPattern || '')).toLowerCase() === normalizedPattern
+        && normalizeString(String(item.accountId || '')) === payload.accountId
+        && normalizeString(String(item.sourceKey || '')).toLowerCase() === normalizedSource
+      ))
+      if (duplicateIndex >= 0) next[duplicateIndex] = { ...next[duplicateIndex], ...payload, id: next[duplicateIndex].id }
+      else next.push(payload)
+    }
+
+    csvInvestmentRules.value = data.setCsvInvestmentRules(next)
+    csvRuleForm.value = defaultCsvInvestmentRuleForm()
+    app.showMessage('Regra de mapeamento CSV salva.', 'success')
+  } catch (err) {
+    app.showMessage(err?.message || 'Falha ao salvar regra CSV.', 'error')
+  }
+}
+
+function handleEditCsvInvestmentRule(rule) {
+  if (!rule?.id) return
+  csvRuleForm.value = {
+    editingId: rule.id,
+    descriptionPattern: rule.descriptionPattern || '',
+    accountId: rule.accountId || '',
+    sourceKey: rule.sourceKey || '',
+    assetName: rule.assetName || '',
+    assetCategory: rule.assetCategory || 'CDB/RDB',
+    monthlyRate: rule.monthlyRate === null || rule.monthlyRate === undefined ? '' : String(rule.monthlyRate),
+  }
+}
+
+function handleCancelCsvRuleEdit() {
+  csvRuleForm.value = defaultCsvInvestmentRuleForm()
+}
+
+function handleDeleteCsvInvestmentRule(ruleId) {
+  const normalizedId = normalizeString(String(ruleId || ''))
+  if (!normalizedId) return
+  csvInvestmentRules.value = data.setCsvInvestmentRules(
+    csvInvestmentRules.value.filter(item => item.id !== normalizedId)
+  )
+  if (normalizeString(String(csvRuleForm.value.editingId || '')) === normalizedId) {
+    csvRuleForm.value = defaultCsvInvestmentRuleForm()
+  }
+  app.showMessage('Regra de mapeamento CSV removida.', 'success')
+}
+
+function csvRuleAccountLabel(rule) {
+  const accountId = normalizeString(String(rule?.accountId || ''))
+  if (!accountId) return 'todas'
+  return accountNameById.value.get(accountId) || 'conta nao encontrada'
+}
+
+function csvRuleSourceLabel(rule) {
+  const sourceKey = normalizeString(String(rule?.sourceKey || ''))
+  if (!sourceKey) return 'qualquer origem'
+  return csvSourceLabelByKey.value.get(sourceKey) || sourceKey
 }
 
 function formatByCurrency(value, currency = 'BRL') {
@@ -951,9 +1289,21 @@ async function handleRefreshAllQuotes() {
 }
 
 async function handleSyncAssetsFromCsv() {
+  let ratesPayload
+  try {
+    ratesPayload = buildCsvSyncRatesPayload(true)
+  } catch (err) {
+    app.showMessage(err?.message || 'Revise as taxas mensais configuradas para o CSV.', 'error')
+    return
+  }
+
   syncingAssetsFromCsv.value = true
   try {
-    const summary = await data.syncInvestmentAssetsFromTransactions({ silent: true })
+    data.setCsvSyncMonthlyRates(ratesPayload)
+    const summary = await data.syncInvestmentAssetsFromTransactions({
+      silent: true,
+      ...ratesPayload,
+    })
     const detected = Number(summary?.detected || 0)
     const created = Number(summary?.created || 0)
     const quoted = Number(summary?.quoted || 0)
@@ -990,6 +1340,8 @@ async function autoRefreshQuotesOnOpen() {
 }
 
 onMounted(() => {
+  loadCsvSyncRatesForm()
+  loadCsvInvestmentRules()
   autoRefreshQuotesOnOpen()
 })
 
@@ -1052,6 +1404,38 @@ watch(() => Number(assetForm.value.quantity || 0), (qty) => {
   margin-top: 0.35rem;
   font-size: 0.74rem;
   color: var(--text-secondary);
+}
+
+.csv-rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 0.7rem;
+}
+
+.csv-rule-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.7rem;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.7rem;
+}
+
+.csv-rule-title {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.csv-rule-meta {
+  margin: 0.35rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
 }
 
 .search-row-help {
@@ -1166,6 +1550,10 @@ watch(() => Number(assetForm.value.quantity || 0), (qty) => {
 
   .asset-metrics {
     grid-template-columns: 1fr;
+  }
+
+  .csv-rule-card {
+    flex-direction: column;
   }
 }
 </style>

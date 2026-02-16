@@ -41,14 +41,21 @@ const csvSuggestedAccount = ref(null)
 const csvImportNotice = ref(null)
 const csvImportJob = ref(null)
 const csvLastImportBatch = ref('')
-const csvFixedIncomeAnnualRate = ref('')
-const csvNubankBoxAnnualRate = ref('')
-const csvNubankBoxTurboAnnualRate = ref('')
+const csvKnownCurrentBalance = ref('')
 
 const csvFormattedEarliestDate = computed(() => {
   if (!csvEarliestDate.value) return 'o extrato'
   const [y, m, d] = csvEarliestDate.value.split('-')
   return `${d}/${m}/${y}`
+})
+const csvLatestImportDate = computed(() => {
+  const items = csvPendingFile.value?.parsed?.items || []
+  let latest = ''
+  for (const item of items) {
+    if (!item?.date || item.date.length !== 10) continue
+    if (!latest || item.date > latest) latest = item.date
+  }
+  return latest
 })
 
 const csvSelectedAccountInfo = computed(() => {
@@ -85,12 +92,12 @@ function setCsvImportNotice(tone, text) {
   csvImportNotice.value = { tone, text }
 }
 
-function normalizeOptionalAnnualRate(value) {
-  if (value === null || value === undefined || value === '') return null
-  const n = Number(value)
-  if (!Number.isFinite(n)) return null
-  if (n < 0 || n > 500) return null
-  return Math.round((n + Number.EPSILON) * 100) / 100
+function parseOptionalCsvBalance(value) {
+  const raw = String(value ?? '').trim().replace(',', '.')
+  if (!raw) return null
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) return null
+  return Math.round((parsed + Number.EPSILON) * 100) / 100
 }
 
 async function handleDeleteAll() {
@@ -201,9 +208,7 @@ async function startCsvImportBatch(files) {
   try {
     clearCsvImportNotice()
     csvImportJob.value = null
-    csvFixedIncomeAnnualRate.value = ''
-    csvNubankBoxAnnualRate.value = ''
-    csvNubankBoxTurboAnnualRate.value = ''
+    csvKnownCurrentBalance.value = ''
     // Read and parse CSV files without account ID yet
     const result = await data.importCsvBatchCore(files, undefined)
     csvPendingFile.value = result
@@ -254,6 +259,14 @@ async function csvAccountContinue() {
   }
 
   const val = csvAccountSelect.value
+  if (!val) {
+    csvKnownCurrentBalance.value = ''
+  }
+  const parsedKnownBalance = parseOptionalCsvBalance(csvKnownCurrentBalance.value)
+  if (String(csvKnownCurrentBalance.value ?? '').trim() !== '' && parsedKnownBalance === null) {
+    app.showMessage('Informe um saldo atual valido para conciliacao automatica.', 'error')
+    return
+  }
   if (val === '__new__') {
     if (!csvNewAccountName.value.trim()) return
     try {
@@ -305,9 +318,7 @@ function csvAccountCancel() {
   csvPendingFile.value = null
   csvSuggestedAccount.value = null
   csvImportJob.value = null
-  csvFixedIncomeAnnualRate.value = ''
-  csvNubankBoxAnnualRate.value = ''
-  csvNubankBoxTurboAnnualRate.value = ''
+  csvKnownCurrentBalance.value = ''
   clearCsvImportNotice()
 }
 
@@ -321,13 +332,9 @@ async function recomputeCsvPreviewFromParsed() {
 
 async function confirmImport() {
   if (!csvPreview.value) return
-  const fixedIncomeAnnualRate = normalizeOptionalAnnualRate(csvFixedIncomeAnnualRate.value)
-  const nubankBoxAnnualRate = normalizeOptionalAnnualRate(csvNubankBoxAnnualRate.value)
-  const nubankBoxTurboAnnualRate = normalizeOptionalAnnualRate(csvNubankBoxTurboAnnualRate.value)
-  if ((csvFixedIncomeAnnualRate.value !== '' && fixedIncomeAnnualRate === null)
-    || (csvNubankBoxAnnualRate.value !== '' && nubankBoxAnnualRate === null)
-    || (csvNubankBoxTurboAnnualRate.value !== '' && nubankBoxTurboAnnualRate === null)) {
-    app.showMessage('Informe taxas anuais validas (0 a 500).', 'error')
+  const parsedKnownBalance = parseOptionalCsvBalance(csvKnownCurrentBalance.value)
+  if (String(csvKnownCurrentBalance.value ?? '').trim() !== '' && parsedKnownBalance === null) {
+    app.showMessage('Informe um saldo atual valido para conciliacao automatica.', 'error')
     return
   }
   csvImporting.value = true
@@ -339,9 +346,21 @@ async function confirmImport() {
       csvPendingFile.value,
       csvPreview.value,
       csvAccountId.value || undefined,
-      (currentJob) => { csvImportJob.value = currentJob },
-      { fixedIncomeAnnualRate, nubankBoxAnnualRate, nubankBoxTurboAnnualRate }
+      (currentJob) => { csvImportJob.value = currentJob }
     )
+    let reconcileResult = null
+    let reconcileError = null
+    if (csvAccountId.value && parsedKnownBalance !== null) {
+      try {
+        reconcileResult = await data.reconcileAccountBalance(csvAccountId.value, parsedKnownBalance, {
+          silent: true,
+          date: csvLatestImportDate.value,
+          description: 'Ajuste de saldo (importacao CSV)',
+        })
+      } catch (err) {
+        reconcileError = err
+      }
+    }
     const imported = Number(result?.imported || 0)
     const duplicates = Number(result?.duplicates || 0)
     const invalid = Number(result?.invalid || 0)
@@ -357,11 +376,16 @@ async function confirmImport() {
     if (createdAssets > 0) msg += ` ${createdAssets} ativo(s) criado(s) automaticamente.`
     if (quotedAssets > 0) msg += ` ${quotedAssets} cotacao(oes) atualizada(s).`
     if (fixedIncomeRated > 0) msg += ` ${fixedIncomeRated} ativo(s) de renda fixa com taxa anual preenchida.`
+    if (reconcileResult?.adjusted) msg += ` Ajuste de saldo de ${formatCurrency(Math.abs(reconcileResult.diff))} aplicado para conciliar com o saldo informado.`
+    if (parsedKnownBalance !== null && reconcileResult && !reconcileResult.adjusted) msg += ' Saldo da conta ja estava conciliado com o valor informado.'
     if (duplicates > 0) msg += ` ${duplicates} duplicata(s) ignorada(s).`
     if (invalid > 0) msg += ` ${invalid} linha(s) invalida(s).`
     if (failed > 0) msg += ` ${failed} linha(s) com erro.`
     if (job?.batchId && imported > 0) csvLastImportBatch.value = job.batchId
     app.showMessage(msg, imported > 0 || upgraded > 0 ? 'success' : 'info')
+    if (reconcileError) {
+      app.showMessage(`Importacao concluida, mas nao foi possivel aplicar o ajuste de saldo automaticamente (${reconcileError.message || 'erro desconhecido'}).`, 'error')
+    }
     setCsvImportNotice('success', msg)
     shouldResetImportState = true
   } catch (err) {
@@ -396,9 +420,7 @@ async function confirmImport() {
       csvPendingFile.value = null
       csvSuggestedAccount.value = null
       csvImportJob.value = null
-      csvFixedIncomeAnnualRate.value = ''
-      csvNubankBoxAnnualRate.value = ''
-      csvNubankBoxTurboAnnualRate.value = ''
+      csvKnownCurrentBalance.value = ''
       clearCsvImportNotice()
     }
   }
@@ -470,13 +492,13 @@ async function undoLastImportBatch() {
     </div>
 
     <!-- CSV Step 1: Account Dialog -->
-    <div v-if="showCsvAccountDialog" class="dialog-backdrop" @click.self="csvAccountCancel">
-      <section class="dialog-card" role="dialog" aria-modal="true" style="max-width:480px">
+    <div v-if="showCsvAccountDialog" class="dialog-backdrop csv-dialog-backdrop" @click.self="csvAccountCancel">
+      <section class="dialog-card csv-dialog csv-account-dialog" role="dialog" aria-modal="true">
         <header class="dialog-header">
           <h3>Vincular a uma conta</h3>
           <button class="dialog-close-btn" type="button" @click="csvAccountCancel">&times;</button>
         </header>
-        <div class="dialog-body" style="display:flex;flex-direction:column;gap:0.75rem">
+        <div class="dialog-body csv-dialog-body">
           <p style="margin:0;font-size:0.88rem;color:var(--text-secondary)">Selecione ou crie uma conta para vincular as transações do extrato. Isso garante que o saldo da conta seja calculado corretamente.</p>
           <div v-if="csvPendingFilesSummary.length" style="padding:0.6rem 0.75rem;border-radius:8px;background:var(--bg-card, var(--surface-alt));border:1px solid var(--border);display:flex;flex-direction:column;gap:0.4rem">
             <p style="margin:0;font-size:0.85rem;font-weight:600;display:flex;align-items:center;gap:0.45rem">
@@ -486,7 +508,7 @@ async function undoLastImportBatch() {
             <p v-if="csvPendingSourceSummary.mixedKnown" style="margin:0;font-size:0.82rem;color:var(--danger)">
               Origens diferentes detectadas. Esse lote nao podera ser importado em uma unica conta.
             </p>
-            <div v-for="item in csvPendingFilesSummary" :key="item.fileName" style="display:flex;justify-content:space-between;gap:0.75rem;font-size:0.8rem;color:var(--text-secondary)">
+            <div v-for="item in csvPendingFilesSummary" :key="item.fileName" class="csv-file-summary-row">
               <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ item.fileName }}</span>
               <span>{{ item.source?.label || 'Origem nao identificada' }} - {{ item.itemCount }}</span>
             </div>
@@ -532,8 +554,8 @@ async function undoLastImportBatch() {
             </div>
           </div>
           <!-- New account fields -->
-          <div v-if="csvAccountSelect === '__new__'" style="display:flex;flex-direction:column;gap:0.5rem;padding:0.75rem;border-radius:8px;background:var(--bg-card, var(--surface-alt));border:1px solid var(--border)">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
+          <div v-if="csvAccountSelect === '__new__'" class="csv-new-account-box">
+            <div class="csv-new-account-grid">
               <label style="font-size:0.85rem">Nome
                 <input v-model="csvNewAccountName" type="text" placeholder="Ex: Nubank" maxlength="40" style="width:100%;margin-top:0.15rem" />
               </label>
@@ -547,12 +569,24 @@ async function undoLastImportBatch() {
                 </select>
               </label>
             </div>
-            <label style="font-size:0.85rem">Saldo anterior a {{ csvFormattedEarliestDate }}
+            <div class="csv-balance-grid">
+              <label style="font-size:0.85rem">Saldo anterior a {{ csvFormattedEarliestDate }}
               <input v-model.number="csvNewAccountBalance" type="number" min="0" step="0.01" style="width:100%;margin-top:0.15rem" />
               <small style="color:var(--text-secondary);font-weight:400;display:block;margin-top:0.2rem">Quanto você tinha na conta <strong>antes</strong> da primeira transação do extrato. Deixe 0 se o extrato cobre todo o histórico.</small>
-            </label>
+              </label>
+              <label style="font-size:0.85rem">Saldo atual da conta (opcional)
+              <input v-model="csvKnownCurrentBalance" type="number" step="0.01" placeholder="Ex: 1520.75" style="width:100%;margin-top:0.15rem" />
+              <small style="color:var(--text-secondary);font-weight:400;display:block;margin-top:0.2rem">Se informado, o sistema aplica um ajuste automatico ao final da importacao para deixar o saldo real da conta igual ao valor informado.</small>
+              </label>
+            </div>
             <label style="font-size:0.85rem">Cor
               <input v-model="csvNewAccountColor" type="color" style="margin-top:0.15rem" />
+            </label>
+          </div>
+          <div v-if="csvAccountSelect && csvAccountSelect !== '__new__'" class="csv-known-balance-box">
+            <label style="font-size:0.85rem">Saldo atual da conta selecionada (opcional)
+              <input v-model="csvKnownCurrentBalance" type="number" step="0.01" placeholder="Ex: 1520.75" style="width:100%;margin-top:0.15rem" />
+              <small style="color:var(--text-secondary);font-weight:400;display:block;margin-top:0.2rem">Se informado, o sistema aplica um ajuste automatico ao final da importacao para deixar o saldo real da conta igual ao valor informado.</small>
             </label>
           </div>
           <!-- Existing account warning -->
@@ -568,13 +602,13 @@ async function undoLastImportBatch() {
     </div>
 
     <!-- CSV Step 2: Import Preview Dialog -->
-    <div v-if="showCsvImport && csvPreview" class="dialog-backdrop" @click.self="showCsvImport = false">
-      <section class="dialog-card" role="dialog" style="max-width: 520px">
+    <div v-if="showCsvImport && csvPreview" class="dialog-backdrop csv-dialog-backdrop" @click.self="showCsvImport = false">
+      <section class="dialog-card csv-dialog csv-import-dialog" role="dialog">
         <header class="dialog-header">
           <h3>Confirmar importação CSV</h3>
           <button class="dialog-close-btn" type="button" @click="showCsvImport = false">&times;</button>
         </header>
-        <div class="dialog-body">
+        <div class="dialog-body csv-dialog-body">
           <div
             v-if="csvImportNotice?.text"
             :style="{
@@ -594,25 +628,6 @@ async function undoLastImportBatch() {
           </div>
           <p v-if="csvPendingFilesSummary.length > 1"><strong>{{ csvPendingFilesSummary.length }}</strong> arquivos no lote.</p>
           <p v-if="csvAccountId"><strong>Conta:</strong> {{ (data.accounts.find(a => a.id === csvAccountId) || {}).name }}</p>
-          <div style="padding:0.55rem 0.7rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-card, var(--surface-alt));margin-bottom:0.6rem;display:flex;flex-direction:column;gap:0.45rem">
-            <p style="margin:0;font-size:0.8rem;color:var(--text-secondary)">
-              Taxas anuais opcionais para ativos de renda fixa criados automaticamente do CSV.
-            </p>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.5rem">
-              <label style="font-size:0.78rem;color:var(--text-secondary)">
-                Taxa padrao renda fixa (%)
-                <input v-model.number="csvFixedIncomeAnnualRate" type="number" min="0" max="500" step="0.01" placeholder="Opcional" style="width:100%;margin-top:0.15rem" />
-              </label>
-              <label style="font-size:0.78rem;color:var(--text-secondary)">
-                Caixinha Nubank (%)
-                <input v-model.number="csvNubankBoxAnnualRate" type="number" min="0" max="500" step="0.01" placeholder="Opcional" style="width:100%;margin-top:0.15rem" />
-              </label>
-              <label style="font-size:0.78rem;color:var(--text-secondary)">
-                Caixinha Turbo (%)
-                <input v-model.number="csvNubankBoxTurboAnnualRate" type="number" min="0" max="500" step="0.01" placeholder="Opcional" style="width:100%;margin-top:0.15rem" />
-              </label>
-            </div>
-          </div>
           <div v-if="csvImportProgress" style="padding:0.55rem 0.7rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-card, var(--surface-alt));margin-bottom:0.6rem">
             <p style="margin:0 0 0.35rem 0;font-size:0.82rem;color:var(--text-secondary)">
               Status: <strong>{{ csvImportJob?.status || 'running' }}</strong> - {{ csvImportProgress.processed }}/{{ csvImportProgress.total }} ({{ csvImportProgress.pct }}%)
@@ -621,7 +636,7 @@ async function undoLastImportBatch() {
               <div :style="{ width: `${csvImportProgress.pct}%`, height: '100%', background: 'var(--primary)' }"></div>
             </div>
             <div v-if="csvImportFilesProgress.length" style="margin-top:0.45rem;display:flex;flex-direction:column;gap:0.25rem">
-              <div v-for="file in csvImportFilesProgress" :key="file.name" style="display:flex;justify-content:space-between;gap:0.6rem;font-size:0.78rem;color:var(--text-secondary)">
+              <div v-for="file in csvImportFilesProgress" :key="file.name" class="csv-file-summary-row">
                 <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ file.name }}</span>
                 <span>{{ file.processed || 0 }}/{{ file.total || 0 }}</span>
               </div>

@@ -1899,6 +1899,45 @@ canvas:not(.chart-wrap canvas) {
     .form-stack select {
         font-size: 0.9rem;
     }
+
+    .csv-dialog-backdrop {
+        align-items: flex-end;
+        padding: 0.75rem;
+    }
+
+    .csv-dialog {
+        max-height: min(92vh, 920px);
+        border-radius: var(--radius-md);
+    }
+
+    .csv-new-account-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .csv-file-summary-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.2rem;
+    }
+
+    .csv-file-summary-row span:first-child {
+        white-space: normal;
+    }
+
+    .csv-dialog .dialog-footer {
+        justify-content: stretch;
+        flex-wrap: wrap;
+    }
+
+    .csv-dialog .dialog-footer .btn {
+        flex: 1 1 100%;
+    }
+}
+
+@media (max-width: 560px) {
+    .csv-balance-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 400px) {
@@ -2247,6 +2286,74 @@ canvas:not(.chart-wrap canvas) {
     justify-content: flex-end;
     gap: 0.6rem;
     padding: 0.9rem 1.1rem 1.1rem;
+}
+
+/* CSV import dialogs */
+.csv-dialog {
+    width: min(620px, 100%);
+    max-height: min(88vh, 780px);
+    display: flex;
+    flex-direction: column;
+}
+
+.csv-account-dialog {
+    width: min(560px, 100%);
+}
+
+.csv-import-dialog {
+    width: min(620px, 100%);
+}
+
+.csv-dialog-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    overflow-y: auto;
+}
+
+.csv-new-account-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border-radius: 8px;
+    background: var(--bg-card, var(--surface-alt));
+    border: 1px solid var(--border);
+}
+
+.csv-new-account-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+}
+
+.csv-balance-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    align-items: start;
+}
+
+.csv-known-balance-box {
+    padding: 0.75rem;
+    border-radius: 8px;
+    background: var(--bg-card, var(--surface-alt));
+    border: 1px solid var(--border);
+}
+
+.csv-file-summary-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.csv-file-summary-row span:first-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .dialog-ok-danger {
