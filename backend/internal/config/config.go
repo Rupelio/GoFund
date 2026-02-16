@@ -34,6 +34,8 @@ type Config struct {
 	DBConnectRetryDelay time.Duration
 	DBMaxConns          int32
 	DBMinConns          int32
+	DBMaxConnIdleTime   time.Duration
+	HealthCheckDBPing   bool
 	AllowedOrigins      []string
 	Environment         string // "production" or "development" (default)
 
@@ -98,7 +100,9 @@ func Load() Config {
 		DBConnectRetries:    intEnvOrDefault("DB_CONNECT_RETRIES", 20),
 		DBConnectRetryDelay: durationEnvOrDefault("DB_CONNECT_RETRY_DELAY", 2*time.Second),
 		DBMaxConns:          int32(intEnvOrDefault("DB_MAX_CONNS", 16)),
-		DBMinConns:          int32(intEnvOrDefault("DB_MIN_CONNS", 2)),
+		DBMinConns:          int32(intEnvOrDefaultMin("DB_MIN_CONNS", 2, 0)),
+		DBMaxConnIdleTime:   durationEnvOrDefault("DB_MAX_CONN_IDLE_TIME", 30*time.Minute),
+		HealthCheckDBPing:   boolEnvOrDefault("HEALTHCHECK_DB_PING", true),
 		AllowedOrigins:      csvEnvOrDefault("CORS_ALLOWED_ORIGINS", "*"),
 		Environment:         envOrDefault("APP_ENV", "development"),
 
@@ -118,13 +122,17 @@ func envOrDefault(key, fallback string) string {
 }
 
 func intEnvOrDefault(key string, fallback int) int {
+	return intEnvOrDefaultMin(key, fallback, 1)
+}
+
+func intEnvOrDefaultMin(key string, fallback, min int) int {
 	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
 		return fallback
 	}
 	value, err := strconv.Atoi(raw)
-	if err != nil || value <= 0 {
-		slog.Warn("invalid env var, using fallback", "key", key, "raw", raw, "fallback", fallback)
+	if err != nil || value < min {
+		slog.Warn("invalid env var, using fallback", "key", key, "raw", raw, "fallback", fallback, "min", min)
 		return fallback
 	}
 	return value
@@ -141,6 +149,23 @@ func durationEnvOrDefault(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return value
+}
+
+func boolEnvOrDefault(key string, fallback bool) bool {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if raw == "" {
+		return fallback
+	}
+
+	switch raw {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		slog.Warn("invalid env var, using fallback", "key", key, "raw", raw, "fallback", fallback)
+		return fallback
+	}
 }
 
 func csvEnvOrDefault(key, fallback string) []string {

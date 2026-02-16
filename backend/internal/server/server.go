@@ -69,7 +69,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 	quoteProvider := market.NewYahooQuoteProvider(nil)
 	investmentH := handler.NewInvestmentHandler(investmentRepo, quoteProvider, timeout)
 	bootstrapH := handler.NewBootstrapHandler(userRepo, txnRepo, budgetRepo, goalRepo, projRepo, catRepo, accRepo, investmentRepo, timeout)
-	healthH := handler.NewHealthHandler(pool, timeout, "gestao-api", cfg.AppVersion)
+	healthH := handler.NewHealthHandler(pool, timeout, cfg.HealthCheckDBPing, "gestao-api", cfg.AppVersion)
 	meH := handler.NewMeHandler(userRepo, timeout)
 	logH := handler.NewLogHandler(logger)
 	summaryH := handler.NewSummaryHandler(txnRepo, emailSender, timeout)

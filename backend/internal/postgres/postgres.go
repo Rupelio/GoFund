@@ -28,7 +28,7 @@ func NewPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
 	poolCfg.MaxConns = cfg.DBMaxConns
 	poolCfg.MinConns = cfg.DBMinConns
 	poolCfg.MaxConnLifetime = 2 * time.Hour
-	poolCfg.MaxConnIdleTime = 30 * time.Minute
+	poolCfg.MaxConnIdleTime = cfg.DBMaxConnIdleTime
 	poolCfg.HealthCheckPeriod = 1 * time.Minute
 
 	for attempt := 1; attempt <= cfg.DBConnectRetries; attempt++ {

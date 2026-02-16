@@ -14,15 +14,17 @@ import (
 type HealthHandler struct {
 	pool         *pgxpool.Pool
 	queryTimeout time.Duration
+	pingDB       bool
 	serviceName  string
 	version      string
 	startedAt    time.Time
 }
 
-func NewHealthHandler(pool *pgxpool.Pool, timeout time.Duration, serviceName, version string) *HealthHandler {
+func NewHealthHandler(pool *pgxpool.Pool, timeout time.Duration, pingDB bool, serviceName, version string) *HealthHandler {
 	return &HealthHandler{
 		pool:         pool,
 		queryTimeout: timeout,
+		pingDB:       pingDB,
 		serviceName:  serviceName,
 		version:      version,
 		startedAt:    time.Now().UTC(),
@@ -30,27 +32,35 @@ func NewHealthHandler(pool *pgxpool.Pool, timeout time.Duration, serviceName, ve
 }
 
 func (h *HealthHandler) Handle(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), h.queryTimeout)
-	defer cancel()
-
-	if err := h.pool.Ping(ctx); err != nil {
-		WriteError(w, http.StatusServiceUnavailable, "database unavailable")
-		return
+	database := map[string]any{
+		"status": "skipped",
 	}
 
-	stats := h.pool.Stat()
+	if h.pingDB {
+		ctx, cancel := context.WithTimeout(r.Context(), h.queryTimeout)
+		defer cancel()
+
+		if err := h.pool.Ping(ctx); err != nil {
+			WriteError(w, http.StatusServiceUnavailable, "database unavailable")
+			return
+		}
+
+		stats := h.pool.Stat()
+		database = map[string]any{
+			"status":   "ok",
+			"acquired": stats.AcquiredConns(),
+			"idle":     stats.IdleConns(),
+			"total":    stats.TotalConns(),
+		}
+	}
+
 	WriteJSON(w, http.StatusOK, map[string]any{
 		"status":        "ok",
 		"time":          time.Now().UTC().Format(time.RFC3339),
 		"service":       h.serviceName,
 		"version":       h.version,
 		"uptimeSeconds": int64(time.Since(h.startedAt).Seconds()),
-		"database": map[string]any{
-			"status":   "ok",
-			"acquired": stats.AcquiredConns(),
-			"idle":     stats.IdleConns(),
-			"total":    stats.TotalConns(),
-		},
+		"database":      database,
 	})
 }
 
