@@ -25,6 +25,7 @@ func NewTransactionRepo(pool *pgxpool.Pool) *TransactionRepo {
 // scan helper
 type transactionRow struct {
 	dto                   domain.TransactionDTO
+	sourceID              *string
 	dateValue             time.Time
 	recurrenceEnd         *time.Time
 	accountID             *string
@@ -39,7 +40,7 @@ type transactionRow struct {
 
 func (r *transactionRow) targets() []any {
 	return []any{
-		&r.dto.ID, &r.dateValue, &r.dto.Type, &r.dto.Category,
+		&r.dto.ID, &r.sourceID, &r.dateValue, &r.dto.Type, &r.dto.Category,
 		&r.dto.Method, &r.dto.Description, &r.dto.Amount,
 		&r.dto.Recurrence, &r.recurrenceEnd, &r.dto.Installments,
 		&r.accountID,
@@ -51,6 +52,9 @@ func (r *transactionRow) targets() []any {
 
 func (r *transactionRow) toDTO() domain.TransactionDTO {
 	r.dto.Date = r.dateValue.Format("2006-01-02")
+	if r.sourceID != nil {
+		r.dto.SourceID = *r.sourceID
+	}
 	if r.recurrenceEnd != nil {
 		r.dto.RecurrenceEnd = r.recurrenceEnd.Format("2006-01-02")
 	}
@@ -77,7 +81,7 @@ func (r *transactionRow) toDTO() domain.TransactionDTO {
 	return r.dto
 }
 
-const transactionColumns = `id::text, date, type, category, method, description,
+const transactionColumns = `id::text, source_id, date, type, category, method, description,
 	amount::double precision, recurrence, recurrence_end, installments,
 	account_id::text,
 	transfer_direction, transfer_counterparty, transfer_group_id,
@@ -294,9 +298,10 @@ func (r *TransactionRepo) Create(ctx context.Context, userID string, dateValue t
 // CreateImported inserts one transaction for CSV import.
 // Returns imported=false when the row was skipped due to idempotency/conflict.
 func (r *TransactionRepo) CreateImported(ctx context.Context, userID string, dateValue time.Time, recurrenceEnd *time.Time, p domain.TransactionPayload, dedupeKey string, meta *domain.TransactionImportMetadata) (bool, error) {
-	id := p.ID
-	if id == "" {
-		id = domain.MustUUID()
+	id := domain.MustUUID()
+	var sourceID *string
+	if p.ID != "" {
+		sourceID = &p.ID
 	}
 
 	var accountID *string
@@ -345,21 +350,21 @@ func (r *TransactionRepo) CreateImported(ctx context.Context, userID string, dat
 	err := r.pool.QueryRow(ctx,
 		`INSERT INTO transactions (
 			id, user_id, date, type, category, method, description, amount,
-			recurrence, recurrence_end, installments, account_id, dedupe_key,
+			recurrence, recurrence_end, installments, account_id, dedupe_key, source_id,
 			transfer_direction, transfer_counterparty, transfer_group_id, transfer_from_account_id, transfer_to_account_id,
 			import_batch_id, import_job_id, import_file_name, import_row_index,
 			created_at, updated_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8,
-			$9, $10, $11, $12, $13,
-			$14, $15, $16, $17, $18,
-			$19, $20, $21, $22,
+			$9, $10, $11, $12, $13, $14,
+			$15, $16, $17, $18, $19,
+			$20, $21, $22, $23,
 			NOW(), NOW()
 		)
 		ON CONFLICT DO NOTHING
 		RETURNING created_at`,
 		id, userID, dateValue, p.Type, p.Category, p.Method, p.Description, p.Amount,
-		p.Recurrence, recurrenceEnd, p.Installments, accountID, dedupeKey,
+		p.Recurrence, recurrenceEnd, p.Installments, accountID, dedupeKey, sourceID,
 		transferDirection, transferCounterparty, transferGroupID, transferFromAccountID, transferToAccountID,
 		importBatchID, importJobID, importFileName, importRowIndex,
 	).Scan(&createdAt)

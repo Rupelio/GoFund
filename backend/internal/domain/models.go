@@ -103,6 +103,7 @@ type TransactionImportJobDTO struct {
 
 type TransactionDTO struct {
 	ID                    string  `json:"id"`
+	SourceID              string  `json:"sourceId,omitempty"`
 	Date                  string  `json:"date"`
 	Type                  string  `json:"type"`
 	Category              string  `json:"category"`

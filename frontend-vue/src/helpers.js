@@ -305,6 +305,7 @@ export function normalizeTransaction(t) {
 
   return {
     id: normalizeString(String(t?.id || createId())),
+    sourceId: normalizeString(String(t?.sourceId || t?.source_id || '')),
     date: dateValue,
     type,
     category,

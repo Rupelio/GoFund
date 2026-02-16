@@ -124,6 +124,7 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS recurrence_end DATE`,
 		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS installments INT NOT NULL DEFAULT 0`,
 		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS dedupe_key TEXT`,
+		`ALTER TABLE transactions ADD COLUMN IF NOT EXISTS source_id TEXT`,
 	); err != nil {
 		return err
 	}
