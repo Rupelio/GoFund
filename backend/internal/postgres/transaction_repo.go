@@ -304,6 +304,28 @@ func (r *TransactionRepo) CreateImported(ctx context.Context, userID string, dat
 		sourceID = &p.ID
 	}
 
+	// Backward-compatibility dedupe:
+	// older imports could have been stored with fingerprint-based dedupe keys
+	// (without external id). If current row has external id, also check the
+	// fallback fingerprint key to avoid re-importing the same transaction.
+	fallbackDedupeKey := domain.TransactionDedupeKey(dateValue, p.Description, p.Amount, p.Recurrence, p.Installments, "")
+	if dedupeKey != fallbackDedupeKey {
+		var alreadyExists bool
+		if err := r.pool.QueryRow(ctx,
+			`SELECT EXISTS (
+				SELECT 1
+				FROM transactions
+				WHERE user_id = $1 AND dedupe_key = $2
+			)`,
+			userID, fallbackDedupeKey,
+		).Scan(&alreadyExists); err != nil {
+			return false, err
+		}
+		if alreadyExists {
+			return false, nil
+		}
+	}
+
 	var accountID *string
 	if p.AccountID != "" {
 		accountID = &p.AccountID

@@ -1961,8 +1961,8 @@ export const useDataStore = defineStore('data', () => {
       const inFileKey = sourceID ? `id:${sourceID}` : fp
       const existing = findExistingByAnyFingerprint(item, existingByFingerprint)
       if (existing) {
-        const existingID = normalizeString(String(existing?.sourceId || existing?.source_id || existing?.id || '')).toLowerCase()
-        if (!(sourceID && existingID && sourceID !== existingID)) {
+        const existingSourceID = normalizeString(String(existing?.sourceId || existing?.source_id || '')).toLowerCase()
+        if (!(sourceID && existingSourceID && sourceID !== existingSourceID)) {
           duplicatesExisting++
           if (shouldUpgradeDuplicateTransaction(existing, item)) {
             const prev = upgradeByTransactionId.get(existing.id)
