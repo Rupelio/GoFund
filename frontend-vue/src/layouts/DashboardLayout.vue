@@ -177,6 +177,11 @@ function handleKeydown(e) {
     router.push({ name: 'transactions' })
     return
   }
+  if (e.key === 'g' || e.key === 'G') {
+    e.preventDefault()
+    router.push({ name: 'guardian' })
+    return
+  }
 }
 
 onMounted(() => document.addEventListener('keydown', handleKeydown))

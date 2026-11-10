@@ -9,6 +9,7 @@ import (
 
 	"gestao/backend/internal/config"
 	"gestao/backend/internal/email"
+	"gestao/backend/internal/guardian"
 	"gestao/backend/internal/handler"
 	"gestao/backend/internal/market"
 	mw "gestao/backend/internal/middleware"
@@ -42,6 +43,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 	investmentRepo := postgres.NewInvestmentAssetRepo(pool)
 	tokenRepo := postgres.NewTokenRepo(pool)
 	importJobRepo := postgres.NewImportJobRepo(pool)
+	guardianRepo := postgres.NewGuardianRepo(pool)
 
 	// ── Email sender ────────────────────────────────────────
 	emailSender := email.NewSender(email.Config{
@@ -73,6 +75,8 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 	meH := handler.NewMeHandler(userRepo, timeout)
 	logH := handler.NewLogHandler(logger)
 	summaryH := handler.NewSummaryHandler(txnRepo, emailSender, timeout)
+	guardianSvc := guardian.NewService(guardianRepo, cfg.GeminiAPIKey, nil)
+	guardianH := handler.NewGuardianHandler(guardianSvc, cfg.GuardianWebhookToken, timeout)
 
 	// ── Router ───────────────────────────────────────────────
 	r := chi.NewRouter()
@@ -111,6 +115,12 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 		api.Group(func(lg chi.Router) {
 			lg.Use(logLimiter.Limit)
 			lg.Post("/log", logH.Handle)
+		})
+
+		// Guardian Quick-Expense Webhook (authenticated via X-Guardian-Token header)
+		api.Group(func(wh chi.Router) {
+			wh.Use(apiLimiter.Limit)
+			wh.Post("/guardian/webhook/quick-expense", guardianH.QuickExpenseWebhook)
 		})
 
 		// Authenticated routes
@@ -178,6 +188,12 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 				ri.Put("/assets/{id}", investmentH.UpdateAsset)
 				ri.Delete("/assets/{id}", investmentH.DeleteAsset)
 				ri.Post("/assets/{id}/quote", investmentH.RefreshAssetQuote)
+			})
+
+			priv.Route("/guardian", func(rgd chi.Router) {
+				rgd.Get("/dashboard", guardianH.Dashboard)
+				rgd.Post("/evaluate-spend", guardianH.EvaluateSpend)
+				rgd.Post("/confirm-decision", guardianH.ConfirmDecision)
 			})
 		})
 	})

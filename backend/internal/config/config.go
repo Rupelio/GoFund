@@ -44,6 +44,10 @@ type Config struct {
 	ResendFrom   string
 	AppURL       string
 	AppVersion   string
+
+	// Guardian & AI Copilot (Roberto)
+	GeminiAPIKey         string
+	GuardianWebhookToken string
 }
 
 // IsProduction returns true when APP_ENV is set to "production".
@@ -110,6 +114,9 @@ func Load() Config {
 		ResendFrom:   envOrDefault("RESEND_FROM", "GoFund <contato@gofund.com.br>"),
 		AppURL:       envOrDefault("APP_URL", "http://localhost:5500"),
 		AppVersion:   envOrDefault("APP_VERSION", "dev"),
+
+		GeminiAPIKey:         envOrDefault("GEMINI_API_KEY", ""),
+		GuardianWebhookToken: envOrDefault("GUARDIAN_WEBHOOK_TOKEN", "gofund-guardian-secret"),
 	}
 }
 

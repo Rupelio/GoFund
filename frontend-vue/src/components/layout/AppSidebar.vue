@@ -11,6 +11,7 @@ const app = useAppStore()
 
 const navItems = [
   { name: 'dashboard', label: 'Dashboard', icon: 'grid' },
+  { name: 'guardian', label: 'Guardião IA', icon: 'shield' },
   { name: 'transactions', label: 'Movimentações', icon: 'arrows' },
   { name: 'accounts', label: 'Contas', icon: 'card' },
   { name: 'budgets', label: 'Orçamento', icon: 'pie' },
@@ -39,6 +40,8 @@ function logout() {
     <nav class="sidebar-nav">
       <!-- Dashboard -->
       <a href="#" :class="{ 'is-active': currentPage === 'dashboard' }" @click.prevent="navigate('dashboard')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Dashboard</a>
+      <!-- Guardião Financeiro -->
+      <a href="#" :class="{ 'is-active': currentPage === 'guardian' }" @click.prevent="navigate('guardian')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>Guardião &amp; Roberto</a>
       <!-- Movimentações -->
       <a href="#" :class="{ 'is-active': currentPage === 'transactions' }" @click.prevent="navigate('transactions')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"/><polyline points="8 5 4 9 8 13"/><line x1="20" y1="16" x2="4" y2="16"/><polyline points="16 12 20 16 16 20"/></svg>Movimentações</a>
       <!-- Contas -->

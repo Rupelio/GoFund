@@ -37,6 +37,12 @@ const routes = [
         component: () => import('../views/DashboardView.vue'),
       },
       {
+        path: 'guardiao',
+        alias: 'guardian',
+        name: 'guardian',
+        component: () => import('../views/GuardianView.vue'),
+      },
+      {
         path: 'transactions',
         name: 'transactions',
         component: () => import('../views/TransactionsView.vue'),

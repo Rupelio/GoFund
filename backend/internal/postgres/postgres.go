@@ -293,6 +293,63 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		 SET method = 'transferencia'
 		 WHERE description = 'Saldo inicial'
 		   AND method = 'outros'`,
+		// Guardian module tables (Barras de HP, Quests, e Histórico do Consultor Roberto)
+		`CREATE TABLE IF NOT EXISTS guardian_envelopes (
+			id SERIAL PRIMARY KEY,
+			user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			slug VARCHAR(64) NOT NULL,
+			name VARCHAR(120) NOT NULL,
+			limit_amount NUMERIC(10,2) NOT NULL,
+			spent_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+			reset_cycle VARCHAR(32) NOT NULL CHECK (reset_cycle IN ('weekly_friday', 'monthly_day_1')),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			UNIQUE (user_id, slug)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_guardian_envelopes_user ON guardian_envelopes (user_id)`,
+		`CREATE TABLE IF NOT EXISTS guardian_quests (
+			id SERIAL PRIMARY KEY,
+			user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			title VARCHAR(160) NOT NULL,
+			target_value NUMERIC(10,2) NOT NULL,
+			current_value NUMERIC(10,2) NOT NULL DEFAULT 0,
+			unit_type VARCHAR(16) NOT NULL CHECK (unit_type IN ('BRL', 'SHARES')),
+			unit_price_ref NUMERIC(10,2) NOT NULL DEFAULT 1.00,
+			UNIQUE (user_id, title)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_guardian_quests_user ON guardian_quests (user_id)`,
+		`CREATE TABLE IF NOT EXISTS guardian_impulse_logs (
+			id SERIAL PRIMARY KEY,
+			user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			item_description VARCHAR(255) NOT NULL,
+			amount NUMERIC(10,2) NOT NULL,
+			category_slug VARCHAR(64) NOT NULL,
+			ai_verdict VARCHAR(16) NOT NULL CHECK (ai_verdict IN ('APPROVED', 'DENIED', 'WARNING')),
+			ai_message TEXT NOT NULL,
+			user_decision VARCHAR(16) NOT NULL DEFAULT 'PENDING' CHECK (user_decision IN ('SAVED', 'SPENT', 'PENDING')),
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_guardian_impulse_logs_user_created ON guardian_impulse_logs (user_id, created_at DESC)`,
+		// Auto-seed default guardian envelopes for existing users if not present
+		`INSERT INTO guardian_envelopes (user_id, slug, name, limit_amount, spent_amount, reset_cycle, updated_at)
+		 SELECT u.id, v.slug, v.name, v.limit_amount, 0.00, v.reset_cycle, NOW()
+		 FROM users u
+		 CROSS JOIN (VALUES
+			('lazer_semanal', 'HP Lazer da Semana', 100.00::numeric(10,2), 'weekly_friday'),
+			('vr_mercado', 'Escudo Vale-Refeição', 600.00::numeric(10,2), 'monthly_day_1'),
+			('casa_combustivel', 'Casa, Farmácia & Gasolina', 400.00::numeric(10,2), 'monthly_day_1'),
+			('piso_cartao', 'Piso Fixo do Cartão', 634.67::numeric(10,2), 'monthly_day_1')
+		 ) AS v(slug, name, limit_amount, reset_cycle)
+		 ON CONFLICT (user_id, slug) DO NOTHING`,
+		// Auto-seed default guardian quests for existing users if not present
+		`INSERT INTO guardian_quests (user_id, title, target_value, current_value, unit_type, unit_price_ref)
+		 SELECT u.id, v.title, v.target_value, v.current_value, v.unit_type, v.unit_price_ref
+		 FROM users u
+		 CROSS JOIN (VALUES
+			('Anel Solitário Pedra Verde', 350.00::numeric(10,2), 0.00::numeric(10,2), 'BRL', 1.00::numeric(10,2)),
+			('Meta 50 Cotas de FIIs', 50.00::numeric(10,2), 21.00::numeric(10,2), 'SHARES', 8.05::numeric(10,2)),
+			('Cofrinho Meli+ 120% CDI', 10000.00::numeric(10,2), 200.00::numeric(10,2), 'BRL', 1.00::numeric(10,2))
+		 ) AS v(title, target_value, current_value, unit_type, unit_price_ref)
+		 ON CONFLICT (user_id, title) DO NOTHING`,
 	)
 }
 

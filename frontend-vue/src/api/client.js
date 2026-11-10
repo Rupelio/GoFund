@@ -8,7 +8,7 @@ class ApiError extends Error {
   }
 }
 
-async function request(method, path, { body, token, params } = {}) {
+async function request(method, path, { body, token, params, headers: customHeaders } = {}) {
   let url = API_BASE ? `${API_BASE}${path}` : path
   if (params) {
     const qs = new URLSearchParams()
@@ -19,7 +19,7 @@ async function request(method, path, { body, token, params } = {}) {
     if (search) url += `?${search}`
   }
 
-  const headers = { 'Content-Type': 'application/json' }
+  const headers = { 'Content-Type': 'application/json', ...(customHeaders || {}) }
   if (token) headers['Authorization'] = `Bearer ${token}`
 
   const res = await fetch(url.toString(), {
